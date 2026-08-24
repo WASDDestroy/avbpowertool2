@@ -111,12 +111,11 @@ def _compile_po_to_mo(po_path: Path, mo_path: Path) -> None:
             # Skip empty lines and comments
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
-                # Flush pending entry
-                if current_msgid_parts and current_msgstr_parts:
+                # Flush pending entry (include header with empty msgid)
+                if current_msgstr_parts:
                     msgid = "".join(current_msgid_parts)
                     msgstr = "".join(current_msgstr_parts)
-                    if msgid and msgstr:
-                        translations[msgid] = msgstr
+                    translations[msgid] = msgstr
                 current_msgid_parts = []
                 current_msgstr_parts = []
                 in_msgid = False
@@ -124,12 +123,11 @@ def _compile_po_to_mo(po_path: Path, mo_path: Path) -> None:
                 continue
 
             if stripped.startswith("msgid "):
-                # Flush previous
-                if current_msgid_parts and current_msgstr_parts:
+                # Flush previous entry
+                if current_msgstr_parts:
                     msgid = "".join(current_msgid_parts)
                     msgstr = "".join(current_msgstr_parts)
-                    if msgid and msgstr:
-                        translations[msgid] = msgstr
+                    translations[msgid] = msgstr
                 current_msgid_parts = []
                 current_msgstr_parts = []
                 in_msgid = True
@@ -154,11 +152,10 @@ def _compile_po_to_mo(po_path: Path, mo_path: Path) -> None:
                         current_msgstr_parts.append(value)
 
     # Flush last entry
-    if current_msgid_parts and current_msgstr_parts:
+    if current_msgstr_parts:
         msgid = "".join(current_msgid_parts)
         msgstr = "".join(current_msgstr_parts)
-        if msgid and msgstr:
-            translations[msgid] = msgstr
+        translations[msgid] = msgstr
 
     # Write .mo file
     _write_mo(translations, mo_path)
@@ -274,11 +271,10 @@ def _parse_po_keys(po_path: Path) -> dict[str, str]:
             stripped = line.strip()
 
             if not stripped or stripped.startswith("#"):
-                if current_msgid_parts and current_msgstr_parts:
+                if current_msgstr_parts:
                     msgid = "".join(current_msgid_parts)
                     msgstr = "".join(current_msgstr_parts)
-                    if msgid and msgstr:
-                        result[msgid] = msgstr
+                    result[msgid] = msgstr
                 current_msgid_parts = []
                 current_msgstr_parts = []
                 in_msgid = False
@@ -286,11 +282,10 @@ def _parse_po_keys(po_path: Path) -> dict[str, str]:
                 continue
 
             if stripped.startswith("msgid "):
-                if current_msgid_parts and current_msgstr_parts:
+                if current_msgstr_parts:
                     msgid = "".join(current_msgid_parts)
                     msgstr = "".join(current_msgstr_parts)
-                    if msgid and msgstr:
-                        result[msgid] = msgstr
+                    result[msgid] = msgstr
                 current_msgid_parts = []
                 current_msgstr_parts = []
                 in_msgid = True
@@ -312,10 +307,9 @@ def _parse_po_keys(po_path: Path) -> dict[str, str]:
                     elif in_msgstr:
                         current_msgstr_parts.append(value)
 
-    if current_msgid_parts and current_msgstr_parts:
+    if current_msgstr_parts:
         msgid = "".join(current_msgid_parts)
         msgstr = "".join(current_msgstr_parts)
-        if msgid and msgstr:
-            result[msgid] = msgstr
+        result[msgid] = msgstr
 
     return result
