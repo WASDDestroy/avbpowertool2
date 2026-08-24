@@ -186,7 +186,7 @@ def _write_mo(translations: dict[str, str], mo_path: Path) -> None:
     out = bytearray()
 
     # Header
-    out += struct.pack("Iiiiii", 0x950412DE, 0, nstrings, 28, 28 + nstrings * 8, 0, 0)
+    out += struct.pack("Iiiiiii", 0x950412DE, 0, nstrings, 28, 28 + nstrings * 8, 0, 0)
 
     # Key offset table
     offset = keystart
