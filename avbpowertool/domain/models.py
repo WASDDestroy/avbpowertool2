@@ -42,8 +42,10 @@ class SigningAlgorithm(Enum):
     NONE = "NONE"
     SHA256_RSA2048 = "SHA256_RSA2048"
     SHA256_RSA4096 = "SHA256_RSA4096"
+    SHA256_RSA8192 = "SHA256_RSA8192"
     SHA512_RSA2048 = "SHA512_RSA2048"
     SHA512_RSA4096 = "SHA512_RSA4096"
+    SHA512_RSA8192 = "SHA512_RSA8192"
 
     @classmethod
     def from_str(cls, value: str) -> SigningAlgorithm:
@@ -82,12 +84,19 @@ class PartitionConfig:
     salt: str = ""
     flags: int = 0
     props: tuple[tuple[str, str], ...] = ()
+    # common descriptor fields
+    rollback_index_location: int = 0
+    hash_algorithm: str = "sha256"
     # vbmeta-specific
     included_partitions: tuple[str, ...] = ()
     chain_partitions: tuple[str, ...] = ()
+    kernel_cmdline: str = ""
     # hashtree-specific
     data_block_size: int = 4096
     hash_block_size: int = 4096
+    # flag shortcuts
+    set_hashtree_disabled_flag: bool = False
+    set_verification_disabled_flag: bool = False
 
 
 @dataclass(frozen=True)

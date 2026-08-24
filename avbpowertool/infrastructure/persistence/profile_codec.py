@@ -38,12 +38,18 @@ def encode_profile(profile: AvbProfile) -> dict[str, Any]:
             entry["salt"] = pc.salt
         if pc.flags:
             entry["flags"] = pc.flags
+        if pc.rollback_index_location != 0:
+            entry["rollback_index_location"] = pc.rollback_index_location
+        if pc.hash_algorithm != "sha256":
+            entry["hash_algorithm"] = pc.hash_algorithm
         if pc.props:
             entry["props"] = [[k, v] for k, v in pc.props]
         if pc.included_partitions:
             entry["included_partitions"] = list(pc.included_partitions)
         if pc.chain_partitions:
             entry["chain_partitions"] = list(pc.chain_partitions)
+        if pc.kernel_cmdline:
+            entry["kernel_cmdline"] = pc.kernel_cmdline
         if pc.descriptor == DescriptorType.HASHTREE:
             if pc.data_block_size != 4096:
                 entry["data_block_size"] = pc.data_block_size
@@ -141,10 +147,14 @@ def _decode_partition(name: str, entry: dict[str, Any]) -> PartitionConfig:
     rollback_index = entry.get("rollback_index", 0)
     if isinstance(rollback_index, str):
         rollback_index = int(rollback_index)
+    rollback_index_location = entry.get("rollback_index_location", 0)
+    if isinstance(rollback_index_location, str):
+        rollback_index_location = int(rollback_index_location)
     salt = entry.get("salt", "")
     flags = entry.get("flags", 0)
     if isinstance(flags, str):
         flags = int(flags)
+    hash_algorithm = entry.get("hash_algorithm", "sha256")
 
     # Props: stored as [[key, value], ...] or {key: value, ...}
     raw_props: Any = entry.get("props", ())
@@ -159,10 +169,15 @@ def _decode_partition(name: str, entry: dict[str, Any]) -> PartitionConfig:
     # vbmeta-specific
     included_partitions: tuple[str, ...] = tuple(entry.get("included_partitions", ()))
     chain_partitions: tuple[str, ...] = tuple(entry.get("chain_partitions", ()))
+    kernel_cmdline = entry.get("kernel_cmdline", "")
 
     # hashtree-specific
     data_block_size = entry.get("data_block_size", 4096)
     hash_block_size = entry.get("hash_block_size", 4096)
+
+    # flag shortcuts
+    set_hashtree_disabled_flag = bool(entry.get("set_hashtree_disabled_flag", False))
+    set_verification_disabled_flag = bool(entry.get("set_verification_disabled_flag", False))
 
     return PartitionConfig(
         image=image,
@@ -171,11 +186,16 @@ def _decode_partition(name: str, entry: dict[str, Any]) -> PartitionConfig:
         key_id=key_id,
         partition_name=partition_name,
         rollback_index=rollback_index,
+        rollback_index_location=rollback_index_location,
+        hash_algorithm=hash_algorithm,
         salt=salt,
         flags=flags,
         props=props,
         included_partitions=included_partitions,
         chain_partitions=chain_partitions,
+        kernel_cmdline=kernel_cmdline,
         data_block_size=data_block_size,
         hash_block_size=hash_block_size,
+        set_hashtree_disabled_flag=set_hashtree_disabled_flag,
+        set_verification_disabled_flag=set_verification_disabled_flag,
     )

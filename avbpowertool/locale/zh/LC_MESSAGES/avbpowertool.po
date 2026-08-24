@@ -116,14 +116,12 @@ msgstr "语言 \"{language}\" 没有缺失的翻译。"
 msgid "settings.check_l10n.missing_header"
 msgstr "语言 \"{language}\" 缺失以下翻译（{count} 项）："
 
-# Settings options — language
 msgid "settings.option.language.en"
 msgstr "English"
 
 msgid "settings.option.language.zh"
 msgstr "简体中文"
 
-# Settings options — log level
 msgid "settings.option.log_level.DEBUG"
 msgstr "调试"
 
@@ -143,8 +141,20 @@ msgstr "输入配置 ID（如 my_device）："
 msgid "config.wizard.enter_name"
 msgstr "输入配置显示名称："
 
+msgid "config.wizard.choose_mode"
+msgstr "选择创建方式："
+
+msgid "config.wizard.mode_manual"
+msgstr "手动 — 逐个添加分区"
+
+msgid "config.wizard.mode_auto"
+msgstr "自动 — 扫描镜像并生成配置"
+
 msgid "config.wizard.step_partitions"
 msgstr "添加分区"
+
+msgid "config.wizard.step_confirm"
+msgstr "确认配置"
 
 msgid "config.wizard.current_partitions"
 msgstr "当前分区："
@@ -200,8 +210,42 @@ msgstr "密钥 ID（如 release_rsa4096）："
 msgid "config.wizard.rollback_index"
 msgstr "回滚索引（默认 0）："
 
+msgid "config.wizard.rollback_index_location"
+msgstr "回滚索引位置（默认 0）："
+
 msgid "config.wizard.salt"
 msgstr "Salt（留空自动生成）："
+
+msgid "config.wizard.flags"
+msgstr "VBMeta 标志（默认 0）："
+
+msgid "config.wizard.set_ht_disabled"
+msgstr "设置 HASHTREE_DISABLED 标志？"
+
+msgid "config.wizard.set_vb_disabled"
+msgstr "设置 VERIFICATION_DISABLED 标志？"
+
+# 配置向导 — 自动模式
+msgid "config.wizard.auto_dir"
+msgstr "输入镜像目录路径："
+
+msgid "config.wizard.auto_dir_not_found"
+msgstr "目录不存在。"
+
+msgid "config.wizard.auto_no_images"
+msgstr "目录中没有找到 .img 文件。"
+
+msgid "config.wizard.auto_scanning"
+msgstr "正在扫描镜像..."
+
+msgid "config.wizard.auto_found"
+msgstr "找到 {count} 个镜像："
+
+msgid "config.wizard.auto_result"
+msgstr "生成了 {count} 个分区配置："
+
+msgid "config.wizard.auto_result_title"
+msgstr "自动生成的配置"
 
 # UI 字符串
 msgid "Exit"

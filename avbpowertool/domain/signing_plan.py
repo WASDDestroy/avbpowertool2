@@ -189,7 +189,17 @@ class SigningPlanBuilder:
             key_path,
             "--rollback_index",
             str(config.rollback_index),
+            "--rollback_index_location",
+            str(config.rollback_index_location),
         ]
+        if config.flags:
+            cmd.extend(["--flags", str(config.flags)])
+        if config.set_hashtree_disabled_flag:
+            cmd.append("--set_hashtree_disabled_flag")
+        if config.set_verification_disabled_flag:
+            cmd.append("--set_verification_disabled_flag")
+        if config.kernel_cmdline:
+            cmd.extend(["--kernel_cmdline", config.kernel_cmdline])
 
         # Include descriptors from other images (staging paths)
         for included_name in config.included_partitions:
@@ -252,9 +262,17 @@ class SigningPlanBuilder:
             config.salt,
             "--rollback_index",
             str(config.rollback_index),
+            "--rollback_index_location",
+            str(config.rollback_index_location),
+            "--hash_algorithm",
+            config.hash_algorithm,
         ]
         if config.flags:
             cmd.extend(["--flags", str(config.flags)])
+        if config.set_hashtree_disabled_flag:
+            cmd.append("--set_hashtree_disabled_flag")
+        if config.set_verification_disabled_flag:
+            cmd.append("--set_verification_disabled_flag")
         for k, v in config.props:
             cmd.extend(["--prop", f"{k}:{v}"])
         return cmd
@@ -282,6 +300,8 @@ class SigningPlanBuilder:
             config.salt,
             "--rollback_index",
             str(config.rollback_index),
+            "--rollback_index_location",
+            str(config.rollback_index_location),
             "--data_block_size",
             str(config.data_block_size),
             "--hash_block_size",
@@ -289,6 +309,10 @@ class SigningPlanBuilder:
         ]
         if config.flags:
             cmd.extend(["--flags", str(config.flags)])
+        if config.set_hashtree_disabled_flag:
+            cmd.append("--set_hashtree_disabled_flag")
+        if config.set_verification_disabled_flag:
+            cmd.append("--set_verification_disabled_flag")
         for k, v in config.props:
             cmd.extend(["--prop", f"{k}:{v}"])
         return cmd

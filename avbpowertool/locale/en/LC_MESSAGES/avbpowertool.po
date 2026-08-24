@@ -116,14 +116,12 @@ msgstr "No missing translations for language \"{language}\"."
 msgid "settings.check_l10n.missing_header"
 msgstr "Missing translations for language \"{language}\" ({count}):"
 
-# Settings options — language
 msgid "settings.option.language.en"
 msgstr "English"
 
 msgid "settings.option.language.zh"
 msgstr "Simplified Chinese"
 
-# Settings options — log level
 msgid "settings.option.log_level.DEBUG"
 msgstr "Debug"
 
@@ -143,8 +141,20 @@ msgstr "Enter profile ID (e.g. my_device):"
 msgid "config.wizard.enter_name"
 msgstr "Enter profile display name:"
 
+msgid "config.wizard.choose_mode"
+msgstr "Choose creation method:"
+
+msgid "config.wizard.mode_manual"
+msgstr "Manual — add partitions one by one"
+
+msgid "config.wizard.mode_auto"
+msgstr "Auto — scan images and generate config"
+
 msgid "config.wizard.step_partitions"
 msgstr "Add Partitions"
+
+msgid "config.wizard.step_confirm"
+msgstr "Confirm Profile"
 
 msgid "config.wizard.current_partitions"
 msgstr "Current partitions:"
@@ -200,8 +210,42 @@ msgstr "Key ID (e.g. release_rsa4096):"
 msgid "config.wizard.rollback_index"
 msgstr "Rollback index (default 0):"
 
+msgid "config.wizard.rollback_index_location"
+msgstr "Rollback index location (default 0):"
+
 msgid "config.wizard.salt"
 msgstr "Salt (leave empty for auto):"
+
+msgid "config.wizard.flags"
+msgstr "VBMeta flags (default 0):"
+
+msgid "config.wizard.set_ht_disabled"
+msgstr "Set HASHTREE_DISABLED flag?"
+
+msgid "config.wizard.set_vb_disabled"
+msgstr "Set VERIFICATION_DISABLED flag?"
+
+# Config wizard — auto mode
+msgid "config.wizard.auto_dir"
+msgstr "Enter image directory path:"
+
+msgid "config.wizard.auto_dir_not_found"
+msgstr "Directory not found."
+
+msgid "config.wizard.auto_no_images"
+msgstr "No .img files found in directory."
+
+msgid "config.wizard.auto_scanning"
+msgstr "Scanning images..."
+
+msgid "config.wizard.auto_found"
+msgstr "Found {count} image(s):"
+
+msgid "config.wizard.auto_result"
+msgstr "Generated {count} partition config(s):"
+
+msgid "config.wizard.auto_result_title"
+msgstr "Auto-Generated Config"
 
 # UI strings
 msgid "Exit"
