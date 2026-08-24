@@ -21,7 +21,8 @@
         {"action": "action:config.create", "shortcut": "C"},
         {"action": "action:config.import", "shortcut": "I"},
         {"action": "action:config.export", "shortcut": "E"},
-        {"action": "action:config.library", "shortcut": "M"}
+        {"action": "action:config.library", "shortcut": "M"},
+        {"action": "action:key.manage", "shortcut": "K"}
       ]
     },
     "route:settings": {
@@ -59,6 +60,10 @@
     "action:config.library": {
       "label_key": "node.config_library.name",
       "description_key": "node.config_library.description"
+    },
+    "action:key.manage": {
+      "label_key": "node.manage_keys.name",
+      "description_key": "node.manage_keys.description"
     },
     "action:view_current_config": {
       "label_key": "home.action.view_current_config_info",

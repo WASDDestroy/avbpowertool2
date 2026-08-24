@@ -80,14 +80,18 @@ profiles/my_device/
 
 ### 2. Place Key Files
 
-Copy your PEM key files into the key store:
+Copy your PEM private key files into the profile's `keys/` directory:
 
 ```
 profiles/my_device/keys/
   release_rsa4096.pem
 ```
 
-Then update the manifest (or let the tool discover keys):
+Then register them in the manifest. **Auto-discovery** is the easiest way — it scans all `.pem` files in `keys/` and uses the filename (minus `.pem`) as the `key_id`. For example, `release_rsa4096.pem` becomes key_id `release_rsa4096`.
+
+**Via TUI**: Navigate to `Config Manager > Manage Keys > Auto-discover keys`.
+
+**Via API**:
 
 ```python
 from avbpowertool.application.commands import KeyDiscoveryRequest
@@ -96,7 +100,13 @@ from avbpowertool.application.services.manage_keys import KeyDiscoveryUseCase
 uc = KeyDiscoveryUseCase(ws)
 result = uc.execute(KeyDiscoveryRequest(profile_id="my_device"))
 print(f"Discovered {result.discovered_count} keys")
+for key_id, filename in result.manifest_entries:
+    print(f"  {key_id} -> {filename}")
 ```
+
+**Important**: The `key_id` in `profile.json` partitions must match a key_id in the manifest. If you use auto-discovery, name your `.pem` files to match the key_ids you specified during config creation (e.g. `release_rsa4096.pem` for key_id `release_rsa4096`).
+
+For full details on key management (manual setup, manifest format, troubleshooting), see [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md).
 
 ### 3. Validate
 

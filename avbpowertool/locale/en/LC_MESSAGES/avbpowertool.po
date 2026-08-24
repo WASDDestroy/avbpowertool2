@@ -53,6 +53,12 @@ msgstr "Config Library Manager"
 msgid "node.config_library.description"
 msgstr "Manage configs added to AVBPowerTool."
 
+msgid "node.manage_keys.name"
+msgstr "Manage Keys"
+
+msgid "node.manage_keys.description"
+msgstr "List, discover, and manage signing keys."
+
 msgid "node.settings.name"
 msgstr "Settings"
 
@@ -225,7 +231,6 @@ msgstr "Set HASHTREE_DISABLED flag?"
 msgid "config.wizard.set_vb_disabled"
 msgstr "Set VERIFICATION_DISABLED flag?"
 
-# Config wizard — auto mode
 msgid "config.wizard.auto_dir"
 msgstr "Enter image directory path:"
 
@@ -246,6 +251,70 @@ msgstr "Generated {count} partition config(s):"
 
 msgid "config.wizard.auto_result_title"
 msgstr "Auto-Generated Config"
+
+# Key management
+msgid "keys.management_title"
+msgstr "Key Management"
+
+msgid "keys.action.list"
+msgstr "List keys"
+
+msgid "keys.action.discover"
+msgstr "Auto-discover keys"
+
+msgid "keys.action.add"
+msgstr "Add key manually"
+
+msgid "keys.action.remove"
+msgstr "Remove key"
+
+msgid "keys.list_title"
+msgstr "Key List"
+
+msgid "keys.list_registered"
+msgstr "Registered keys (in manifest):"
+
+msgid "keys.list_unregistered"
+msgstr "Unregistered .pem files on disk:"
+
+msgid "keys.list_unregistered_hint"
+msgstr "Use Auto-discover to register them, or Add to register manually."
+
+msgid "keys.list_empty"
+msgstr "No keys found. Place .pem files in the keys/ directory first."
+
+msgid "keys.discover_title"
+msgstr "Key Discovery"
+
+msgid "keys.discover_confirm"
+msgstr "Scan keys/ for .pem files and rebuild manifest?"
+
+msgid "keys.discover_result"
+msgstr "Discovered {count} key(s):"
+
+msgid "keys.add_title"
+msgstr "Add Key"
+
+msgid "keys.add_key_id"
+msgstr "Enter key ID (e.g. release_rsa4096):"
+
+msgid "keys.add_filename"
+msgstr "Enter .pem filename (e.g. release_rsa4096.pem):"
+
+msgid "keys.add_success"
+msgstr "Key \"{key_id}\" added to manifest."
+
+msgid "keys.remove_title"
+msgstr "Remove Key"
+
+msgid "keys.select_remove"
+msgstr "Select key to remove:"
+
+msgid "keys.remove_confirm"
+msgstr "Remove key \"{key_id}\" from manifest?"
+
+msgid "keys.remove_success"
+msgstr "Key \"{key_id}\" removed from manifest."
 
 # UI strings
 msgid "Exit"

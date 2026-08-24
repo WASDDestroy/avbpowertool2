@@ -223,3 +223,52 @@ class KeyDiscoveryResult:
     discovered_count: int
     manifest_entries: tuple[tuple[str, str], ...]  # (key_id, filename) pairs
     issues: tuple[OperationIssue, ...] = ()
+
+
+@dataclass(frozen=True)
+class KeyListRequest:
+    """Request to list keys in a profile's key store."""
+
+    profile_id: str = "current"
+
+
+@dataclass(frozen=True)
+class KeyListResult:
+    """Result of listing keys."""
+
+    manifest_entries: tuple[tuple[str, str], ...]  # (key_id, filename)
+    pem_files_on_disk: tuple[str, ...]  # filenames not in manifest
+    issues: tuple[OperationIssue, ...] = ()
+
+
+@dataclass(frozen=True)
+class KeyAddRequest:
+    """Request to add a key entry to the manifest."""
+
+    profile_id: str = "current"
+    key_id: str = ""
+    private_key_filename: str = ""
+
+
+@dataclass(frozen=True)
+class KeyAddResult:
+    """Result of adding a key entry."""
+
+    key_id: str
+    issues: tuple[OperationIssue, ...] = ()
+
+
+@dataclass(frozen=True)
+class KeyRemoveRequest:
+    """Request to remove a key entry from the manifest."""
+
+    profile_id: str = "current"
+    key_id: str = ""
+
+
+@dataclass(frozen=True)
+class KeyRemoveResult:
+    """Result of removing a key entry."""
+
+    key_id: str
+    issues: tuple[OperationIssue, ...] = ()

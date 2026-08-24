@@ -80,14 +80,18 @@ profiles/my_device/
 
 ### 2. 放置密钥文件
 
-将 PEM 密钥文件复制到密钥库：
+将 PEM 私钥文件复制到配置的 `keys/` 目录：
 
 ```
 profiles/my_device/keys/
   release_rsa4096.pem
 ```
 
-然后更新 manifest（或让工具自动发现密钥）：
+然后将密钥注册到 manifest 中。**自动发现**是最简单的方式 — 它扫描 `keys/` 中的所有 `.pem` 文件，并使用文件名（去掉 `.pem`）作为 `key_id`。例如，`release_rsa4096.pem` 对应 key_id `release_rsa4096`。
+
+**通过 TUI**：导航到 `配置管理器 > 管理密钥 > 自动发现密钥`。
+
+**通过 API**：
 
 ```python
 from avbpowertool.application.commands import KeyDiscoveryRequest
@@ -95,8 +99,14 @@ from avbpowertool.application.services.manage_keys import KeyDiscoveryUseCase
 
 uc = KeyDiscoveryUseCase(ws)
 result = uc.execute(KeyDiscoveryRequest(profile_id="my_device"))
-print(f"发现 {result.discovered_count} 个密钥")
+print(f"发现了 {result.discovered_count} 个密钥")
+for key_id, filename in result.manifest_entries:
+    print(f"  {key_id} -> {filename}")
 ```
+
+**重要**：`profile.json` 中分区的 `key_id` 必须与 manifest 中的 key_id 匹配。如果使用自动发现，请将 `.pem` 文件命名为与配置创建时指定的 key_id 一致（如 key_id `release_rsa4096` 对应文件名 `release_rsa4096.pem`）。
+
+关于密钥管理的完整说明（手动设置、manifest 格式、故障排除），请参阅 [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md)。
 
 ### 3. 验证
 

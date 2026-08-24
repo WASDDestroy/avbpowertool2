@@ -53,6 +53,12 @@ msgstr "配置库管理器"
 msgid "node.config_library.description"
 msgstr "管理已添加到 AVBPowerTool 的配置。"
 
+msgid "node.manage_keys.name"
+msgstr "管理密钥"
+
+msgid "node.manage_keys.description"
+msgstr "列出、发现和管理签名密钥。"
+
 msgid "node.settings.name"
 msgstr "设置"
 
@@ -225,7 +231,6 @@ msgstr "设置 HASHTREE_DISABLED 标志？"
 msgid "config.wizard.set_vb_disabled"
 msgstr "设置 VERIFICATION_DISABLED 标志？"
 
-# 配置向导 — 自动模式
 msgid "config.wizard.auto_dir"
 msgstr "输入镜像目录路径："
 
@@ -246,6 +251,70 @@ msgstr "生成了 {count} 个分区配置："
 
 msgid "config.wizard.auto_result_title"
 msgstr "自动生成的配置"
+
+# 密钥管理
+msgid "keys.management_title"
+msgstr "密钥管理"
+
+msgid "keys.action.list"
+msgstr "列出密钥"
+
+msgid "keys.action.discover"
+msgstr "自动发现密钥"
+
+msgid "keys.action.add"
+msgstr "手动添加密钥"
+
+msgid "keys.action.remove"
+msgstr "移除密钥"
+
+msgid "keys.list_title"
+msgstr "密钥列表"
+
+msgid "keys.list_registered"
+msgstr "已注册的密钥（在 manifest 中）："
+
+msgid "keys.list_unregistered"
+msgstr "磁盘上未注册的 .pem 文件："
+
+msgid "keys.list_unregistered_hint"
+msgstr "使用「自动发现」注册，或使用「手动添加」逐个注册。"
+
+msgid "keys.list_empty"
+msgstr "未找到密钥。请先将 .pem 文件放入 keys/ 目录。"
+
+msgid "keys.discover_title"
+msgstr "密钥发现"
+
+msgid "keys.discover_confirm"
+msgstr "扫描 keys/ 目录中的 .pem 文件并重建 manifest？"
+
+msgid "keys.discover_result"
+msgstr "发现了 {count} 个密钥："
+
+msgid "keys.add_title"
+msgstr "添加密钥"
+
+msgid "keys.add_key_id"
+msgstr "输入密钥 ID（如 release_rsa4096）："
+
+msgid "keys.add_filename"
+msgstr "输入 .pem 文件名（如 release_rsa4096.pem）："
+
+msgid "keys.add_success"
+msgstr "密钥 \"{key_id}\" 已添加到 manifest。"
+
+msgid "keys.remove_title"
+msgstr "移除密钥"
+
+msgid "keys.select_remove"
+msgstr "选择要移除的密钥："
+
+msgid "keys.remove_confirm"
+msgstr "从 manifest 中移除密钥 \"{key_id}\"？"
+
+msgid "keys.remove_success"
+msgstr "密钥 \"{key_id}\" 已从 manifest 中移除。"
 
 # UI 字符串
 msgid "Exit"
