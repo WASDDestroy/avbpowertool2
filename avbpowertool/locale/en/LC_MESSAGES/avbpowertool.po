@@ -29,6 +29,12 @@ msgstr "Sign Images"
 msgid "node.sign_images.description"
 msgstr "Sign images in working dir."
 
+msgid "node.create_config.name"
+msgstr "Create Config"
+
+msgid "node.create_config.description"
+msgstr "Create a new signing profile with a wizard."
+
 msgid "node.import_config.name"
 msgstr "Import Config"
 
@@ -129,6 +135,73 @@ msgstr "Warning"
 
 msgid "settings.option.log_level.ERROR"
 msgstr "Error"
+
+# Config wizard
+msgid "config.wizard.enter_id"
+msgstr "Enter profile ID (e.g. my_device):"
+
+msgid "config.wizard.enter_name"
+msgstr "Enter profile display name:"
+
+msgid "config.wizard.step_partitions"
+msgstr "Add Partitions"
+
+msgid "config.wizard.current_partitions"
+msgstr "Current partitions:"
+
+msgid "config.wizard.no_partitions"
+msgstr "No partitions added yet"
+
+msgid "config.wizard.add_partition_hint"
+msgstr "You need at least one partition to create a profile."
+
+msgid "config.wizard.add_partition_confirm"
+msgstr "Add a partition?"
+
+msgid "config.wizard.confirm_create"
+msgstr "Create this profile?"
+
+msgid "config.wizard.no_partitions_title"
+msgstr "No Partitions"
+
+msgid "config.wizard.no_partitions_msg"
+msgstr "Cannot create a profile without partitions. Operation cancelled."
+
+msgid "config.wizard.summary_id"
+msgstr "Profile ID"
+
+msgid "config.wizard.summary_name"
+msgstr "Name"
+
+msgid "config.wizard.summary_partitions"
+msgstr "Partitions"
+
+msgid "config.wizard.created"
+msgstr "Profile \"{profile}\" created successfully."
+
+msgid "config.wizard.result_title"
+msgstr "Create Result"
+
+msgid "config.wizard.partition_name"
+msgstr "Partition name (e.g. boot):"
+
+msgid "config.wizard.partition_image"
+msgstr "Image filename (leave empty for <name>.img):"
+
+msgid "config.wizard.descriptor_type"
+msgstr "Descriptor type:"
+
+msgid "config.wizard.algorithm"
+msgstr "Signing algorithm:"
+
+msgid "config.wizard.key_id"
+msgstr "Key ID (e.g. release_rsa4096):"
+
+msgid "config.wizard.rollback_index"
+msgstr "Rollback index (default 0):"
+
+msgid "config.wizard.salt"
+msgstr "Salt (leave empty for auto):"
 
 # UI strings
 msgid "Exit"

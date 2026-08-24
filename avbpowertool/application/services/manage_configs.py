@@ -6,6 +6,8 @@ import logging
 from pathlib import Path
 
 from avbpowertool.application.commands import (
+    ConfigCreateRequest,
+    ConfigCreateResult,
     ConfigExportRequest,
     ConfigExportResult,
     ConfigImportRequest,
@@ -15,11 +17,12 @@ from avbpowertool.application.commands import (
     ConfigValidateRequest,
     ConfigValidateResult,
 )
-from avbpowertool.domain.models import OperationIssue
+from avbpowertool.domain.models import AvbProfile, OperationIssue
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.infrastructure.persistence.archive_repository import (
     ArchiveRepository,
 )
+from avbpowertool.infrastructure.persistence.profile_codec import encode_profile
 from avbpowertool.infrastructure.persistence.profile_repository import (
     ProfileRepository,
 )
@@ -160,3 +163,82 @@ class ConfigExportUseCase:
             return ConfigExportResult(output_path=str(output_path), issues=tuple(issues))
 
         return ConfigExportResult(output_path=str(output_path), issues=tuple(issues))
+
+
+class ConfigCreateUseCase:
+    """Create a new profile with partitions and optional key store."""
+
+    def __init__(self, workspace: WorkspacePaths) -> None:
+        self._ws = workspace
+
+    def execute(self, request: ConfigCreateRequest) -> ConfigCreateResult:
+        issues: list[OperationIssue] = []
+        repo = ProfileRepository(self._ws)
+
+        # Check for conflicts
+        existing = repo.list_profiles()
+        if request.profile_id in existing:
+            issues.append(
+                OperationIssue(
+                    "config.profile_exists",
+                    f"Profile already exists: {request.profile_id}",
+                )
+            )
+            return ConfigCreateResult(profile_id=request.profile_id, issues=tuple(issues))
+
+        # Build profile
+        partitions = {p.partition_name: p for p in request.partitions}
+        profile = AvbProfile(
+            id=request.profile_id,
+            name=request.profile_name,
+            schema_version=2,
+            key_store_path="keys",
+            partitions=partitions,
+        )
+
+        # Validate
+        from avbpowertool.domain.validation import validate_profile
+
+        validation_issues = validate_profile(profile)
+        issues.extend(validation_issues)
+        if any(
+            i.error_code
+            in {
+                "config.invalid_schema_version",
+                "config.no_partitions",
+                "config.missing_profile_id",
+            }
+            for i in validation_issues
+        ):
+            return ConfigCreateResult(profile_id=request.profile_id, issues=tuple(issues))
+
+        # Create profile directory and key store
+        profile_dir = self._ws.resolve_profile_dir(request.profile_id)
+        key_dir = self._ws.resolve_key_dir(request.profile_id)
+
+        try:
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            key_dir.mkdir(parents=True, exist_ok=True)
+
+            # Write profile.json
+            import json
+
+            data = encode_profile(profile)
+            (profile_dir / "profile.json").write_bytes(
+                json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+            )
+
+            # Write empty manifest
+            (key_dir / "manifest.json").write_bytes(b"{}")
+
+            # Activate if requested
+            if request.activate:
+                repo.activate(request.profile_id)
+
+            logger.info("Created profile %r", request.profile_id)
+        except Exception as exc:
+            issues.append(
+                OperationIssue("config.create_failed", f"Failed to create profile: {exc}")
+            )
+
+        return ConfigCreateResult(profile_id=request.profile_id, issues=tuple(issues))

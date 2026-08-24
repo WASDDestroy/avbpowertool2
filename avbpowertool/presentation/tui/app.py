@@ -109,6 +109,7 @@ class App:
     def _dispatch_action(self, stdscr: curses.window, action_id: str) -> None:
         """Dispatch an action to the appropriate view handler."""
         from avbpowertool.presentation.tui.views import (
+            create_config,
             display_avb_info,
             export_config,
             import_config,
@@ -120,6 +121,7 @@ class App:
         view_map = {
             "action:image.read_info": read_image_info.show,
             "action:image.sign": sign_images.show,
+            "action:config.create": create_config.show,
             "action:config.import": import_config.show,
             "action:config.export": export_config.show,
             "action:view_current_config": display_avb_info.show,

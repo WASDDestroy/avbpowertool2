@@ -18,6 +18,7 @@
       "description_key": "node.config_manager.description",
       "parent": "route:home",
       "items": [
+        {"action": "action:config.create", "shortcut": "C"},
         {"action": "action:config.import", "shortcut": "I"},
         {"action": "action:config.export", "shortcut": "E"},
         {"action": "action:config.library", "shortcut": "M"}
@@ -42,6 +43,10 @@
     "action:image.sign": {
       "label_key": "node.sign_images.name",
       "description_key": "node.sign_images.description"
+    },
+    "action:config.create": {
+      "label_key": "node.create_config.name",
+      "description_key": "node.create_config.description"
     },
     "action:config.import": {
       "label_key": "node.import_config.name",

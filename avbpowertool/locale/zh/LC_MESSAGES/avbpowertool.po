@@ -29,6 +29,12 @@ msgstr "签名镜像"
 msgid "node.sign_images.description"
 msgstr "签名工作目录中的镜像。"
 
+msgid "node.create_config.name"
+msgstr "创建配置"
+
+msgid "node.create_config.description"
+msgstr "使用向导创建新的签名配置。"
+
 msgid "node.import_config.name"
 msgstr "导入配置"
 
@@ -129,6 +135,73 @@ msgstr "警告"
 
 msgid "settings.option.log_level.ERROR"
 msgstr "错误"
+
+# 配置向导
+msgid "config.wizard.enter_id"
+msgstr "输入配置 ID（如 my_device）："
+
+msgid "config.wizard.enter_name"
+msgstr "输入配置显示名称："
+
+msgid "config.wizard.step_partitions"
+msgstr "添加分区"
+
+msgid "config.wizard.current_partitions"
+msgstr "当前分区："
+
+msgid "config.wizard.no_partitions"
+msgstr "尚未添加分区"
+
+msgid "config.wizard.add_partition_hint"
+msgstr "至少需要一个分区才能创建配置。"
+
+msgid "config.wizard.add_partition_confirm"
+msgstr "添加分区？"
+
+msgid "config.wizard.confirm_create"
+msgstr "创建此配置？"
+
+msgid "config.wizard.no_partitions_title"
+msgstr "无分区"
+
+msgid "config.wizard.no_partitions_msg"
+msgstr "没有分区无法创建配置。操作已取消。"
+
+msgid "config.wizard.summary_id"
+msgstr "配置 ID"
+
+msgid "config.wizard.summary_name"
+msgstr "名称"
+
+msgid "config.wizard.summary_partitions"
+msgstr "分区数"
+
+msgid "config.wizard.created"
+msgstr "配置 \"{profile}\" 创建成功。"
+
+msgid "config.wizard.result_title"
+msgstr "创建结果"
+
+msgid "config.wizard.partition_name"
+msgstr "分区名称（如 boot）："
+
+msgid "config.wizard.partition_image"
+msgstr "镜像文件名（留空则为 <name>.img）："
+
+msgid "config.wizard.descriptor_type"
+msgstr "描述符类型："
+
+msgid "config.wizard.algorithm"
+msgstr "签名算法："
+
+msgid "config.wizard.key_id"
+msgstr "密钥 ID（如 release_rsa4096）："
+
+msgid "config.wizard.rollback_index"
+msgstr "回滚索引（默认 0）："
+
+msgid "config.wizard.salt"
+msgstr "Salt（留空自动生成）："
 
 # UI 字符串
 msgid "Exit"

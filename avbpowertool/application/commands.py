@@ -101,6 +101,29 @@ class ConfigValidateResult:
 
 
 # ---------------------------------------------------------------------------
+# Config Create
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ConfigCreateRequest:
+    """Request to create a new profile."""
+
+    profile_id: str
+    profile_name: str
+    partitions: tuple[PartitionConfig, ...] = ()
+    activate: bool = True
+
+
+@dataclass(frozen=True)
+class ConfigCreateResult:
+    """Result of profile creation."""
+
+    profile_id: str
+    issues: tuple[OperationIssue, ...] = ()
+
+
+# ---------------------------------------------------------------------------
 # Config Import / Export
 # ---------------------------------------------------------------------------
 
