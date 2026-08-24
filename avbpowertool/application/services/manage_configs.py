@@ -82,11 +82,9 @@ class ConfigValidateUseCase:
         missing_images: list[str] = []
         missing_keys: list[str] = []
 
-        profile_dir = self._ws.resolve_profile_dir(request.profile_id)
-
         for name, config in profile.partitions.items():
-            # Check image exists
-            image_path = profile_dir / config.image
+            # Check image exists in workspace Images/ directory
+            image_path = self._ws.images / config.image
             if not image_path.exists():
                 missing_images.append(name)
 

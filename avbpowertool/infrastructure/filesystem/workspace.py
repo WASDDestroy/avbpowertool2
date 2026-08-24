@@ -15,9 +15,15 @@ from avbpowertool.domain.errors import WorkspaceError
 
 @dataclass(frozen=True)
 class WorkspacePaths:
-    """Canonical filesystem layout for an AVB Power Tool project."""
+    """Canonical filesystem layout for an AVB Power Tool project.
+
+    Images live at workspace level (not inside profiles) so that
+    configs + keys are portable across devices while images are
+    device-local.
+    """
 
     root: Path  # project root
+    images: Path  # Images/ — workspace-level image working directory
     profiles: Path  # profiles/
     logs: Path  # Logs/
     staging: Path  # .avbpowertool-staging/
@@ -39,6 +45,7 @@ class WorkspacePaths:
 
         return cls(
             root=root_path,
+            images=root_path / "Images",
             profiles=root_path / "profiles",
             logs=root_path / "Logs",
             staging=root_path / ".avbpowertool-staging",
@@ -53,28 +60,27 @@ class WorkspacePaths:
         """Return the key store directory for a given profile."""
         return self.profiles / profile_id / "keys"
 
-    def resolve_image_path(self, image_file: str, profile_id: str) -> Path:
-        """Resolve an image file path under a profile's image directory.
+    def resolve_image_path(self, image_file: str) -> Path:
+        """Resolve an image file path under the workspace Images/ directory.
 
         Automatically appends .img when missing.
-        Raises WorkspaceError if the resolved path escapes the profile dir.
+        Raises WorkspaceError if the resolved path escapes the Images dir.
         """
         if not image_file.endswith(".img"):
             image_file += ".img"
-        profile_dir = self.resolve_profile_dir(profile_id)
-        path = (profile_dir / image_file).resolve()
-        # Safety: ensure the resolved path stays inside the profile dir
+        path = (self.images / image_file).resolve()
         try:
-            path.relative_to(profile_dir.resolve())
+            path.relative_to(self.images.resolve())
         except ValueError as exc:
             raise WorkspaceError(
-                f"Image path escapes profile directory: {path}",
+                f"Image path escapes Images directory: {path}",
                 error_code="workspace.path_escape",
             ) from exc
         return path
 
     def ensure_dirs(self) -> None:
         """Create runtime directories that must exist."""
+        self.images.mkdir(parents=True, exist_ok=True)
         self.profiles.mkdir(parents=True, exist_ok=True)
         self.logs.mkdir(parents=True, exist_ok=True)
         self.staging.mkdir(parents=True, exist_ok=True)

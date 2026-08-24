@@ -18,22 +18,20 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
 
     stdscr_c: curses.window = stdscr  # type: ignore[assignment]
 
-    # Find images in profile directory
+    # Find images in workspace Images/ directory
     active_id = _get_active_profile(ws)
-    profile_dir = ws.resolve_profile_dir(active_id)
 
-    if not profile_dir.exists():
-        message_screen(stdscr_c, "Read Image Info", ["No active profile found."])
+    if not ws.images.exists():
+        message_screen(stdscr_c, "Read Image Info", ["No Images/ directory found."])
         return
 
-    # Scan for .img files
     images: list[str] = []
-    for f in sorted(profile_dir.iterdir()):
+    for f in sorted(ws.images.iterdir()):
         if f.suffix == ".img" and f.is_file():
             images.append(f.stem)
 
     if not images:
-        message_screen(stdscr_c, "Read Image Info", ["No .img files found in profile directory."])
+        message_screen(stdscr_c, "Read Image Info", ["No .img files found in Images/ directory."])
         return
 
     # Multi-select

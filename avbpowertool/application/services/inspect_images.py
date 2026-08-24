@@ -50,10 +50,10 @@ class InspectImagesUseCase:
 
         return InspectImagesResult(images=tuple(images), issues=tuple(issues))
 
-    def _resolve_image(self, name: str, profile_id: str) -> Path | None:
+    def _resolve_image(self, name: str, _profile_id: str) -> Path | None:
         """Resolve image path. Returns None if not found."""
         try:
-            path = self._ws.resolve_image_path(name, profile_id)
+            path = self._ws.resolve_image_path(name)
             if path.exists():
                 return path
         except Exception:

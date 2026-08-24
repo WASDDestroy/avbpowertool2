@@ -68,6 +68,7 @@ def tmp_workspace(tmp_path: Path) -> Path:
     Layout:
       tmp_path/
         avbtool.py               (empty placeholder)
+        Images/                   (workspace-level image directory)
         profiles/
           current/
             profile.json
@@ -77,6 +78,7 @@ def tmp_workspace(tmp_path: Path) -> Path:
         .avbpowertool-staging/
     """
     ws = tmp_path
+    (ws / "Images").mkdir()
     (ws / "profiles").mkdir()
     (ws / "Logs").mkdir()
     (ws / ".avbpowertool-staging").mkdir()

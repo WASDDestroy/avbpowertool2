@@ -24,13 +24,7 @@ from avbpowertool.infrastructure.persistence.profile_repository import ProfileRe
 
 
 def _setup_profile(tmp_path: Path) -> WorkspacePaths:
-    ws = WorkspacePaths(
-        root=tmp_path,
-        profiles=tmp_path / "profiles",
-        logs=tmp_path / "Logs",
-        staging=tmp_path / ".avbpowertool-staging",
-        avbtool_script=tmp_path / "avbtool.py",
-    )
+    ws = WorkspacePaths.discover(tmp_path)
     ws.ensure_dirs()
     profile_dir = ws.resolve_profile_dir("test")
     profile_dir.mkdir(parents=True, exist_ok=True)

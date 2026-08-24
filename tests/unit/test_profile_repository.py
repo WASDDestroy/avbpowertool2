@@ -20,13 +20,7 @@ from avbpowertool.infrastructure.persistence.profile_repository import ProfileRe
 
 
 def _make_workspace(tmp_path: Path) -> WorkspacePaths:
-    ws = WorkspacePaths(
-        root=tmp_path,
-        profiles=tmp_path / "profiles",
-        logs=tmp_path / "Logs",
-        staging=tmp_path / ".avbpowertool-staging",
-        avbtool_script=tmp_path / "avbtool.py",
-    )
+    ws = WorkspacePaths.discover(tmp_path)
     ws.ensure_dirs()
     return ws
 

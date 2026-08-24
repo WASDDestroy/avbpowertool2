@@ -20,13 +20,7 @@ from avbpowertool.infrastructure.persistence.profile_repository import ProfileRe
 
 
 def _setup_profiles(tmp_path: Path) -> WorkspacePaths:
-    ws = WorkspacePaths(
-        root=tmp_path,
-        profiles=tmp_path / "profiles",
-        logs=tmp_path / "Logs",
-        staging=tmp_path / ".avbpowertool-staging",
-        avbtool_script=tmp_path / "avbtool.py",
-    )
+    ws = WorkspacePaths.discover(tmp_path)
     ws.ensure_dirs()
     repo = ProfileRepository(ws)
     for pid, name in [("alpha", "Alpha"), ("beta", "Beta")]:
@@ -63,13 +57,7 @@ class TestProfileListUseCase:
         assert active[0].profile_id == "alpha"
 
     def test_list_empty(self, tmp_path: Path) -> None:
-        ws = WorkspacePaths(
-            root=tmp_path,
-            profiles=tmp_path / "profiles",
-            logs=tmp_path / "Logs",
-            staging=tmp_path / ".avbpowertool-staging",
-            avbtool_script=tmp_path / "avbtool.py",
-        )
+        ws = WorkspacePaths.discover(tmp_path)
         ws.ensure_dirs()
         uc = ProfileListUseCase(ws)
         result = uc.execute(ProfileListRequest())

@@ -26,28 +26,26 @@ SAMPLE_NO_FOOTER = (
 def _make_workspace(tmp_path: Path) -> WorkspacePaths:
     ws = WorkspacePaths(
         root=tmp_path,
+        images=tmp_path / "Images",
         profiles=tmp_path / "profiles",
         logs=tmp_path / "Logs",
         staging=tmp_path / ".avbpowertool-staging",
         avbtool_script=tmp_path / "avbtool.py",
     )
     ws.ensure_dirs()
-    profile_dir = ws.resolve_profile_dir("current")
-    profile_dir.mkdir(parents=True, exist_ok=True)
     return ws
 
 
 class TestInspectImagesUseCase:
     def test_inspect_hash_image(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)
-        profile_dir = ws.resolve_profile_dir("current")
-        (profile_dir / "boot.img").write_bytes(b"fake boot image")
+        (ws.images / "boot.img").write_bytes(b"fake boot image")
 
         fake_avb = FakeAvbTool(
             {"inspect_image": AvbToolResult(0, SAMPLE_HASH, "", "info_image")}
         )
         uc = InspectImagesUseCase(ws, fake_avb)
-        result = uc.execute(InspectImagesRequest(image_names=("boot",), profile_id="current"))
+        result = uc.execute(InspectImagesRequest(image_names=("boot",)))
 
         assert len(result.images) == 1
         img = result.images[0]
@@ -59,16 +57,13 @@ class TestInspectImagesUseCase:
 
     def test_inspect_vbmeta_image(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)
-        profile_dir = ws.resolve_profile_dir("current")
-        (profile_dir / "vbmeta.img").write_bytes(b"fake vbmeta")
+        (ws.images / "vbmeta.img").write_bytes(b"fake vbmeta")
 
         fake_avb = FakeAvbTool(
             {"inspect_image": AvbToolResult(0, SAMPLE_VBMETA, "", "info_image")}
         )
         uc = InspectImagesUseCase(ws, fake_avb)
-        result = uc.execute(
-            InspectImagesRequest(image_names=("vbmeta",), profile_id="current")
-        )
+        result = uc.execute(InspectImagesRequest(image_names=("vbmeta",)))
 
         assert len(result.images) == 1
         assert result.images[0].descriptor == DescriptorType.VBMETA
@@ -78,25 +73,20 @@ class TestInspectImagesUseCase:
         ws = _make_workspace(tmp_path)
         fake_avb = FakeAvbTool()
         uc = InspectImagesUseCase(ws, fake_avb)
-        result = uc.execute(
-            InspectImagesRequest(image_names=("nonexistent",), profile_id="current")
-        )
+        result = uc.execute(InspectImagesRequest(image_names=("nonexistent",)))
 
         assert len(result.images) == 0
         assert any(i.error_code == "image.not_found" for i in result.issues)
 
     def test_inspect_no_vbmeta_structure(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)
-        profile_dir = ws.resolve_profile_dir("current")
-        (profile_dir / "raw.img").write_bytes(b"raw image")
+        (ws.images / "raw.img").write_bytes(b"raw image")
 
         fake_avb = FakeAvbTool(
             {"inspect_image": AvbToolResult(1, "", SAMPLE_NO_FOOTER, "info_image")}
         )
         uc = InspectImagesUseCase(ws, fake_avb)
-        result = uc.execute(
-            InspectImagesRequest(image_names=("raw",), profile_id="current")
-        )
+        result = uc.execute(InspectImagesRequest(image_names=("raw",)))
 
         assert len(result.images) == 1
         assert result.images[0].descriptor is None
@@ -104,18 +94,13 @@ class TestInspectImagesUseCase:
 
     def test_inspect_multiple_images(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)
-        profile_dir = ws.resolve_profile_dir("current")
-        (profile_dir / "boot.img").write_bytes(b"fake boot")
-        (profile_dir / "vbmeta.img").write_bytes(b"fake vbmeta")
+        (ws.images / "boot.img").write_bytes(b"fake boot")
+        (ws.images / "vbmeta.img").write_bytes(b"fake vbmeta")
 
         fake_avb = FakeAvbTool(
             {"inspect_image": AvbToolResult(0, SAMPLE_HASH, "", "info_image")}
         )
         uc = InspectImagesUseCase(ws, fake_avb)
-        result = uc.execute(
-            InspectImagesRequest(
-                image_names=("boot", "vbmeta"), profile_id="current"
-            )
-        )
+        result = uc.execute(InspectImagesRequest(image_names=("boot", "vbmeta")))
 
         assert len(result.images) == 2

@@ -10,13 +10,7 @@ from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 
 
 def _setup_key_dir(tmp_path: Path) -> WorkspacePaths:
-    ws = WorkspacePaths(
-        root=tmp_path,
-        profiles=tmp_path / "profiles",
-        logs=tmp_path / "Logs",
-        staging=tmp_path / ".avbpowertool-staging",
-        avbtool_script=tmp_path / "avbtool.py",
-    )
+    ws = WorkspacePaths.discover(tmp_path)
     ws.ensure_dirs()
     key_dir = ws.resolve_key_dir("current")
     key_dir.mkdir(parents=True, exist_ok=True)
@@ -47,13 +41,7 @@ class TestKeyDiscoveryUseCase:
         assert len(result.manifest_entries) == 0
 
     def test_discover_nonexistent_directory(self, tmp_path: Path) -> None:
-        ws = WorkspacePaths(
-            root=tmp_path,
-            profiles=tmp_path / "profiles",
-            logs=tmp_path / "Logs",
-            staging=tmp_path / ".avbpowertool-staging",
-            avbtool_script=tmp_path / "avbtool.py",
-        )
+        ws = WorkspacePaths.discover(tmp_path)
         ws.ensure_dirs()
         uc = KeyDiscoveryUseCase(ws)
         result = uc.execute(KeyDiscoveryRequest(profile_id="nonexistent"))

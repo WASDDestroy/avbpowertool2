@@ -64,8 +64,7 @@ class SignImagesUseCase:
             )
 
         # Build signing plan
-        profile_dir = self._ws.resolve_profile_dir(request.profile_id)
-        image_dir = profile_dir
+        image_dir = self._ws.images
         key_dir = self._ws.resolve_key_dir(request.profile_id)
         staging_dir = self._ws.staging / f"sign-{request.profile_id}"
 
@@ -236,11 +235,12 @@ class SignImagesUseCase:
                 self._avb.erase_footer(Path(step.input_path))
 
     def _commit_staging(self, staging_dir: Path, profile_id: str) -> None:
-        """Atomically move staging results to profile image directory."""
-        profile_dir = self._ws.resolve_profile_dir(profile_id)
+        """Atomically move staging results to workspace Images/ directory."""
+        images_dir = self._ws.images
+        images_dir.mkdir(parents=True, exist_ok=True)
         for staged_file in staging_dir.iterdir():
             if staged_file.is_file():
-                target = profile_dir / staged_file.name
+                target = images_dir / staged_file.name
                 try:
                     shutil.move(str(staged_file), str(target))
                     logger.info("Committed %s to %s", staged_file.name, target)

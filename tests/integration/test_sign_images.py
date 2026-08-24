@@ -20,13 +20,7 @@ from tests.conftest import FakeAvbTool
 
 
 def _setup_profile(tmp_path: Path) -> WorkspacePaths:
-    ws = WorkspacePaths(
-        root=tmp_path,
-        profiles=tmp_path / "profiles",
-        logs=tmp_path / "Logs",
-        staging=tmp_path / ".avbpowertool-staging",
-        avbtool_script=tmp_path / "avbtool.py",
-    )
+    ws = WorkspacePaths.discover(tmp_path)
     ws.ensure_dirs()
 
     profile_dir = ws.resolve_profile_dir("current")
@@ -34,8 +28,8 @@ def _setup_profile(tmp_path: Path) -> WorkspacePaths:
     key_dir = profile_dir / "keys"
     key_dir.mkdir()
 
-    # Create image files
-    (profile_dir / "boot.img").write_bytes(b"fake boot image")
+    # Create image files in workspace-level Images/
+    (ws.images / "boot.img").write_bytes(b"fake boot image")
 
     # Create key files
     (key_dir / "testkey.pem").write_text("fake key", encoding="utf-8")
