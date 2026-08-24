@@ -38,7 +38,6 @@ class TestSubprocessAvbTool:
         # by checking the _run method's behavior via a real subprocess that fails
         result = tool.add_hash_footer(
             Path("/img/boot.img"),
-            Path("/staging/boot.img"),
             partition_name="boot",
             algorithm="SHA256_RSA4096",
             key_path=Path("/secret/keys/test.pem"),
@@ -68,7 +67,6 @@ class TestSubprocessAvbTool:
 
         result = tool.add_hash_footer(
             Path("/img/boot.img"),
-            Path("/staging/boot.img"),
             partition_name="boot",
             algorithm="NONE",
             key_path=None,

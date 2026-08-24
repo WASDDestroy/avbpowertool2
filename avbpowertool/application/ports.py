@@ -26,8 +26,8 @@ class AvbToolResult:
 class AvbToolPort(Protocol):
     """Contract for invoking the bundled avbtool.py."""
 
-    def inspect_image(self, image_path: Path) -> AvbToolResult:
-        """Run avbtool.py info_image --image <image_path>."""
+    def inspect_image(self, image_path: Path, cert: bool = False) -> AvbToolResult:
+        """Run avbtool.py info_image --image <image_path> [--cert]."""
         ...
 
     def erase_footer(self, image_path: Path) -> AvbToolResult:
@@ -37,7 +37,6 @@ class AvbToolPort(Protocol):
     def add_hash_footer(
         self,
         image_path: Path,
-        output_path: Path,
         *,
         partition_name: str,
         algorithm: str,
@@ -47,7 +46,7 @@ class AvbToolPort(Protocol):
         flags: int = 0,
         props: tuple[tuple[str, str], ...] = (),
     ) -> AvbToolResult:
-        """Run avbtool.py add_hash_footer.
+        """Run avbtool.py add_hash_footer (modifies ``image_path`` in place).
 
         ``key_path`` may be None for unsigned (NONE algorithm) footers.
         """
@@ -56,19 +55,17 @@ class AvbToolPort(Protocol):
     def add_hashtree_footer(
         self,
         image_path: Path,
-        output_path: Path,
         *,
         partition_name: str,
         algorithm: str,
         key_path: Path | None = None,
         salt: str,
         rollback_index: int,
-        data_block_size: int = 4096,
-        hash_block_size: int = 4096,
+        block_size: int = 4096,
         flags: int = 0,
         props: tuple[tuple[str, str], ...] = (),
     ) -> AvbToolResult:
-        """Run avbtool.py add_hashtree_footer.
+        """Run avbtool.py add_hashtree_footer (modifies ``image_path`` in place).
 
         ``key_path`` may be None for unsigned (NONE algorithm) footers.
         """

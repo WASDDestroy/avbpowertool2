@@ -135,6 +135,8 @@ avbpowertool image sign boot vbmeta --execute --yes  # 执行
 ### Hash 分区
 
 用于小型镜像（boot、init_boot、dtbo）。使用 `add_hash_footer`。
+hash footer 必须指定 `partition_size`（或启用 `dynamic_partition_size`），
+否则 avbtool 会拒绝执行。
 
 ```python
 PartitionConfig(
@@ -143,14 +145,16 @@ PartitionConfig(
     algorithm=SigningAlgorithm.SHA256_RSA4096,
     key_id="my_key",
     partition_name="boot",
+    partition_size=67108864,      # 必须：分区大小（字节），4096 的整数倍
     rollback_index=0,
-    salt="optional_hex_salt",
+    salt="optional_hex_salt",     # 留空则 avbtool 生成随机盐
 )
 ```
 
 ### Hashtree 分区
 
 用于大型镜像（system、vendor、product）。使用 `add_hashtree_footer`，带 dm-verity 和 FEC。
+v3 起只有一个 `block_size`（默认 4096），不再区分 data/hash 块大小。
 
 ```python
 PartitionConfig(
@@ -159,8 +163,9 @@ PartitionConfig(
     algorithm=SigningAlgorithm.SHA256_RSA4096,
     key_id="my_key",
     partition_name="system",
-    data_block_size=4096,
-    hash_block_size=4096,
+    block_size=4096,              # --block_size（默认 4096）
+    fec_num_roots=2,              # --fec_num_roots（默认 2）
+    do_not_generate_fec=False,    # 设为 True 则跳过 FEC 生成
 )
 ```
 
@@ -186,7 +191,7 @@ PartitionConfig(
 
 ```
 profiles/my_device/
-  profile.json        # v2 配置 schema
+  profile.json        # v3 配置 schema
   keys/
     manifest.json     # key_id -> 文件名映射
     release.pem       # 密钥文件（需要你添加）
@@ -194,11 +199,11 @@ profiles/my_device/
   vbmeta.img
 ```
 
-## 配置 v2 Schema 参考
+## 配置 v3 Schema 参考
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "profile": {
     "id": "my_device",
     "name": "我的设备 ROM"
@@ -211,6 +216,7 @@ profiles/my_device/
       "algorithm": "SHA256_RSA4096",
       "key_id": "release_rsa4096",
       "partition_name": "boot",
+      "partition_size": 67108864,
       "rollback_index": 0,
       "salt": "",
       "flags": 0,
@@ -220,10 +226,49 @@ profiles/my_device/
 }
 ```
 
+## 从 v2 迁移到 v3
+
+v3 的主要变化：hash 分区新增 `partition_size` / `dynamic_partition_size`；
+`data_block_size` + `hash_block_size` 合并为 `block_size`；
+`kernel_cmdline`（单字符串）改为 `kernel_cmdlines`（字符串数组）；
+新增 FEC、`calc_max_image_size`、`output_vbmeta_image`、`use_persistent_digest`、
+`chain_partitions_do_not_use_ab`、`padding_size`、`prop_from_file`、
+`signing_helper` / `signing_helper_with_files`、`public_key_metadata`、
+`append_to_release_string` 等字段。
+
+读取 v2 配置时 AVBPowerTool2 会在内存中自动迁移（v2 文件本身不变）。
+要把 v2 文件就地升级为 v3，运行：
+
+```shell
+avbpowertool config migrate [--profile ID]
+```
+
+### 快速修改单个字段
+
+```shell
+# 修改 boot 分区大小、回滚索引、内核 cmdline（逗号分隔）等
+avbpowertool config edit boot --profile current \
+  --set partition_size=67108864 --set rollback_index=1 \
+  --set kernel_cmdlines=androidboot.avb.test=1
+```
+
+可编辑字段：`partition_size`、`rollback_index`、`rollback_index_location`、`flags`、
+`block_size`、`fec_num_roots`、`padding_size`（整数）；`salt`、`hash_algorithm`、
+`output_vbmeta_image`、`setup_rootfs_from_kernel`、`signing_helper`、
+`signing_helper_with_files`、`public_key_metadata`、`append_to_release_string`（字符串）；
+`dynamic_partition_size`、`do_not_generate_fec`、`calc_max_image_size`、
+`do_not_append_vbmeta_image`、`no_hashtree`、`check_at_most_once`、
+`use_persistent_digest`、`do_not_use_ab`、`set_hashtree_disabled_flag`、
+`set_verification_disabled_flag`、`print_required_libavb_version`、
+`setup_as_rootfs_from_kernel`（布尔）；`kernel_cmdlines`、`chain_partitions`、
+`chain_partitions_do_not_use_ab`、`included_partitions`、
+`include_descriptors_from_image`（逗号分隔数组）。
+
 ## 无签名（NONE）分区
 
-v2 支持 `SigningAlgorithm.NONE`：分区仍会添加 hash / hashtree footer 或 vbmeta 内容，
+v3 支持 `SigningAlgorithm.NONE`：分区仍会添加 hash / hashtree footer 或 vbmeta 内容，
 但**不**附加 `--algorithm` / `--key`，因此 avbtool 不计算哈希/签名（等价于未签名镜像）。
+NONE hash 分区同样需要 `partition_size` 或 `dynamic_partition_size`。
 
 ```python
 PartitionConfig(
@@ -232,6 +277,7 @@ PartitionConfig(
     algorithm=SigningAlgorithm.NONE,   # 无签名
     key_id="",                          # NONE 分区无需 key_id
     partition_name="dtbo",
+    partition_size=4194304,             # NONE 也需要分区大小
 )
 ```
 
@@ -240,7 +286,7 @@ vbmeta 的 `included_partitions` / `chain_partitions` 可以引用 NONE 分区�
 
 ## 导入旧版 v1 配置
 
-v1（AVBPowerTool 1.x）导出的配置 zip 可以自动转换为 v2 配置：
+v1（AVBPowerTool 1.x）导出的配置 zip 可以自动转换为 v3 配置：
 
 - **TUI**：Settings 页 → `[I] Import v1 legacy config`，选择根目录的 v1 zip。
 - **CLI**：`avbpowertool config import-legacy <archive> [--name ID] [--no-activate] [--json]`。

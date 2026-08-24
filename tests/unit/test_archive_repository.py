@@ -70,7 +70,7 @@ class TestArchiveRepositoryExport:
             manifest = json.loads(zf.read("manifest.json"))
             assert manifest["format_version"] == 1
             assert manifest["profile_id"] == "test"
-            assert manifest["schema_version"] == 2
+            assert manifest["schema_version"] == 3
             file_paths = {e["path"] for e in manifest["files"]}
             assert "profile.json" in file_paths
             assert all("sha256" in e for e in manifest["files"])

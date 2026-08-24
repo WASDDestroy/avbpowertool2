@@ -6,16 +6,21 @@ import json
 import logging
 import re
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
 from avbpowertool.application.commands import (
     ConfigCreateRequest,
     ConfigCreateResult,
+    ConfigEditRequest,
+    ConfigEditResult,
     ConfigExportRequest,
     ConfigExportResult,
     ConfigImportRequest,
     ConfigImportResult,
+    ConfigMigrateRequest,
+    ConfigMigrateResult,
     ConfigShowRequest,
     ConfigShowResult,
     ConfigValidateRequest,
@@ -30,7 +35,10 @@ from avbpowertool.infrastructure.persistence.archive_repository import (
     ArchiveRepository,
 )
 from avbpowertool.infrastructure.persistence.key_repository import KeyRepository
-from avbpowertool.infrastructure.persistence.profile_codec import encode_profile
+from avbpowertool.infrastructure.persistence.profile_codec import (
+    decode_profile_with_issues,
+    encode_profile,
+)
 from avbpowertool.infrastructure.persistence.profile_repository import (
     ProfileRepository,
 )
@@ -237,7 +245,7 @@ class LegacyConfigImportUseCase:
             profile = AvbProfile(
                 id=profile_id,
                 name=profile_name,
-                schema_version=2,
+                schema_version=3,
                 key_store_path="keys",
                 partitions=profile.partitions,
             )
@@ -404,3 +412,224 @@ class ConfigCreateUseCase:
             )
 
         return ConfigCreateResult(profile_id=request.profile_id, issues=tuple(issues))
+
+
+# ---------------------------------------------------------------------------
+# Config migration (v2 -> v3)
+# ---------------------------------------------------------------------------
+
+
+class ConfigMigrateUseCase:
+    """Upgrade a profile on disk to the current schema version.
+
+    v2 profiles are migrated in memory (``decode_profile_with_issues``)
+    and re-saved as v3.  v3 profiles are left untouched.
+    """
+
+    def __init__(self, workspace: WorkspacePaths) -> None:
+        self._ws = workspace
+
+    def execute(self, request: ConfigMigrateRequest) -> ConfigMigrateResult:
+        issues: list[OperationIssue] = []
+        profile_path = self._ws.resolve_profile_dir(request.profile_id) / "profile.json"
+        if not profile_path.exists():
+            issues.append(
+                OperationIssue("config.not_found", f"Profile not found: {request.profile_id}")
+            )
+            return ConfigMigrateResult(profile_id=request.profile_id, issues=tuple(issues))
+
+        try:
+            with open(profile_path, encoding="utf-8") as f:
+                data: dict[str, Any] = json.load(f)
+        except (OSError, json.JSONDecodeError) as exc:
+            issues.append(
+                OperationIssue(
+                    "config.parse_error",
+                    f"Failed to read profile {request.profile_id!r}: {exc}",
+                )
+            )
+            return ConfigMigrateResult(profile_id=request.profile_id, issues=tuple(issues))
+
+        schema_version = data.get("schema_version", 0)
+        if schema_version == 3:
+            return ConfigMigrateResult(profile_id=request.profile_id, migrated=False)
+
+        if schema_version != 2:
+            issues.append(
+                OperationIssue(
+                    "config.invalid_schema_version",
+                    f"Unsupported schema_version {schema_version}; only v2 and v3 can be handled",
+                )
+            )
+            return ConfigMigrateResult(profile_id=request.profile_id, issues=tuple(issues))
+
+        try:
+            profile, migration_issues = decode_profile_with_issues(data)
+            issues.extend(migration_issues)
+            # Rewrite the migrated dict back to the same file (in-place),
+            # regardless of the profile id embedded in the JSON.
+            v3_data = encode_profile(profile)
+            profile_path.write_text(
+                json.dumps(v3_data, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            logger.info("Migrated profile %r to schema v3", request.profile_id)
+        except Exception as exc:
+            issues.append(OperationIssue("config.migrate_failed", f"Migration failed: {exc}"))
+            return ConfigMigrateResult(profile_id=request.profile_id, issues=tuple(issues))
+
+        return ConfigMigrateResult(
+            profile_id=request.profile_id,
+            migrated=True,
+            issues=tuple(issues),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Config field editing
+# ---------------------------------------------------------------------------
+
+#: PartitionConfig fields editable via ``config edit --set``.
+_INT_FIELDS = frozenset(
+    {
+        "partition_size",
+        "rollback_index",
+        "rollback_index_location",
+        "flags",
+        "block_size",
+        "fec_num_roots",
+        "padding_size",
+    }
+)
+_BOOL_FIELDS = frozenset(
+    {
+        "dynamic_partition_size",
+        "do_not_generate_fec",
+        "calc_max_image_size",
+        "do_not_append_vbmeta_image",
+        "no_hashtree",
+        "check_at_most_once",
+        "setup_as_rootfs_from_kernel",
+        "use_persistent_digest",
+        "do_not_use_ab",
+        "set_hashtree_disabled_flag",
+        "set_verification_disabled_flag",
+        "print_required_libavb_version",
+    }
+)
+_STR_FIELDS = frozenset(
+    {
+        "salt",
+        "hash_algorithm",
+        "output_vbmeta_image",
+        "setup_rootfs_from_kernel",
+        "signing_helper",
+        "signing_helper_with_files",
+        "public_key_metadata",
+        "append_to_release_string",
+    }
+)
+_TUPLE_FIELDS = frozenset(
+    {
+        "kernel_cmdlines",
+        "chain_partitions",
+        "chain_partitions_do_not_use_ab",
+        "included_partitions",
+        "include_descriptors_from_image",
+    }
+)
+
+
+class ConfigEditUseCase:
+    """Update individual fields of one partition config.
+
+    ``updates`` values are strings; they are parsed according to the
+    field's type.  Unknown or unsupported fields produce issues.
+    """
+
+    def __init__(self, workspace: WorkspacePaths) -> None:
+        self._ws = workspace
+
+    def execute(self, request: ConfigEditRequest) -> ConfigEditResult:
+        issues: list[OperationIssue] = []
+        repo = ProfileRepository(self._ws)
+
+        try:
+            profile = repo.load(request.profile_id)
+        except Exception as exc:
+            issues.append(OperationIssue("config.not_found", f"Failed to load profile: {exc}"))
+            return ConfigEditResult(
+                profile_id=request.profile_id,
+                partition_name=request.partition_name,
+                issues=tuple(issues),
+            )
+
+        config = profile.partitions.get(request.partition_name)
+        if config is None:
+            issues.append(
+                OperationIssue(
+                    "config.partition_missing",
+                    f"Partition not in profile: {request.partition_name}",
+                )
+            )
+            return ConfigEditResult(
+                profile_id=request.profile_id,
+                partition_name=request.partition_name,
+                issues=tuple(issues),
+            )
+
+        parsed: dict[str, Any] = {}
+        for field_name, raw_value in request.updates.items():
+            parsed_value = self._parse_field(field_name, raw_value)
+            if parsed_value is _UNSUPPORTED:
+                issues.append(
+                    OperationIssue(
+                        "config.invalid_field",
+                        f"Field {field_name!r} is not editable via config edit",
+                    )
+                )
+            else:
+                parsed[field_name] = parsed_value
+
+        if issues:
+            return ConfigEditResult(
+                profile_id=request.profile_id,
+                partition_name=request.partition_name,
+                issues=tuple(issues),
+            )
+
+        new_config = replace(config, **parsed)
+        new_partitions = dict(profile.partitions)
+        new_partitions[request.partition_name] = new_config
+        new_profile = replace(profile, partitions=new_partitions)
+
+        try:
+            repo.save(new_profile)
+        except Exception as exc:
+            issues.append(OperationIssue("config.save_failed", f"Failed to save profile: {exc}"))
+
+        return ConfigEditResult(
+            profile_id=request.profile_id,
+            partition_name=request.partition_name,
+            issues=tuple(issues),
+        )
+
+    @staticmethod
+    def _parse_field(field_name: str, raw_value: str) -> Any:
+        """Parse a raw string value for a known field."""
+        if field_name in _INT_FIELDS:
+            try:
+                return int(raw_value)
+            except ValueError:
+                return _UNSUPPORTED
+        if field_name in _BOOL_FIELDS:
+            return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+        if field_name in _STR_FIELDS:
+            return raw_value
+        if field_name in _TUPLE_FIELDS:
+            items = [item.strip() for item in raw_value.split(",") if item.strip()]
+            return tuple(items)
+        return _UNSUPPORTED
+
+
+#: sentinel returned when a field cannot be parsed / is not editable
+_UNSUPPORTED = object()

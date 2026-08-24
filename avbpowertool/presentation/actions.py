@@ -22,6 +22,8 @@ class ActionId(StrEnum):
     CONFIG_EXPORT = "config.export"
     CONFIG_ACTIVATE = "config.activate"
     CONFIG_LIST = "config.list"
+    CONFIG_MIGRATE = "config.migrate"
+    CONFIG_EDIT = "config.edit"
     SETTINGS_VIEW = "settings.view"
     SETTINGS_CHECK_L10N = "settings.check_l10n"
     VIEW_CURRENT_CONFIG = "view_current_config"

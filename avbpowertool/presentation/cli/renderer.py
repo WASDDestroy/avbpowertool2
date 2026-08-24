@@ -7,8 +7,10 @@ import sys
 from typing import Any, TextIO
 
 from avbpowertool.application.commands import (
+    ConfigEditResult,
     ConfigExportResult,
     ConfigImportResult,
+    ConfigMigrateResult,
     ConfigShowResult,
     ConfigValidateResult,
     InspectImagesResult,
@@ -317,6 +319,54 @@ def render_profile_activate(
 
     if not result.issues:
         _emit_text(f"Activated profile: {result.profile_id}", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+# ---------------------------------------------------------------------------
+# Config migrate / edit
+# ---------------------------------------------------------------------------
+
+
+def render_config_migrate(
+    result: ConfigMigrateResult, as_json: bool, out: TextIO = sys.stdout
+) -> None:
+    if as_json:
+        _emit_json(
+            {
+                "profile_id": result.profile_id,
+                "migrated": result.migrated,
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if result.migrated and not result.issues:
+        _emit_text(f"Migrated profile '{result.profile_id}' to schema v3.", out)
+    elif not result.migrated and not result.issues:
+        _emit_text(f"Profile '{result.profile_id}' is already up to date (v3).", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_config_edit(result: ConfigEditResult, as_json: bool, out: TextIO = sys.stdout) -> None:
+    if as_json:
+        _emit_json(
+            {
+                "profile_id": result.profile_id,
+                "partition_name": result.partition_name,
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if not result.issues:
+        _emit_text(
+            f"Updated partition '{result.partition_name}' in profile '{result.profile_id}'.",
+            out,
+        )
     for iss in result.issues:
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
 

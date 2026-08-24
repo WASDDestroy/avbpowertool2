@@ -158,7 +158,7 @@ def decode_v1_image_info(
     raw: dict[str, Any],
     config_id: str,
 ) -> tuple[AvbProfile, list[OperationIssue]]:
-    """Convert a v1 ``imageInfo.json`` dict to a v2 AvbProfile.
+    """Convert a v1 ``imageInfo.json`` dict to a v3 AvbProfile.
 
     ``config_id`` becomes the profile id and name. Returns conversion
     warnings/issues alongside the profile.
@@ -182,7 +182,7 @@ def decode_v1_image_info(
     profile = AvbProfile(
         id=config_id,
         name=config_id,
-        schema_version=2,
+        schema_version=3,
         key_store_path="keys",
         partitions=partitions,
     )
@@ -204,8 +204,18 @@ def _decode_partition(
     salt = str(entry.get("Salt") or "")
     hash_algorithm = str(entry.get("Hash Algorithm") or "sha256")
     props = _parse_props(entry.get("Props"))
+    # v1 kept separate data/hash block sizes; v3 uses one --block_size.
     data_block_size = _parse_block_size(entry.get("Data Block Size"))
     hash_block_size = _parse_block_size(entry.get("Hash Block Size"))
+    block_size = data_block_size or hash_block_size
+    if data_block_size and hash_block_size and data_block_size != hash_block_size:
+        issues.append(
+            OperationIssue(
+                "import.legacy.block_size_conflict",
+                f"Partition {name!r}: data/hash block sizes differ "
+                f"({data_block_size} vs {hash_block_size}); using {data_block_size}",
+            )
+        )
 
     included_partitions: tuple[str, ...] = ()
     chain_partitions: tuple[str, ...] = ()
@@ -229,8 +239,7 @@ def _decode_partition(
             hash_algorithm=hash_algorithm,
             included_partitions=included_partitions,
             chain_partitions=chain_partitions,
-            data_block_size=data_block_size,
-            hash_block_size=hash_block_size,
+            block_size=block_size,
         ),
         issues,
     )

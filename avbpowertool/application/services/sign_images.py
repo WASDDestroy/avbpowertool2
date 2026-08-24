@@ -114,7 +114,13 @@ class SignImagesUseCase:
                 )
             )
 
-            success = self._execute_step(step)
+            # Footer commands modify their input in place, so the original
+            # image must first be copied to the staging path.
+            staged = True
+            if step.operation in ("add_hash_footer", "add_hashtree_footer"):
+                staged = self._stage_input(step)
+
+            success = staged and self._execute_step(step)
 
             if success:
                 success_count += 1
@@ -160,6 +166,22 @@ class SignImagesUseCase:
             issues=tuple(issues),
         )
 
+    def _stage_input(self, step: SigningStep) -> bool:
+        """Copy the original image to the staging path for in-place footers.
+
+        Returns False (and logs) when the copy fails.
+        """
+        try:
+            src = Path(step.input_path)
+            dst = Path(step.output_path)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            logger.info("Staged %s -> %s", src, dst)
+            return True
+        except OSError as exc:
+            logger.error("Failed to stage %s: %s", step.input_path, exc)
+            return False
+
     def _execute_step(self, step: SigningStep) -> bool:
         """Execute a single signing step. Returns True on success."""
         result = self._dispatch_to_avb(step)
@@ -202,7 +224,6 @@ class SignImagesUseCase:
         if operation == "add_hash_footer":
             return self._avb.add_hash_footer(
                 Path("/"),
-                Path("/"),
                 partition_name="",
                 algorithm="",
                 key_path=Path("/"),
@@ -211,7 +232,6 @@ class SignImagesUseCase:
             )
         elif operation == "add_hashtree_footer":
             return self._avb.add_hashtree_footer(
-                Path("/"),
                 Path("/"),
                 partition_name="",
                 algorithm="",

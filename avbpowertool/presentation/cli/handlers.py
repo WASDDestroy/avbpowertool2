@@ -7,8 +7,10 @@ from argparse import Namespace
 from typing import TextIO
 
 from avbpowertool.application.commands import (
+    ConfigEditRequest,
     ConfigExportRequest,
     ConfigImportRequest,
+    ConfigMigrateRequest,
     ConfigShowRequest,
     ConfigValidateRequest,
     InspectImagesRequest,
@@ -19,8 +21,10 @@ from avbpowertool.application.commands import (
 )
 from avbpowertool.application.services.inspect_images import InspectImagesUseCase
 from avbpowertool.application.services.manage_configs import (
+    ConfigEditUseCase,
     ConfigExportUseCase,
     ConfigImportUseCase,
+    ConfigMigrateUseCase,
     ConfigShowUseCase,
     ConfigValidateUseCase,
     LegacyConfigImportUseCase,
@@ -35,6 +39,8 @@ from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.presentation.actions import ActionId
 from avbpowertool.presentation.cli.renderer import (
     exit_code_from_issues,
+    render_config_edit,
+    render_config_migrate,
     render_config_show,
     render_config_validate,
     render_export,
@@ -79,6 +85,8 @@ def dispatch(args: Namespace, out: TextIO = sys.stdout) -> int:
         ActionId.CONFIG_IMPORT: _handle_config_import,
         ActionId.CONFIG_IMPORT_LEGACY: _handle_config_import_legacy,
         ActionId.CONFIG_EXPORT: _handle_config_export,
+        ActionId.CONFIG_MIGRATE: _handle_config_migrate,
+        ActionId.CONFIG_EDIT: _handle_config_edit,
     }
 
     handler = handler_map.get(action_id)
@@ -96,7 +104,10 @@ def dispatch(args: Namespace, out: TextIO = sys.stdout) -> int:
 
 def _handle_inspect(args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO) -> int:
     uc = InspectImagesUseCase(workspace, _create_avb_tool(workspace))
-    request = InspectImagesRequest(image_names=tuple(args.images))
+    request = InspectImagesRequest(
+        image_names=tuple(args.images),
+        with_cert=getattr(args, "cert", False),
+    )
     result = uc.execute(request)
     render_inspect(result, as_json, out)
     return exit_code_from_issues(result.issues)
@@ -200,4 +211,35 @@ def _handle_config_export(
     )
     result = uc.execute(request)
     render_export(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_config_migrate(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    uc = ConfigMigrateUseCase(workspace)
+    request = ConfigMigrateRequest(profile_id=getattr(args, "profile", "current"))
+    result = uc.execute(request)
+    render_config_migrate(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_config_edit(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    updates: dict[str, str] = {}
+    for item in getattr(args, "updates", []):
+        if "=" not in item:
+            print(f"error: --set expects FIELD=VALUE, got {item!r}", file=sys.stderr)
+            return 2
+        field, value = item.split("=", 1)
+        updates[field.strip()] = value
+    uc = ConfigEditUseCase(workspace)
+    request = ConfigEditRequest(
+        profile_id=getattr(args, "profile", "current"),
+        partition_name=args.partition,
+        updates=updates,
+    )
+    result = uc.execute(request)
+    render_config_edit(result, as_json, out)
     return exit_code_from_issues(result.issues)

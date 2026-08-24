@@ -290,6 +290,44 @@ def _collect_partition(stdscr: curses.window) -> PartitionConfig | None:
     if confirm_dialog(stdscr, _("config.wizard.set_vb_disabled")):
         set_vb_disabled = True
 
+    # --- Descriptor-specific v3 fields ---
+    partition_size = 0
+    dynamic_partition_size = False
+    block_size = 4096
+    fec_num_roots = 2
+    do_not_generate_fec = False
+    padding_size = 0
+    kernel_cmdlines: tuple[str, ...] = ()
+    chain_partitions_do_not_use_ab: tuple[str, ...] = ()
+
+    if descriptor == DescriptorType.HASH:
+        if confirm_dialog(stdscr, _("config.wizard.dynamic_partition_size")):
+            dynamic_partition_size = True
+        else:
+            size_str = input_prompt(stdscr, _("config.wizard.partition_size"))
+            with contextlib.suppress(ValueError):
+                partition_size = int(size_str) if size_str.strip() else 0
+    elif descriptor == DescriptorType.HASHTREE:
+        bs_str = input_prompt(stdscr, _("config.wizard.block_size"))
+        with contextlib.suppress(ValueError):
+            block_size = int(bs_str) if bs_str.strip() else 4096
+        fec_str = input_prompt(stdscr, _("config.wizard.fec_num_roots"))
+        with contextlib.suppress(ValueError):
+            fec_num_roots = int(fec_str) if fec_str.strip() else 2
+        if confirm_dialog(stdscr, _("config.wizard.do_not_generate_fec")):
+            do_not_generate_fec = True
+    elif descriptor == DescriptorType.VBMETA:
+        pad_str = input_prompt(stdscr, _("config.wizard.padding_size"))
+        with contextlib.suppress(ValueError):
+            padding_size = int(pad_str) if pad_str.strip() else 0
+        if confirm_dialog(stdscr, _("config.wizard.chain_do_not_use_ab")):
+            chains = input_prompt(stdscr, _("config.wizard.chain_do_not_use_ab_list"))
+            chain_partitions_do_not_use_ab = tuple(
+                c.strip() for c in chains.split(",") if c.strip()
+            )
+        cmdlines = input_prompt(stdscr, _("config.wizard.kernel_cmdlines"))
+        kernel_cmdlines = tuple(c.strip() for c in cmdlines.split(",") if c.strip())
+
     return PartitionConfig(
         image=image,
         descriptor=descriptor,
@@ -302,4 +340,12 @@ def _collect_partition(stdscr: curses.window) -> PartitionConfig | None:
         flags=flags,
         set_hashtree_disabled_flag=set_ht_disabled,
         set_verification_disabled_flag=set_vb_disabled,
+        partition_size=partition_size,
+        dynamic_partition_size=dynamic_partition_size,
+        block_size=block_size,
+        fec_num_roots=fec_num_roots,
+        do_not_generate_fec=do_not_generate_fec,
+        padding_size=padding_size,
+        kernel_cmdlines=kernel_cmdlines,
+        chain_partitions_do_not_use_ab=chain_partitions_do_not_use_ab,
     )

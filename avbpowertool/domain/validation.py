@@ -27,16 +27,24 @@ _VALID_SIGNING_ALGORITHMS = frozenset(
     }
 )
 
+#: avbtool requires the partition size to be a multiple of the image
+#: block size (ImageHandler.block_size == 4096).
+_IMAGE_BLOCK_SIZE = 4096
+
+#: FEC roots accepted by the fec encoder (2..255).
+_MIN_FEC_NUM_ROOTS = 2
+_MAX_FEC_NUM_ROOTS = 255
+
 
 def validate_profile(profile: AvbProfile) -> list[OperationIssue]:
     """Validate a complete profile. Returns issues found."""
     issues: list[OperationIssue] = []
 
-    if profile.schema_version != 2:
+    if profile.schema_version != 3:
         issues.append(
             OperationIssue(
                 "config.invalid_schema_version",
-                f"Expected schema_version 2, got {profile.schema_version}",
+                f"Expected schema_version 3, got {profile.schema_version}",
             )
         )
 
@@ -93,7 +101,43 @@ def validate_partition(name: str, config: PartitionConfig) -> list[OperationIssu
             )
         )
 
+    # ------------------------------------------------------------------
+    # Partition size (hash requires partition_size or dynamic_partition_size)
+    # ------------------------------------------------------------------
+    if (
+        config.descriptor == DescriptorType.HASH
+        and config.partition_size <= 0
+        and not config.dynamic_partition_size
+    ):
+        issues.append(
+            OperationIssue(
+                "config.missing_partition_size",
+                f"Partition {name!r}: hash footer requires partition_size > 0 "
+                "or dynamic_partition_size",
+            )
+        )
+
+    if config.dynamic_partition_size and config.calc_max_image_size:
+        issues.append(
+            OperationIssue(
+                "config.invalid_option_combination",
+                f"Partition {name!r}: dynamic_partition_size cannot be combined "
+                "with calc_max_image_size (avbtool rejects this)",
+            )
+        )
+
+    if config.partition_size > 0 and config.partition_size % _IMAGE_BLOCK_SIZE != 0:
+        issues.append(
+            OperationIssue(
+                "config.invalid_partition_size",
+                f"Partition {name!r}: partition_size {config.partition_size} "
+                f"must be a multiple of {_IMAGE_BLOCK_SIZE}",
+            )
+        )
+
+    # ------------------------------------------------------------------
     # vbmeta must have at least one included partition or chain
+    # ------------------------------------------------------------------
     if (
         config.descriptor == DescriptorType.VBMETA
         and not config.included_partitions
@@ -106,28 +150,101 @@ def validate_partition(name: str, config: PartitionConfig) -> list[OperationIssu
             )
         )
 
-    # hashtree block sizes must be positive powers of 2
+    # ------------------------------------------------------------------
+    # hashtree-specific
+    # ------------------------------------------------------------------
     if config.descriptor == DescriptorType.HASHTREE:
-        if (
-            config.data_block_size <= 0
-            or (config.data_block_size & (config.data_block_size - 1)) != 0
-        ):
+        if config.block_size <= 0 or (config.block_size & (config.block_size - 1)) != 0:
             issues.append(
                 OperationIssue(
                     "config.invalid_block_size",
-                    f"Partition {name!r}: data_block_size must be a positive power of 2",
+                    f"Partition {name!r}: block_size must be a positive power of 2",
                 )
             )
-        if (
-            config.hash_block_size <= 0
-            or (config.hash_block_size & (config.hash_block_size - 1)) != 0
-        ):
+        if not (_MIN_FEC_NUM_ROOTS <= config.fec_num_roots <= _MAX_FEC_NUM_ROOTS):
             issues.append(
                 OperationIssue(
-                    "config.invalid_block_size",
-                    f"Partition {name!r}: hash_block_size must be a positive power of 2",
+                    "config.invalid_fec_num_roots",
+                    f"Partition {name!r}: fec_num_roots must be between "
+                    f"{_MIN_FEC_NUM_ROOTS} and {_MAX_FEC_NUM_ROOTS}",
                 )
             )
+
+    # ------------------------------------------------------------------
+    # Option combinations
+    # ------------------------------------------------------------------
+    if config.use_persistent_digest and not config.do_not_use_ab:
+        issues.append(
+            OperationIssue(
+                "config.invalid_option_combination",
+                f"Partition {name!r}: use_persistent_digest requires do_not_use_ab",
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # Props / prop_from_file must have non-empty keys (avbtool CLI format
+    # is KEY:VALUE / KEY:PATH; the model stores the pair pre-split).
+    # ------------------------------------------------------------------
+    for key, _value in config.props:
+        if not key:
+            issues.append(
+                OperationIssue(
+                    "config.invalid_prop",
+                    f"Partition {name!r}: prop key must not be empty (KEY:VALUE)",
+                )
+            )
+    for key, _path in config.prop_from_file:
+        if not key:
+            issues.append(
+                OperationIssue(
+                    "config.invalid_prop",
+                    f"Partition {name!r}: prop_from_file key must not be empty (KEY:PATH)",
+                )
+            )
+
+    # ------------------------------------------------------------------
+    # Chain partitions: PART_NAME:ROLLBACK_SLOT:KEY_PATH, slot >= 1, unique
+    # ------------------------------------------------------------------
+    all_chains = list(config.chain_partitions) + list(config.chain_partitions_do_not_use_ab)
+    used_slots: dict[int, str] = {}
+    for chain in all_chains:
+        parts = chain.split(":")
+        if len(parts) < 3 or not parts[0] or not parts[2]:
+            issues.append(
+                OperationIssue(
+                    "config.invalid_chain_partition",
+                    f"Partition {name!r}: malformed chain partition {chain!r} "
+                    "(expected PART_NAME:ROLLBACK_SLOT:KEY_PATH)",
+                )
+            )
+            continue
+        try:
+            slot = int(parts[1])
+        except ValueError:
+            issues.append(
+                OperationIssue(
+                    "config.invalid_chain_partition",
+                    f"Partition {name!r}: chain {chain!r} has non-integer rollback slot",
+                )
+            )
+            continue
+        if slot < 1:
+            issues.append(
+                OperationIssue(
+                    "config.invalid_chain_partition",
+                    f"Partition {name!r}: chain {chain!r} rollback slot must be >= 1",
+                )
+            )
+        if slot in used_slots:
+            issues.append(
+                OperationIssue(
+                    "config.duplicate_rollback_slot",
+                    f"Partition {name!r}: rollback slot {slot} already used by "
+                    f"chain {used_slots[slot]!r}",
+                )
+            )
+        else:
+            used_slots[slot] = chain
 
     return issues
 

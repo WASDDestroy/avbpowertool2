@@ -43,7 +43,7 @@ class InspectImagesUseCase:
                 )
                 continue
 
-            result = self._avb.inspect_image(image_path)
+            result = self._avb.inspect_image(image_path, cert=request.with_cert)
             inspection = self._process_result(name, str(image_path), result, issues)
             if inspection is not None:
                 images.append(inspection)

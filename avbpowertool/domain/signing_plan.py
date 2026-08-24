@@ -9,6 +9,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .command_builder import (
+    build_hash_footer_command,
+    build_hashtree_footer_command,
+    build_vbmeta_command,
+)
 from .dependency_graph import resolve_vbmeta_order
 from .models import (
     AvbProfile,
@@ -141,11 +146,13 @@ class SigningPlanBuilder:
 
         staging_output = str(self._staging_dir / config.image)
 
+        # Footer commands modify the staged copy in place (no --output).
+        key = Path(key_path) if key_path is not None else None
         if config.descriptor == DescriptorType.HASH:
-            cmd = self._build_hash_command(str(image_path), staging_output, config, key_path)
+            cmd = build_hash_footer_command(Path(staging_output), config, key)
             operation = "add_hash_footer"
         elif config.descriptor == DescriptorType.HASHTREE:
-            cmd = self._build_hashtree_command(str(image_path), staging_output, config, key_path)
+            cmd = build_hashtree_footer_command(Path(staging_output), config, key)
             operation = "add_hashtree_footer"
         else:
             issues.append(
@@ -189,27 +196,9 @@ class SigningPlanBuilder:
 
         staging_output = str(self._staging_dir / config.image)
 
-        cmd: list[str] = [
-            "make_vbmeta_image",
-            "--output",
-            staging_output,
-            "--rollback_index",
-            str(config.rollback_index),
-            "--rollback_index_location",
-            str(config.rollback_index_location),
-        ]
-        if key_path is not None:
-            cmd.extend(["--algorithm", config.algorithm.value, "--key", key_path])
-        if config.flags:
-            cmd.extend(["--flags", str(config.flags)])
-        if config.set_hashtree_disabled_flag:
-            cmd.append("--set_hashtree_disabled_flag")
-        if config.set_verification_disabled_flag:
-            cmd.append("--set_verification_disabled_flag")
-        if config.kernel_cmdline:
-            cmd.extend(["--kernel_cmdline", config.kernel_cmdline])
-
-        # Include descriptors from other images (staging paths)
+        # Include descriptors from other images (staging paths) plus any
+        # extra images named in include_descriptors_from_image.
+        include_descriptors: list[Path] = []
         for included_name in config.included_partitions:
             included_config = self._profile.partitions.get(included_name)
             if included_config is None:
@@ -220,16 +209,32 @@ class SigningPlanBuilder:
                     )
                 )
                 continue
-            desc_path = str(self._staging_dir / included_config.image)
-            cmd.extend(["--include_descriptors_from_image", desc_path])
+            include_descriptors.append(Path(str(self._staging_dir / included_config.image)))
+        for extra_image in config.include_descriptors_from_image:
+            resolved = self._resolve_image_path(extra_image)
+            if resolved is None:
+                issues.append(
+                    OperationIssue(
+                        "image.not_found",
+                        f"Include-descriptor image not found: {extra_image}",
+                    )
+                )
+                continue
+            include_descriptors.append(Path(resolved))
 
         # Chain partitions (resolve public-key files relative to the key store)
-        for chain_entry in config.chain_partitions:
-            cmd.extend(["--chain_partition", self._resolve_chain_key(chain_entry)])
+        chain_partitions = tuple(
+            self._resolve_chain_key(entry) for entry in config.chain_partitions
+        )
 
-        # Properties
-        for k, v in config.props:
-            cmd.extend(["--prop", f"{k}:{v}"])
+        key = Path(key_path) if key_path is not None else None
+        cmd = build_vbmeta_command(
+            Path(staging_output),
+            config,
+            key,
+            include_descriptors=tuple(include_descriptors),
+            chain_partitions=chain_partitions,
+        )
 
         return (
             SigningStep(
@@ -242,84 +247,6 @@ class SigningPlanBuilder:
             ),
             issues,
         )
-
-    # ------------------------------------------------------------------
-    # Command builders
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _build_hash_command(
-        image_path: str,
-        output_path: str,
-        config: PartitionConfig,
-        key_path: str | None,
-    ) -> list[str]:
-        cmd = [
-            "add_hash_footer",
-            "--image",
-            image_path,
-            "--output",
-            output_path,
-            "--partition_name",
-            config.partition_name,
-            "--salt",
-            config.salt,
-            "--rollback_index",
-            str(config.rollback_index),
-            "--rollback_index_location",
-            str(config.rollback_index_location),
-            "--hash_algorithm",
-            config.hash_algorithm,
-        ]
-        if key_path is not None:
-            cmd.extend(["--algorithm", config.algorithm.value, "--key", key_path])
-        if config.flags:
-            cmd.extend(["--flags", str(config.flags)])
-        if config.set_hashtree_disabled_flag:
-            cmd.append("--set_hashtree_disabled_flag")
-        if config.set_verification_disabled_flag:
-            cmd.append("--set_verification_disabled_flag")
-        for k, v in config.props:
-            cmd.extend(["--prop", f"{k}:{v}"])
-        return cmd
-
-    @staticmethod
-    def _build_hashtree_command(
-        image_path: str,
-        output_path: str,
-        config: PartitionConfig,
-        key_path: str | None,
-    ) -> list[str]:
-        cmd = [
-            "add_hashtree_footer",
-            "--image",
-            image_path,
-            "--output",
-            output_path,
-            "--partition_name",
-            config.partition_name,
-            "--salt",
-            config.salt,
-            "--rollback_index",
-            str(config.rollback_index),
-            "--rollback_index_location",
-            str(config.rollback_index_location),
-            "--data_block_size",
-            str(config.data_block_size),
-            "--hash_block_size",
-            str(config.hash_block_size),
-        ]
-        if key_path is not None:
-            cmd.extend(["--algorithm", config.algorithm.value, "--key", key_path])
-        if config.flags:
-            cmd.extend(["--flags", str(config.flags)])
-        if config.set_hashtree_disabled_flag:
-            cmd.append("--set_hashtree_disabled_flag")
-        if config.set_verification_disabled_flag:
-            cmd.append("--set_verification_disabled_flag")
-        for k, v in config.props:
-            cmd.extend(["--prop", f"{k}:{v}"])
-        return cmd
 
     # ------------------------------------------------------------------
     # Path resolution

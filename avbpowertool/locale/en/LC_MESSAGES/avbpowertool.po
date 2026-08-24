@@ -247,6 +247,33 @@ msgstr "Set HASHTREE_DISABLED flag?"
 msgid "config.wizard.set_vb_disabled"
 msgstr "Set VERIFICATION_DISABLED flag?"
 
+msgid "config.wizard.dynamic_partition_size"
+msgstr "Use dynamic partition size (--dynamic_partition_size)?"
+
+msgid "config.wizard.partition_size"
+msgstr "Partition size in bytes (--partition_size, required):"
+
+msgid "config.wizard.block_size"
+msgstr "Block size (--block_size, default 4096):"
+
+msgid "config.wizard.fec_num_roots"
+msgstr "FEC num roots (--fec_num_roots, default 2):"
+
+msgid "config.wizard.do_not_generate_fec"
+msgstr "Do not generate FEC (--do_not_generate_fec)?"
+
+msgid "config.wizard.padding_size"
+msgstr "VBMeta padding size in bytes (--padding_size, default 0):"
+
+msgid "config.wizard.chain_do_not_use_ab"
+msgstr "Add chain partitions for non-A/B (--chain_partition_do_not_use_ab)?"
+
+msgid "config.wizard.chain_do_not_use_ab_list"
+msgstr "Chain partitions (comma-separated PART:SLOT:KEY_PATH):"
+
+msgid "config.wizard.kernel_cmdlines"
+msgstr "Kernel cmdlines (comma-separated, optional):"
+
 msgid "config.wizard.auto_dir"
 msgstr "Enter image directory path:"
 

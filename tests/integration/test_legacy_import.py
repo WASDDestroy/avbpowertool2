@@ -55,7 +55,7 @@ class TestLegacyConfigImportUseCase:
         assert repo.get_active_profile_id() == "ZUXOS_411"
 
         profile = repo.load("ZUXOS_411")
-        assert profile.schema_version == 2
+        assert profile.schema_version == 3
         vbmeta = profile.partitions["vbmeta"]
         assert vbmeta.descriptor == DescriptorType.VBMETA
         assert vbmeta.algorithm == SigningAlgorithm.SHA256_RSA4096

@@ -29,6 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     # image inspect
     p_img_inspect = img_sub.add_parser("inspect", help="Read AVB metadata from images")
     p_img_inspect.add_argument("images", nargs="+", help="Image names")
+    p_img_inspect.add_argument("--cert", action="store_true", help="Also read the certificate")
     p_img_inspect.add_argument("--json", action="store_true", help="JSON output")
     p_img_inspect.set_defaults(action_id=ActionId.IMAGE_INSPECT)
 
@@ -88,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     # config import-legacy (v1 -> v2 auto-conversion)
     p_cfg_imp_legacy = cfg_sub.add_parser(
         "import-legacy",
-        help="Import a legacy v1 config archive (auto-converts to v2)",
+        help="Import a legacy v1 config archive (auto-converts to v3)",
     )
     p_cfg_imp_legacy.add_argument("archive", help="Path to legacy v1 ZIP archive")
     p_cfg_imp_legacy.add_argument(
@@ -111,6 +112,33 @@ def build_parser() -> argparse.ArgumentParser:
     p_cfg_exp.add_argument("--output", help="Output path (default: <profile>.zip)")
     p_cfg_exp.add_argument("--json", action="store_true", help="JSON output")
     p_cfg_exp.set_defaults(action_id=ActionId.CONFIG_EXPORT)
+
+    # config migrate (v2 -> v3)
+    p_cfg_migrate = cfg_sub.add_parser(
+        "migrate",
+        help="Upgrade a profile to the current schema version (v2 -> v3)",
+    )
+    p_cfg_migrate.add_argument("--profile", default="current", help="Profile ID (default: current)")
+    p_cfg_migrate.add_argument("--json", action="store_true", help="JSON output")
+    p_cfg_migrate.set_defaults(action_id=ActionId.CONFIG_MIGRATE)
+
+    # config edit (update individual partition fields)
+    p_cfg_edit = cfg_sub.add_parser("edit", help="Update fields of one partition config")
+    p_cfg_edit.add_argument("--profile", default="current", help="Profile ID (default: current)")
+    p_cfg_edit.add_argument("partition", help="Partition name to edit (e.g. boot)")
+    p_cfg_edit.add_argument(
+        "--set",
+        dest="updates",
+        action="append",
+        metavar="FIELD=VALUE",
+        default=[],
+        help=(
+            "Set a field, e.g. partition_size=67108864, block_size=4096, "
+            "kernel_cmdlines=a,b (repeatable; booleans: true/false)"
+        ),
+    )
+    p_cfg_edit.add_argument("--json", action="store_true", help="JSON output")
+    p_cfg_edit.set_defaults(action_id=ActionId.CONFIG_EDIT)
 
     # --- about ---
     p_about = sub.add_parser("about", help="Show version info")

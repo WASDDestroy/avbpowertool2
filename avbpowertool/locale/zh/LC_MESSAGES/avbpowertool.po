@@ -247,6 +247,33 @@ msgstr "设置 HASHTREE_DISABLED 标志？"
 msgid "config.wizard.set_vb_disabled"
 msgstr "设置 VERIFICATION_DISABLED 标志？"
 
+msgid "config.wizard.dynamic_partition_size"
+msgstr "使用动态分区大小（--dynamic_partition_size）？"
+
+msgid "config.wizard.partition_size"
+msgstr "分区大小（字节，--partition_size，必填）："
+
+msgid "config.wizard.block_size"
+msgstr "块大小（--block_size，默认 4096）："
+
+msgid "config.wizard.fec_num_roots"
+msgstr "FEC 冗余根数（--fec_num_roots，默认 2）："
+
+msgid "config.wizard.do_not_generate_fec"
+msgstr "不生成 FEC（--do_not_generate_fec）？"
+
+msgid "config.wizard.padding_size"
+msgstr "VBMeta 填充大小（字节，--padding_size，默认 0）："
+
+msgid "config.wizard.chain_do_not_use_ab"
+msgstr "添加非 A/B 链分区（--chain_partition_do_not_use_ab）？"
+
+msgid "config.wizard.chain_do_not_use_ab_list"
+msgstr "链分区（逗号分隔 PART:SLOT:KEY_PATH）："
+
+msgid "config.wizard.kernel_cmdlines"
+msgstr "内核命令行参数（逗号分隔，可选）："
+
 msgid "config.wizard.auto_dir"
 msgstr "输入镜像目录路径："
 

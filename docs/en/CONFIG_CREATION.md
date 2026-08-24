@@ -135,6 +135,8 @@ avbpowertool image sign boot vbmeta --execute --yes  # Execute
 ### Hash Partition
 
 For small images (boot, init_boot, dtbo). Uses `add_hash_footer`.
+A hash footer requires `partition_size` (or `dynamic_partition_size`),
+otherwise avbtool rejects the command.
 
 ```python
 PartitionConfig(
@@ -143,14 +145,16 @@ PartitionConfig(
     algorithm=SigningAlgorithm.SHA256_RSA4096,
     key_id="my_key",
     partition_name="boot",
+    partition_size=67108864,      # required: partition size in bytes, multiple of 4096
     rollback_index=0,
-    salt="optional_hex_salt",
+    salt="optional_hex_salt",     # empty salt -> avbtool generates a random one
 )
 ```
 
 ### Hashtree Partition
 
 For large images (system, vendor, product). Uses `add_hashtree_footer` with dm-verity and FEC.
+Since v3 there is a single `block_size` (default 4096) instead of separate data/hash block sizes.
 
 ```python
 PartitionConfig(
@@ -159,8 +163,9 @@ PartitionConfig(
     algorithm=SigningAlgorithm.SHA256_RSA4096,
     key_id="my_key",
     partition_name="system",
-    data_block_size=4096,
-    hash_block_size=4096,
+    block_size=4096,              # --block_size (default 4096)
+    fec_num_roots=2,              # --fec_num_roots (default 2)
+    do_not_generate_fec=False,    # True skips FEC generation
 )
 ```
 
@@ -186,7 +191,7 @@ After creation, the profile looks like:
 
 ```
 profiles/my_device/
-  profile.json        # v2 config schema
+  profile.json        # v3 config schema
   keys/
     manifest.json     # key_id -> filename mapping
     release.pem       # key files (you add these)
@@ -194,11 +199,11 @@ profiles/my_device/
   vbmeta.img
 ```
 
-## Config v2 Schema Reference
+## Config v3 Schema Reference
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "profile": {
     "id": "my_device",
     "name": "My Device ROM"
@@ -211,6 +216,7 @@ profiles/my_device/
       "algorithm": "SHA256_RSA4096",
       "key_id": "release_rsa4096",
       "partition_name": "boot",
+      "partition_size": 67108864,
       "rollback_index": 0,
       "salt": "",
       "flags": 0,
@@ -220,11 +226,51 @@ profiles/my_device/
 }
 ```
 
+## Migrating from v2 to v3
+
+Main v3 changes: hash partitions gain `partition_size` / `dynamic_partition_size`;
+`data_block_size` + `hash_block_size` collapse into `block_size`;
+`kernel_cmdline` (string) becomes `kernel_cmdlines` (string array);
+new fields for FEC, `calc_max_image_size`, `output_vbmeta_image`,
+`use_persistent_digest`, `chain_partitions_do_not_use_ab`, `padding_size`,
+`prop_from_file`, `signing_helper` / `signing_helper_with_files`,
+`public_key_metadata`, `append_to_release_string`, and more.
+
+v2 configs are auto-migrated in memory when read (the v2 file itself is untouched).
+To upgrade a v2 file on disk in place, run:
+
+```shell
+avbpowertool config migrate [--profile ID]
+```
+
+### Quick single-field edits
+
+```shell
+# Change the boot partition size, rollback index, kernel cmdlines (comma-separated), etc.
+avbpowertool config edit boot --profile current \
+  --set partition_size=67108864 --set rollback_index=1 \
+  --set kernel_cmdlines=androidboot.avb.test=1
+```
+
+Editable fields: integers — `partition_size`, `rollback_index`,
+`rollback_index_location`, `flags`, `block_size`, `fec_num_roots`, `padding_size`;
+strings — `salt`, `hash_algorithm`, `output_vbmeta_image`, `setup_rootfs_from_kernel`,
+`signing_helper`, `signing_helper_with_files`, `public_key_metadata`,
+`append_to_release_string`; booleans — `dynamic_partition_size`,
+`do_not_generate_fec`, `calc_max_image_size`, `do_not_append_vbmeta_image`,
+`no_hashtree`, `check_at_most_once`, `use_persistent_digest`, `do_not_use_ab`,
+`set_hashtree_disabled_flag`, `set_verification_disabled_flag`,
+`print_required_libavb_version`, `setup_as_rootfs_from_kernel`;
+comma-separated arrays — `kernel_cmdlines`, `chain_partitions`,
+`chain_partitions_do_not_use_ab`, `included_partitions`,
+`include_descriptors_from_image`.
+
 ## Unsigned (NONE) Partitions
 
-v2 supports `SigningAlgorithm.NONE`: the partition still gets its hash / hashtree footer
+v3 supports `SigningAlgorithm.NONE`: the partition still gets its hash / hashtree footer
 or vbmeta contents, but **no** `--algorithm` / `--key` are passed, so avbtool skips
 hash/signature computation (equivalent to an unsigned image).
+NONE hash partitions also need `partition_size` or `dynamic_partition_size`.
 
 ```python
 PartitionConfig(
@@ -233,6 +279,7 @@ PartitionConfig(
     algorithm=SigningAlgorithm.NONE,   # unsigned
     key_id="",                          # no key_id required for NONE
     partition_name="dtbo",
+    partition_size=4194304,             # NONE partitions also need a size
 )
 ```
 
@@ -241,7 +288,7 @@ partition keys are resolved from the public-key filename in the `chain_partition
 
 ## Importing Legacy v1 Configs
 
-v1 (AVBPowerTool 1.x) config ZIP archives can be imported and automatically converted to v2:
+v1 (AVBPowerTool 1.x) config ZIP archives can be imported and automatically converted to v3:
 
 - **TUI**: Settings page → `[I] Import v1 legacy config`, pick a v1 zip in the project root.
 - **CLI**: `avbpowertool config import-legacy <archive> [--name ID] [--no-activate] [--json]`.

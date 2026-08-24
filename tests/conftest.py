@@ -155,8 +155,8 @@ class FakeAvbTool:
             return self._responses[name]
         return AvbToolResult(0, "", "", name)
 
-    def inspect_image(self, image_path: Path) -> AvbToolResult:
-        return self._record("inspect_image", (image_path,), {})
+    def inspect_image(self, image_path: Path, cert: bool = False) -> AvbToolResult:
+        return self._record("inspect_image", (image_path,), {"cert": cert})
 
     def erase_footer(self, image_path: Path) -> AvbToolResult:
         return self._record("erase_footer", (image_path,), {})
@@ -164,7 +164,6 @@ class FakeAvbTool:
     def add_hash_footer(
         self,
         image_path: Path,
-        output_path: Path,
         *,
         partition_name: str,
         algorithm: str,
@@ -174,24 +173,22 @@ class FakeAvbTool:
         flags: int = 0,
         props: tuple[tuple[str, str], ...] = (),
     ) -> AvbToolResult:
-        return self._record("add_hash_footer", (image_path, output_path), {})
+        return self._record("add_hash_footer", (image_path,), {})
 
     def add_hashtree_footer(
         self,
         image_path: Path,
-        output_path: Path,
         *,
         partition_name: str,
         algorithm: str,
         key_path: Path | None = None,
         salt: str,
         rollback_index: int,
-        data_block_size: int = 4096,
-        hash_block_size: int = 4096,
+        block_size: int = 4096,
         flags: int = 0,
         props: tuple[tuple[str, str], ...] = (),
     ) -> AvbToolResult:
-        return self._record("add_hashtree_footer", (image_path, output_path), {})
+        return self._record("add_hashtree_footer", (image_path,), {})
 
     def make_vbmeta_image(
         self,

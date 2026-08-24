@@ -13,6 +13,7 @@ from avbpowertool.domain.models import (
 )
 from avbpowertool.infrastructure.persistence.profile_codec import (
     decode_profile,
+    decode_profile_with_issues,
     encode_profile,
 )
 
@@ -21,7 +22,7 @@ class TestEncodeProfile:
     def test_minimal_profile(self) -> None:
         profile = AvbProfile(id="test", name="Test")
         data = encode_profile(profile)
-        assert data["schema_version"] == 2
+        assert data["schema_version"] == 3
         assert data["profile"]["id"] == "test"
         assert data["profile"]["name"] == "Test"
         assert data["key_store_path"] == "keys"
@@ -137,8 +138,7 @@ class TestDecodeProfile:
                     algorithm=SigningAlgorithm.SHA512_RSA4096,
                     key_id="testkey",
                     partition_name="system",
-                    data_block_size=512,
-                    hash_block_size=512,
+                    block_size=512,
                 ),
             },
         )
@@ -146,7 +146,7 @@ class TestDecodeProfile:
         decoded = decode_profile(encoded)
         assert decoded.id == original.id
         assert decoded.name == original.name
-        assert decoded.schema_version == 2
+        assert decoded.schema_version == 3
         assert len(decoded.partitions) == 2
         boot = decoded.partitions["boot"]
         assert boot.descriptor == DescriptorType.HASH
@@ -154,7 +154,51 @@ class TestDecodeProfile:
         assert boot.props == (("k1", "v1"),)
         system = decoded.partitions["system"]
         assert system.descriptor == DescriptorType.HASHTREE
-        assert system.data_block_size == 512
+        assert system.block_size == 512
+
+    def test_round_trip_v3_advanced_fields(self) -> None:
+        """v3 advanced fields survive an encode/decode round-trip."""
+        profile = AvbProfile(
+            id="test",
+            name="Test",
+            partitions={
+                "boot": PartitionConfig(
+                    image="boot.img",
+                    descriptor=DescriptorType.HASH,
+                    algorithm=SigningAlgorithm.SHA256_RSA4096,
+                    key_id="testkey",
+                    partition_name="boot",
+                    partition_size=67108864,
+                    kernel_cmdlines=("a=1", "b=2"),
+                    prop_from_file=(("my.prop", "values.txt"),),
+                    use_persistent_digest=True,
+                    do_not_use_ab=True,
+                    output_vbmeta_image="vbmeta_out.img",
+                ),
+            },
+        )
+        data = encode_profile(profile)
+        boot = data["partitions"]["boot"]
+        assert boot["partition_size"] == 67108864
+        assert boot["kernel_cmdlines"] == ["a=1", "b=2"]
+        assert boot["prop_from_file"] == [["my.prop", "values.txt"]]
+        assert boot["use_persistent_digest"] is True
+        assert boot["output_vbmeta_image"] == "vbmeta_out.img"
+        assert "block_size" not in boot  # hash descriptor -> no block_size
+
+        decoded = decode_profile(data)
+        assert decoded.partitions["boot"].kernel_cmdlines == ("a=1", "b=2")
+        assert decoded.partitions["boot"].prop_from_file == (("my.prop", "values.txt"),)
+        assert decoded.partitions["boot"].use_persistent_digest is True
+
+    def test_decode_v2_auto_migrates(self, sample_profile_v2: dict) -> None:
+        """v2 input is auto-migrated to v3 in memory (file untouched)."""
+        profile, issues = decode_profile_with_issues(sample_profile_v2)
+        assert profile.schema_version == 3
+        assert issues == []  # v2 data_block/hash_block both 4096 -> no conflict
+        system = profile.partitions["system"]
+        assert system.block_size == 4096
+        assert hasattr(system, "data_block_size") is False
 
     def test_invalid_schema_version_raises(self) -> None:
         with pytest.raises(ConfigError, match="schema_version"):

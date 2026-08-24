@@ -42,6 +42,7 @@ exclude = [
     "references",
     "avbpowertool/vendor",
     "avbpowertool/infrastructure/persistence/profile_codec.py",
+    "avbpowertool/infrastructure/persistence/v2_to_v3.py",
     "avbpowertool/infrastructure/persistence/archive_repository.py",
     "avbpowertool/infrastructure/persistence/key_repository.py",
     "avbpowertool/infrastructure/persistence/v1_profile_codec.py",

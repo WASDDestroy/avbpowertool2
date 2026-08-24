@@ -65,8 +65,7 @@ class TestDecodeV1ImageInfo:
         profile, _ = decode_v1_image_info(_load_sample(), "zuxos")
         system = profile.partitions["system"]
         assert system.descriptor == DescriptorType.HASHTREE
-        assert system.data_block_size == 4096
-        assert system.hash_block_size == 4096
+        assert system.block_size == 4096
         assert system.algorithm == SigningAlgorithm.NONE
 
     def test_vbmeta_partition_mapping(self) -> None:
@@ -113,7 +112,7 @@ class TestDecodeV1ImageInfo:
         profile, _ = decode_v1_image_info(_load_sample(), "zuxos")
         assert profile.id == "zuxos"
         assert profile.name == "zuxos"
-        assert profile.schema_version == 2
+        assert profile.schema_version == 3
         assert profile.key_store_path == "keys"
         assert len(profile.partitions) == 15
 

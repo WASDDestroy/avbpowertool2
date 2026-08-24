@@ -92,6 +92,21 @@ class TestInspectImagesUseCase:
         assert result.images[0].descriptor is None
         assert any(i.error_code == "image.no_vbmeta_structure" for i in result.issues)
 
+    def test_inspect_with_cert_passes_flag(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "boot.img").write_bytes(b"fake boot image")
+
+        fake_avb = FakeAvbTool(
+            {"inspect_image": AvbToolResult(0, SAMPLE_HASH, "", "info_image")}
+        )
+        uc = InspectImagesUseCase(ws, fake_avb)
+        uc.execute(InspectImagesRequest(image_names=("boot",), with_cert=True))
+
+        assert fake_avb.calls
+        name, _args, kwargs = fake_avb.calls[0]
+        assert name == "inspect_image"
+        assert kwargs.get("cert") is True
+
     def test_inspect_multiple_images(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)
         (ws.images / "boot.img").write_bytes(b"fake boot")

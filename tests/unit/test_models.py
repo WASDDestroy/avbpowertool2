@@ -77,8 +77,9 @@ class TestPartitionConfig:
         assert p.props == ()
         assert p.included_partitions == ()
         assert p.chain_partitions == ()
-        assert p.data_block_size == 4096
-        assert p.hash_block_size == 4096
+        assert p.block_size == 4096
+        assert p.partition_size == 0
+        assert p.dynamic_partition_size is False
 
     def test_with_props(self) -> None:
         p = PartitionConfig(
@@ -100,7 +101,7 @@ class TestAvbProfile:
 
     def test_defaults(self) -> None:
         profile = AvbProfile(id="test", name="Test")
-        assert profile.schema_version == 2
+        assert profile.schema_version == 3
         assert profile.key_store_path == "keys"
         assert profile.partitions == {}
 

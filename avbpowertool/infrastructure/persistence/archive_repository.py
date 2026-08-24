@@ -53,7 +53,7 @@ class ArchiveRepository:
         archive_manifest = {
             "format_version": _ARCHIVE_MANIFEST_FORMAT,
             "profile_id": profile_id,
-            "schema_version": 2,
+            "schema_version": 3,
             "files": manifest_entries,
         }
 

@@ -31,6 +31,7 @@ class TestValidateProfile:
                     algorithm=SigningAlgorithm.SHA256_RSA4096,
                     key_id="testkey",
                     partition_name="boot",
+                    partition_size=67108864,
                 ),
             },
         )
@@ -91,9 +92,58 @@ class TestValidatePartition:
             algorithm=SigningAlgorithm.SHA256_RSA4096,
             key_id="testkey",
             partition_name="boot",
+            partition_size=67108864,
         )
         issues = validate_partition("boot", config)
         assert len(issues) == 0
+
+    def test_valid_hash_dynamic_size(self) -> None:
+        config = PartitionConfig(
+            image="boot.img",
+            descriptor=DescriptorType.HASH,
+            algorithm=SigningAlgorithm.SHA256_RSA4096,
+            key_id="testkey",
+            partition_name="boot",
+            dynamic_partition_size=True,
+        )
+        issues = validate_partition("boot", config)
+        assert len(issues) == 0
+
+    def test_hash_missing_partition_size(self) -> None:
+        config = PartitionConfig(
+            image="boot.img",
+            descriptor=DescriptorType.HASH,
+            algorithm=SigningAlgorithm.SHA256_RSA4096,
+            key_id="testkey",
+            partition_name="boot",
+        )
+        issues = validate_partition("boot", config)
+        assert any(i.error_code == "config.missing_partition_size" for i in issues)
+
+    def test_hash_partition_size_not_multiple_of_4096(self) -> None:
+        config = PartitionConfig(
+            image="boot.img",
+            descriptor=DescriptorType.HASH,
+            algorithm=SigningAlgorithm.SHA256_RSA4096,
+            key_id="testkey",
+            partition_name="boot",
+            partition_size=4097,
+        )
+        issues = validate_partition("boot", config)
+        assert any(i.error_code == "config.invalid_partition_size" for i in issues)
+
+    def test_dynamic_with_calc_max_conflict(self) -> None:
+        config = PartitionConfig(
+            image="boot.img",
+            descriptor=DescriptorType.HASH,
+            algorithm=SigningAlgorithm.SHA256_RSA4096,
+            key_id="testkey",
+            partition_name="boot",
+            dynamic_partition_size=True,
+            calc_max_image_size=True,
+        )
+        issues = validate_partition("boot", config)
+        assert any(i.error_code == "config.invalid_option_combination" for i in issues)
 
     def test_valid_hashtree(self) -> None:
         config = PartitionConfig(
@@ -129,6 +179,45 @@ class TestValidatePartition:
         )
         issues = validate_partition("vbmeta", config)
         assert len(issues) == 0
+
+    def test_invalid_chain_partition_format(self) -> None:
+        config = PartitionConfig(
+            image="vbmeta.img",
+            descriptor=DescriptorType.VBMETA,
+            algorithm=SigningAlgorithm.SHA256_RSA4096,
+            key_id="testkey",
+            partition_name="vbmeta",
+            chain_partitions=("malformed",),
+        )
+        issues = validate_partition("vbmeta", config)
+        assert any(i.error_code == "config.invalid_chain_partition" for i in issues)
+
+    def test_chain_partition_zero_slot(self) -> None:
+        config = PartitionConfig(
+            image="vbmeta.img",
+            descriptor=DescriptorType.VBMETA,
+            algorithm=SigningAlgorithm.SHA256_RSA4096,
+            key_id="testkey",
+            partition_name="vbmeta",
+            chain_partitions=("vbmeta_system:0:system_key.pem",),
+        )
+        issues = validate_partition("vbmeta", config)
+        assert any(i.error_code == "config.invalid_chain_partition" for i in issues)
+
+    def test_duplicate_chain_slots(self) -> None:
+        config = PartitionConfig(
+            image="vbmeta.img",
+            descriptor=DescriptorType.VBMETA,
+            algorithm=SigningAlgorithm.SHA256_RSA4096,
+            key_id="testkey",
+            partition_name="vbmeta",
+            chain_partitions=(
+                "vbmeta_system:1:sys_pub.bin",
+                "vbmeta_vendor:1:vendor_pub.bin",
+            ),
+        )
+        issues = validate_partition("vbmeta", config)
+        assert any(i.error_code == "config.duplicate_rollback_slot" for i in issues)
 
     def test_empty_image(self) -> None:
         config = PartitionConfig(
@@ -174,14 +263,14 @@ class TestValidatePartition:
         issues = validate_partition("vbmeta", config)
         assert any(i.error_code == "config.vbmeta_no_contents" for i in issues)
 
-    def test_hashtree_invalid_data_block_size(self) -> None:
+    def test_hashtree_invalid_block_size(self) -> None:
         config = PartitionConfig(
             image="system.img",
             descriptor=DescriptorType.HASHTREE,
             algorithm=SigningAlgorithm.SHA256_RSA4096,
             key_id="testkey",
             partition_name="system",
-            data_block_size=0,
+            block_size=0,
         )
         issues = validate_partition("system", config)
         assert any(i.error_code == "config.invalid_block_size" for i in issues)
@@ -193,7 +282,7 @@ class TestValidatePartition:
             algorithm=SigningAlgorithm.SHA256_RSA4096,
             key_id="testkey",
             partition_name="system",
-            data_block_size=3000,
+            block_size=3000,
         )
         issues = validate_partition("system", config)
         assert any(i.error_code == "config.invalid_block_size" for i in issues)
@@ -205,10 +294,60 @@ class TestValidatePartition:
             algorithm=SigningAlgorithm.SHA256_RSA4096,
             key_id="testkey",
             partition_name="system",
-            data_block_size=4096,
-            hash_block_size=4096,
+            block_size=4096,
         )
         issues = validate_partition("system", config)
+        assert len(issues) == 0
+
+    def test_hashtree_invalid_fec_num_roots(self) -> None:
+        config = PartitionConfig(
+            image="system.img",
+            descriptor=DescriptorType.HASHTREE,
+            algorithm=SigningAlgorithm.SHA256_RSA4096,
+            key_id="testkey",
+            partition_name="system",
+            fec_num_roots=1,
+        )
+        issues = validate_partition("system", config)
+        assert any(i.error_code == "config.invalid_fec_num_roots" for i in issues)
+
+    def test_hashtree_valid_fec_num_roots(self) -> None:
+        config = PartitionConfig(
+            image="system.img",
+            descriptor=DescriptorType.HASHTREE,
+            algorithm=SigningAlgorithm.SHA256_RSA4096,
+            key_id="testkey",
+            partition_name="system",
+            fec_num_roots=10,
+        )
+        issues = validate_partition("system", config)
+        assert len(issues) == 0
+
+    def test_persistent_digest_requires_no_ab(self) -> None:
+        config = PartitionConfig(
+            image="boot.img",
+            descriptor=DescriptorType.HASH,
+            algorithm=SigningAlgorithm.SHA256_RSA4096,
+            key_id="testkey",
+            partition_name="boot",
+            partition_size=4096,
+            use_persistent_digest=True,
+        )
+        issues = validate_partition("boot", config)
+        assert any(i.error_code == "config.invalid_option_combination" for i in issues)
+
+    def test_persistent_digest_with_no_ab_ok(self) -> None:
+        config = PartitionConfig(
+            image="boot.img",
+            descriptor=DescriptorType.HASH,
+            algorithm=SigningAlgorithm.SHA256_RSA4096,
+            key_id="testkey",
+            partition_name="boot",
+            partition_size=4096,
+            use_persistent_digest=True,
+            do_not_use_ab=True,
+        )
+        issues = validate_partition("boot", config)
         assert len(issues) == 0
 
     def test_valid_none_hash_without_key(self) -> None:
@@ -218,6 +357,7 @@ class TestValidatePartition:
             algorithm=SigningAlgorithm.NONE,
             key_id="",
             partition_name="dtbo",
+            partition_size=4194304,
         )
         issues = validate_partition("dtbo", config)
         assert len(issues) == 0

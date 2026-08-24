@@ -28,6 +28,7 @@ def _make_profile() -> AvbProfile:
                 partition_name="boot",
                 rollback_index=0,
                 salt="a1b2c3d4e5f6",
+                partition_size=67108864,
             ),
             "system": PartitionConfig(
                 image="system.img",
@@ -36,8 +37,7 @@ def _make_profile() -> AvbProfile:
                 key_id="testkey_rsa4096",
                 partition_name="system",
                 rollback_index=0,
-                data_block_size=4096,
-                hash_block_size=4096,
+                block_size=4096,
             ),
             "vbmeta": PartitionConfig(
                 image="vbmeta.img",
@@ -123,8 +123,7 @@ class TestSigningPlanBuilder:
         step = plan.steps[0]
         assert step.partition_name == "system"
         assert step.operation == "add_hashtree_footer"
-        assert "--data_block_size" in step.command
-        assert "--hash_block_size" in step.command
+        assert "--block_size" in step.command
 
     def test_builds_vbmeta_step(self, tmp_path: Path) -> None:
         _setup_workspace(tmp_path)
@@ -368,8 +367,7 @@ class TestSigningPlanBuilder:
                     algorithm=SigningAlgorithm.NONE,
                     key_id="",
                     partition_name="system",
-                    data_block_size=4096,
-                    hash_block_size=4096,
+                    block_size=4096,
                 ),
             },
         )
@@ -384,7 +382,7 @@ class TestSigningPlanBuilder:
         cmd = plan.steps[0].command
         assert "--algorithm" not in cmd
         assert "--key" not in cmd
-        assert "--data_block_size" in cmd
+        assert "--block_size" in cmd
 
     def test_vbmeta_none_omits_algorithm_and_key(self, tmp_path: Path) -> None:
         _setup_workspace(tmp_path)

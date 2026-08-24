@@ -5,7 +5,7 @@ All request/result types are frozen dataclasses for immutability.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from avbpowertool.domain.models import (
     ImageInspection,
@@ -25,6 +25,7 @@ class InspectImagesRequest:
 
     image_names: tuple[str, ...]
     profile_id: str = "current"
+    with_cert: bool = False  # pass avbtool --cert / --atx
 
 
 @dataclass(frozen=True)
@@ -120,6 +121,50 @@ class ConfigCreateResult:
     """Result of profile creation."""
 
     profile_id: str
+    issues: tuple[OperationIssue, ...] = ()
+
+
+# ---------------------------------------------------------------------------
+# Config Migrate / Edit
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ConfigMigrateRequest:
+    """Request to migrate a profile to the current schema version."""
+
+    profile_id: str = "current"
+
+
+@dataclass(frozen=True)
+class ConfigMigrateResult:
+    """Result of a config migration."""
+
+    profile_id: str
+    migrated: bool = False  # True if the on-disk file was upgraded
+    issues: tuple[OperationIssue, ...] = ()
+
+
+@dataclass(frozen=True)
+class ConfigEditRequest:
+    """Request to update a single partition's config fields.
+
+    ``updates`` maps PartitionConfig field names to string values; only
+    whitelisted scalar/tuple fields are accepted (see
+    ``ConfigEditUseCase``).
+    """
+
+    profile_id: str = "current"
+    partition_name: str = ""
+    updates: dict[str, str] = field(default_factory=dict[str, str])
+
+
+@dataclass(frozen=True)
+class ConfigEditResult:
+    """Result of a config field update."""
+
+    profile_id: str
+    partition_name: str
     issues: tuple[OperationIssue, ...] = ()
 
 

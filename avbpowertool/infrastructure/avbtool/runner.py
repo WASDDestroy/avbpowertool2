@@ -32,8 +32,11 @@ class SubprocessAvbTool:
     # AvbToolPort
     # ------------------------------------------------------------------
 
-    def inspect_image(self, image_path: Path) -> AvbToolResult:
-        return self._run(["info_image", "--image", str(image_path)])
+    def inspect_image(self, image_path: Path, cert: bool = False) -> AvbToolResult:
+        cmd = ["info_image", "--image", str(image_path)]
+        if cert:
+            cmd.append("--cert")
+        return self._run(cmd)
 
     def erase_footer(self, image_path: Path) -> AvbToolResult:
         return self._run(["erase_footer", "--image", str(image_path)])
@@ -41,7 +44,6 @@ class SubprocessAvbTool:
     def add_hash_footer(
         self,
         image_path: Path,
-        output_path: Path,
         *,
         partition_name: str,
         algorithm: str,
@@ -55,8 +57,6 @@ class SubprocessAvbTool:
             "add_hash_footer",
             "--image",
             str(image_path),
-            "--output",
-            str(output_path),
             "--partition_name",
             partition_name,
             "--salt",
@@ -75,15 +75,13 @@ class SubprocessAvbTool:
     def add_hashtree_footer(
         self,
         image_path: Path,
-        output_path: Path,
         *,
         partition_name: str,
         algorithm: str,
         key_path: Path | None = None,
         salt: str,
         rollback_index: int,
-        data_block_size: int = 4096,
-        hash_block_size: int = 4096,
+        block_size: int = 4096,
         flags: int = 0,
         props: tuple[tuple[str, str], ...] = (),
     ) -> AvbToolResult:
@@ -91,18 +89,14 @@ class SubprocessAvbTool:
             "add_hashtree_footer",
             "--image",
             str(image_path),
-            "--output",
-            str(output_path),
             "--partition_name",
             partition_name,
             "--salt",
             salt,
             "--rollback_index",
             str(rollback_index),
-            "--data_block_size",
-            str(data_block_size),
-            "--hash_block_size",
-            str(hash_block_size),
+            "--block_size",
+            str(block_size),
         ]
         if key_path is not None:
             cmd.extend(["--algorithm", algorithm, "--key", str(key_path)])
