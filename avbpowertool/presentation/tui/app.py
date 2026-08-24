@@ -113,6 +113,7 @@ class App:
             export_config,
             import_config,
             read_image_info,
+            settings,
             sign_images,
         )
 
@@ -123,9 +124,9 @@ class App:
             "action:config.export": export_config.show,
             "action:view_current_config": display_avb_info.show,
             "action:config.library": self._show_config_library,
-            "action:settings.edit": self._show_settings_placeholder,
-            "action:settings.view": self._show_settings_placeholder,
-            "action:settings.check_l10n": self._show_settings_placeholder,
+            "action:settings.edit": settings.show_edit,
+            "action:settings.view": settings.show_view,
+            "action:settings.check_l10n": settings.show_check_l10n,
         }
 
         handler = view_map.get(action_id)
@@ -174,11 +175,3 @@ class App:
                 message_screen(stdscr, "Error", [i.message for i in activate_result.issues])
             else:
                 message_screen(stdscr, "Success", [f"Activated: {profile.profile_id}"])
-
-    def _show_settings_placeholder(
-        self, stdscr: curses.window, ws: WorkspacePaths, avb: object
-    ) -> None:
-        """Placeholder for settings views."""
-        message_screen(
-            stdscr, "Settings", ["Settings management will be available in a future version."]
-        )

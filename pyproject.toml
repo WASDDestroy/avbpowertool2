@@ -45,4 +45,5 @@ exclude = [
     "avbpowertool/infrastructure/persistence/archive_repository.py",
     "avbpowertool/infrastructure/persistence/key_repository.py",
     "avbpowertool/application/services/inspect_images.py",
+    "avbpowertool/presentation/tui/views/settings.py",
 ]

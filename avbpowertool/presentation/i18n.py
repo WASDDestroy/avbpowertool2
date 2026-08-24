@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 
 _initialized = False
 _t: gettext.NullTranslations | None = None
+_current_language: str = "en"
+_locale_dir: Path | None = None
+
+
+def get_current_language() -> str:
+    """Return the currently active language code."""
+    return _current_language
 
 
 def init_i18n(language: str = "en", locale_dir: Path | None = None) -> None:
@@ -25,13 +32,19 @@ def init_i18n(language: str = "en", locale_dir: Path | None = None) -> None:
         language: Language code (e.g. 'en', 'zh').
         locale_dir: Directory containing locale/ subdirectories.
     """
-    global _t, _initialized
+    global _t, _initialized, _current_language, _locale_dir
 
     if locale_dir is None:
         locale_dir = Path(__file__).parent.parent / "locale"
 
+    _current_language = language
+    _locale_dir = locale_dir
+
     # Ensure .mo files exist
     _ensure_compiled(locale_dir, language)
+    # Also ensure default (en) .mo exists for fallback comparison
+    if language != "en":
+        _ensure_compiled(locale_dir, "en")
 
     try:
         _t = gettext.translation(
@@ -46,11 +59,18 @@ def init_i18n(language: str = "en", locale_dir: Path | None = None) -> None:
     _initialized = True
 
 
-def _(message: str) -> str:
-    """Translate a message. Returns the message itself if not initialized."""
-    if _t is None:
-        return message
-    return _t.gettext(message)
+def _(message: str, **kwargs: object) -> str:
+    """Translate a message. Supports str.format() kwargs.
+
+    Example: _("settings.saved", key="Language", old="en", new="zh")
+    """
+    translated = message if _t is None else _t.gettext(message)
+    if kwargs:
+        try:
+            return translated.format(**kwargs)
+        except (KeyError, IndexError, ValueError):
+            return translated
+    return translated
 
 
 def _ensure_compiled(locale_dir: Path, language: str) -> None:
@@ -210,3 +230,92 @@ def _write_mo(translations: dict[str, str], mo_path: Path) -> None:
 
     mo_path.parent.mkdir(parents=True, exist_ok=True)
     mo_path.write_bytes(bytes(out))
+
+
+def check_l10n(language: str) -> dict[str, str]:
+    """Check for missing translations in the given language.
+
+    Returns a dict of {msgid: default_msgstr} for entries that exist in
+    the default (en) .po file but are missing from the target language.
+    """
+    if _locale_dir is None:
+        return {}
+
+    default_strings = _parse_po_keys(_locale_dir / "en" / "LC_MESSAGES" / "avbpowertool.po")
+    if language == "en":
+        return {}
+
+    target_po = _locale_dir / language / "LC_MESSAGES" / "avbpowertool.po"
+    if not target_po.exists():
+        return dict(default_strings)
+
+    target_strings = _parse_po_keys(target_po)
+    missing: dict[str, str] = {}
+    for key, default_val in default_strings.items():
+        if key not in target_strings:
+            missing[key] = default_val
+    return missing
+
+
+def _parse_po_keys(po_path: Path) -> dict[str, str]:
+    """Parse a .po file and return {msgid: msgstr} for non-empty entries."""
+    if not po_path.exists():
+        return {}
+
+    result: dict[str, str] = {}
+    current_msgid_parts: list[str] = []
+    current_msgstr_parts: list[str] = []
+    in_msgid = False
+    in_msgstr = False
+
+    with open(po_path, encoding="utf-8") as f:
+        for raw_line in f:
+            line = raw_line.rstrip("\n\r")
+            stripped = line.strip()
+
+            if not stripped or stripped.startswith("#"):
+                if current_msgid_parts and current_msgstr_parts:
+                    msgid = "".join(current_msgid_parts)
+                    msgstr = "".join(current_msgstr_parts)
+                    if msgid and msgstr:
+                        result[msgid] = msgstr
+                current_msgid_parts = []
+                current_msgstr_parts = []
+                in_msgid = False
+                in_msgstr = False
+                continue
+
+            if stripped.startswith("msgid "):
+                if current_msgid_parts and current_msgstr_parts:
+                    msgid = "".join(current_msgid_parts)
+                    msgstr = "".join(current_msgstr_parts)
+                    if msgid and msgstr:
+                        result[msgid] = msgstr
+                current_msgid_parts = []
+                current_msgstr_parts = []
+                in_msgid = True
+                in_msgstr = False
+                value = _extract_quoted(stripped[6:])
+                if value is not None:
+                    current_msgid_parts.append(value)
+            elif stripped.startswith("msgstr "):
+                in_msgid = False
+                in_msgstr = True
+                value = _extract_quoted(stripped[7:])
+                if value is not None:
+                    current_msgstr_parts.append(value)
+            elif stripped.startswith('"'):
+                value = _extract_quoted(stripped)
+                if value is not None:
+                    if in_msgid:
+                        current_msgid_parts.append(value)
+                    elif in_msgstr:
+                        current_msgstr_parts.append(value)
+
+    if current_msgid_parts and current_msgstr_parts:
+        msgid = "".join(current_msgid_parts)
+        msgstr = "".join(current_msgstr_parts)
+        if msgid and msgstr:
+            result[msgid] = msgstr
+
+    return result

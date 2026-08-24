@@ -57,7 +57,7 @@ msgstr "管理全局设置。"
 msgid "home.action.view_current_config_info"
 msgstr "查看当前配置信息"
 
-# Settings
+# Settings actions
 msgid "settings.action.edit"
 msgstr "编辑设置"
 
@@ -66,6 +66,69 @@ msgstr "查看当前设置"
 
 msgid "settings.action.check_l10n"
 msgstr "检查缺失的翻译"
+
+# Settings UI
+msgid "settings.language"
+msgstr "语言"
+
+msgid "settings.log_level"
+msgstr "日志级别"
+
+msgid "settings.select_setting"
+msgstr "选择要编辑的设置"
+
+msgid "settings.current_suffix"
+msgstr "当前"
+
+msgid "settings.saved_title"
+msgstr "设置已保存"
+
+msgid "settings.saved"
+msgstr "已保存 {key}：{old} -> {new}"
+
+msgid "settings.restart_notice"
+msgstr "重启程序以使更改生效。"
+
+msgid "settings.view_title"
+msgstr "当前设置"
+
+msgid "settings.current_settings"
+msgstr "当前全局设置："
+
+msgid "settings.file_location"
+msgstr "设置文件"
+
+msgid "settings.check_l10n_title"
+msgstr "翻译检查"
+
+msgid "settings.check_l10n_header"
+msgstr "正在检查语言 {language} 的翻译"
+
+msgid "settings.check_l10n.no_missing"
+msgstr "语言 \"{language}\" 没有缺失的翻译。"
+
+msgid "settings.check_l10n.missing_header"
+msgstr "语言 \"{language}\" 缺失以下翻译（{count} 项）："
+
+# Settings options — language
+msgid "settings.option.language.en"
+msgstr "English"
+
+msgid "settings.option.language.zh"
+msgstr "简体中文"
+
+# Settings options — log level
+msgid "settings.option.log_level.DEBUG"
+msgstr "调试"
+
+msgid "settings.option.log_level.INFO"
+msgstr "信息"
+
+msgid "settings.option.log_level.WARNING"
+msgstr "警告"
+
+msgid "settings.option.log_level.ERROR"
+msgstr "错误"
 
 # UI 字符串
 msgid "Exit"

@@ -57,7 +57,7 @@ msgstr "Manage global settings."
 msgid "home.action.view_current_config_info"
 msgstr "View Current Config Info"
 
-# Settings
+# Settings actions
 msgid "settings.action.edit"
 msgstr "Edit settings"
 
@@ -66,6 +66,69 @@ msgstr "View current settings"
 
 msgid "settings.action.check_l10n"
 msgstr "Check missing translations"
+
+# Settings UI
+msgid "settings.language"
+msgstr "Language"
+
+msgid "settings.log_level"
+msgstr "Log Level"
+
+msgid "settings.select_setting"
+msgstr "Select a setting to edit"
+
+msgid "settings.current_suffix"
+msgstr "current"
+
+msgid "settings.saved_title"
+msgstr "Settings Saved"
+
+msgid "settings.saved"
+msgstr "Saved {key}: {old} -> {new}"
+
+msgid "settings.restart_notice"
+msgstr "Restart the program for changes to take effect."
+
+msgid "settings.view_title"
+msgstr "Current Settings"
+
+msgid "settings.current_settings"
+msgstr "Current global settings:"
+
+msgid "settings.file_location"
+msgstr "Settings file"
+
+msgid "settings.check_l10n_title"
+msgstr "Translation Check"
+
+msgid "settings.check_l10n_header"
+msgstr "Checking translations for language: {language}"
+
+msgid "settings.check_l10n.no_missing"
+msgstr "No missing translations for language \"{language}\"."
+
+msgid "settings.check_l10n.missing_header"
+msgstr "Missing translations for language \"{language}\" ({count}):"
+
+# Settings options — language
+msgid "settings.option.language.en"
+msgstr "English"
+
+msgid "settings.option.language.zh"
+msgstr "Simplified Chinese"
+
+# Settings options — log level
+msgid "settings.option.log_level.DEBUG"
+msgstr "Debug"
+
+msgid "settings.option.log_level.INFO"
+msgstr "Info"
+
+msgid "settings.option.log_level.WARNING"
+msgstr "Warning"
+
+msgid "settings.option.log_level.ERROR"
+msgstr "Error"
 
 # UI strings
 msgid "Exit"
