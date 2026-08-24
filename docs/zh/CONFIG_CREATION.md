@@ -219,3 +219,34 @@ profiles/my_device/
   }
 }
 ```
+
+## 无签名（NONE）分区
+
+v2 支持 `SigningAlgorithm.NONE`：分区仍会添加 hash / hashtree footer 或 vbmeta 内容，
+但**不**附加 `--algorithm` / `--key`，因此 avbtool 不计算哈希/签名（等价于未签名镜像）。
+
+```python
+PartitionConfig(
+    image="dtbo.img",
+    descriptor=DescriptorType.HASH,
+    algorithm=SigningAlgorithm.NONE,   # 无签名
+    key_id="",                          # NONE 分区无需 key_id
+    partition_name="dtbo",
+)
+```
+
+vbmeta 的 `included_partitions` / `chain_partitions` 可以引用 NONE 分区；链分区密钥通过
+`chain_partitions` 三元组中的公钥文件名解析。
+
+## 导入旧版 v1 配置
+
+v1（AVBPowerTool 1.x）导出的配置 zip 可以自动转换为 v2 配置：
+
+- **TUI**：Settings 页 → `[I] Import v1 legacy config`，选择根目录的 v1 zip。
+- **CLI**：`avbpowertool config import-legacy <archive> [--name ID] [--no-activate] [--json]`。
+
+转换会：解码 `imageInfo.json`（保留签名相关字段，`Algorithm: NONE` 映射为
+`SigningAlgorithm.NONE`）、补全 vbmeta 链分区三元组、复制 `Keys/` 中的 pem/pub.bin 并生成
+`manifest.json`。v1 BATCH 归档会被明确拒绝；转换不修改 v1 源文件。
+
+完整设计见 [LEGACY_CONFIG_IMPORT.md](LEGACY_CONFIG_IMPORT.md)。

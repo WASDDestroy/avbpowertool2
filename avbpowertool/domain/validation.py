@@ -15,9 +15,11 @@ from .models import (
     SigningAlgorithm,
 )
 
-# Algorithms valid for each descriptor type
+# Algorithms valid for each descriptor type.
+# NONE is valid: avbtool produces an unsigned footer/vbmeta (no --algorithm/--key).
 _VALID_SIGNING_ALGORITHMS = frozenset(
     {
+        SigningAlgorithm.NONE,
         SigningAlgorithm.SHA256_RSA2048,
         SigningAlgorithm.SHA256_RSA4096,
         SigningAlgorithm.SHA512_RSA2048,
@@ -61,7 +63,8 @@ def validate_partition(name: str, config: PartitionConfig) -> list[OperationIssu
     if not config.image:
         issues.append(OperationIssue("config.missing_image", f"Partition {name!r}: image is empty"))
 
-    if not config.key_id:
+    # key_id is not required for unsigned (NONE) partitions
+    if config.algorithm != SigningAlgorithm.NONE and not config.key_id:
         issues.append(OperationIssue("config.key_missing", f"Partition {name!r}: key_id is empty"))
 
     if not config.partition_name:

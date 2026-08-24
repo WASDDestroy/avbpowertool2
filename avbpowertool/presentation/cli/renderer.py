@@ -13,6 +13,7 @@ from avbpowertool.application.commands import (
     ConfigValidateResult,
     InspectImagesResult,
     KeyDiscoveryResult,
+    LegacyImportResult,
     ProfileActivateResult,
     ProfileListResult,
     SignImagesResult,
@@ -239,6 +240,31 @@ def render_export(result: ConfigExportResult, as_json: bool, out: TextIO = sys.s
 
     if not any(i.error_code.startswith("config.export") for i in result.issues):
         _emit_text(f"Exported to: {result.output_path}", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_legacy_import(
+    result: LegacyImportResult, as_json: bool, out: TextIO = sys.stdout
+) -> None:
+    if as_json:
+        _emit_json(
+            {
+                "profile_id": result.profile_id,
+                "partition_count": result.partition_count,
+                "key_count": result.key_count,
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if result.profile_id:
+        _emit_text(
+            f"Imported legacy profile: {result.profile_id} "
+            f"({result.partition_count} partitions, {result.key_count} keys)",
+            out,
+        )
     for iss in result.issues:
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
 

@@ -14,7 +14,6 @@ from avbpowertool.domain.validation import (
     validate_profile,
 )
 
-
 # ---------------------------------------------------------------------------
 # Profile validation
 # ---------------------------------------------------------------------------
@@ -211,6 +210,51 @@ class TestValidatePartition:
         )
         issues = validate_partition("system", config)
         assert len(issues) == 0
+
+    def test_valid_none_hash_without_key(self) -> None:
+        config = PartitionConfig(
+            image="dtbo.img",
+            descriptor=DescriptorType.HASH,
+            algorithm=SigningAlgorithm.NONE,
+            key_id="",
+            partition_name="dtbo",
+        )
+        issues = validate_partition("dtbo", config)
+        assert len(issues) == 0
+
+    def test_valid_none_hashtree_without_key(self) -> None:
+        config = PartitionConfig(
+            image="system.img",
+            descriptor=DescriptorType.HASHTREE,
+            algorithm=SigningAlgorithm.NONE,
+            key_id="",
+            partition_name="system",
+        )
+        issues = validate_partition("system", config)
+        assert len(issues) == 0
+
+    def test_valid_none_vbmeta_with_contents(self) -> None:
+        config = PartitionConfig(
+            image="vbmeta.img",
+            descriptor=DescriptorType.VBMETA,
+            algorithm=SigningAlgorithm.NONE,
+            key_id="",
+            partition_name="vbmeta",
+            included_partitions=("boot",),
+        )
+        issues = validate_partition("vbmeta", config)
+        assert len(issues) == 0
+
+    def test_none_vbmeta_still_requires_contents(self) -> None:
+        config = PartitionConfig(
+            image="vbmeta.img",
+            descriptor=DescriptorType.VBMETA,
+            algorithm=SigningAlgorithm.NONE,
+            key_id="",
+            partition_name="vbmeta",
+        )
+        issues = validate_partition("vbmeta", config)
+        assert any(i.error_code == "config.vbmeta_no_contents" for i in issues)
 
 
 # ---------------------------------------------------------------------------

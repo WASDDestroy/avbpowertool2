@@ -1,0 +1,275 @@
+{
+    "boot": {
+        "Algorithm": "SHA256_RSA4096",
+        "Descriptor Type": "Hash",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Image File": "boot.img",
+        "Image size": "100663296",
+        "Partition Name": "boot",
+        "Props": {
+            "com.android.build.boot.fingerprint": "Lenovo/TB710FU_PRC/TB710FU:15/AQ3A.250129.001/ZUXOS_1.5.04.414_260320_PRC:user/release-keys",
+            "com.android.build.boot.os_version": "14",
+            "com.android.build.boot.security_patch": "2025-01-05"
+        },
+        "Public key (sha1)": "2597c218aae470a130f61162feaae70afd97f011",
+        "Public key file": "testkey_rsa4096.pem",
+        "Rollback Index": "1736035200",
+        "Salt": "c15f065a81209c0e792f64805565a0817fc468d5c065c5cab15d48711ef87476"
+    },
+    "dtbo": {
+        "Algorithm": "NONE",
+        "Descriptor Type": "Hash",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Image File": "dtbo.img",
+        "Image size": "25165824",
+        "Partition Name": "dtbo",
+        "Props": {
+            "com.android.build.dtbo.fingerprint": "Lenovo/TB710FU_PRC/TB710FU:15/AQ3A.250129.001/ZUXOS_1.5.04.414_260320_PRC:user/release-keys"
+        },
+        "Rollback Index": "0",
+        "Salt": "dafbf2226bc2fe7da04ea3752689a4982e2d648cb9236d2e630bba0aa71128c6"
+    },
+    "init_boot": {
+        "Algorithm": "NONE",
+        "Descriptor Type": "Hash",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Image File": "init_boot.img",
+        "Image size": "8388608",
+        "Partition Name": "init_boot",
+        "Props": {
+            "com.android.build.init_boot.fingerprint": "Lenovo/TB710FU_PRC/TB710FU:15/AQ3A.250129.001/ZUXOS_1.5.04.414_260320_PRC:user/release-keys",
+            "com.android.build.init_boot.os_version": "14",
+            "com.android.build.init_boot.security_patch": "2025-01-05"
+        },
+        "Rollback Index": "0",
+        "Salt": "fbacd9dde6a9d9e13c5c7fef9d653d5bb2b988841e9333e3db1907e7c499d965"
+    },
+    "odm": {
+        "Algorithm": "NONE",
+        "Data Block Size": "4096 bytes",
+        "Descriptor Type": "Hashtree",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Hash Block Size": "4096 bytes",
+        "Image File": "odm.img",
+        "Image size": "1576960",
+        "Partition Name": "odm",
+        "Props": {
+            "com.android.build.odm.fingerprint": "Lenovo/TB710FU_PRC/TB710FU:15/AQ3A.250129.001/ZUXOS_1.5.04.414_260320_PRC:user/release-keys",
+            "com.android.build.odm.os_version": "14"
+        },
+        "Rollback Index": "0",
+        "Root Digest": "2d5b774530ad5716171c7d0ebf4f552e6e64731a3c33f7ae0a93314fdf418f0c",
+        "Salt": "fbacd9dde6a9d9e13c5c7fef9d653d5bb2b988841e9333e3db1907e7c499d965",
+        "Version of dm-verity": "1"
+    },
+    "product": {
+        "Algorithm": "NONE",
+        "Data Block Size": "4096 bytes",
+        "Descriptor Type": "Hashtree",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Hash Block Size": "4096 bytes",
+        "Image File": "product.img",
+        "Image size": "1111277568",
+        "Partition Name": "product",
+        "Props": {
+            "com.android.build.product.fingerprint": "Lenovo/TB710FU/TB710FU:16/BP2A.250605.031.A3/ZUXOS_1.5.04.414_260320_PRC:user/release-keys",
+            "com.android.build.product.os_version": "16",
+            "com.android.build.product.security_patch": "2026-03-05"
+        },
+        "Rollback Index": "0",
+        "Root Digest": "0a4fde213e255b8412d419ca74f487735ef73ffa7f5ee06c4ae03c3f3a766821",
+        "Salt": "acd7227ed8b301a42e93431c75a7466e7292f201a1abcbbe8eaa8a6081d67806",
+        "Version of dm-verity": "1"
+    },
+    "pvmfw": {
+        "Algorithm": "NONE",
+        "Descriptor Type": "Hash",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Image File": "pvmfw.img",
+        "Image size": "1048576",
+        "Partition Name": "pvmfw",
+        "Props": {
+            "com.android.build.pvmfw.fingerprint": "Lenovo/TB710FU/TB710FU:16/BP2A.250605.031.A3/ZUXOS_1.5.04.414_260320_PRC:user/release-keys"
+        },
+        "Rollback Index": "0",
+        "Salt": "dafbf2226bc2fe7da04ea3752689a4982e2d648cb9236d2e630bba0aa71128c6"
+    },
+    "recovery": {
+        "Algorithm": "SHA256_RSA4096",
+        "Descriptor Type": "Hash",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Image File": "recovery.img",
+        "Image size": "104857600",
+        "Partition Name": "recovery",
+        "Props": {
+            "com.android.build.recovery.fingerprint": "Lenovo/TB710FU_PRC/TB710FU:15/AQ3A.250129.001/ZUXOS_1.5.04.414_260320_PRC:user/release-keys"
+        },
+        "Public key (sha1)": "2597c218aae470a130f61162feaae70afd97f011",
+        "Public key file": "testkey_rsa4096.pem",
+        "Rollback Index": "1",
+        "Salt": "dafbf2226bc2fe7da04ea3752689a4982e2d648cb9236d2e630bba0aa71128c6"
+    },
+    "system": {
+        "Algorithm": "NONE",
+        "Data Block Size": "4096 bytes",
+        "Descriptor Type": "Hashtree",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Hash Block Size": "4096 bytes",
+        "Image File": "system.img",
+        "Image size": "11396861952",
+        "Partition Name": "system",
+        "Props": {
+            "com.android.build.system.fingerprint": "Lenovo/TB710FU/TB710FU:16/BP2A.250605.031.A3/ZUXOS_1.5.04.414_260320_PRC:user/release-keys",
+            "com.android.build.system.os_version": "16",
+            "com.android.build.system.security_patch": "2026-03-05"
+        },
+        "Rollback Index": "0",
+        "Root Digest": "a086879981f0790374e47546d931f14321af28a448bfc7eb42d0ea9d5ae188c2",
+        "Salt": "acd7227ed8b301a42e93431c75a7466e7292f201a1abcbbe8eaa8a6081d67806",
+        "Version of dm-verity": "1"
+    },
+    "system_dlkm": {
+        "Algorithm": "NONE",
+        "Data Block Size": "4096 bytes",
+        "Descriptor Type": "Hashtree",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Hash Block Size": "4096 bytes",
+        "Image File": "system_dlkm.img",
+        "Image size": "12201984",
+        "Partition Name": "system_dlkm",
+        "Props": {},
+        "Rollback Index": "0",
+        "Root Digest": "4dafb29185f16ef331efbf2879074e170064f98f29c1265bcfa525552b20a6f4",
+        "Salt": "e67282c364af46d444187f6afd04eafa418fd6234fb253e70eccd053b563338a",
+        "Version of dm-verity": "1"
+    },
+    "system_ext": {
+        "Algorithm": "NONE",
+        "Data Block Size": "4096 bytes",
+        "Descriptor Type": "Hashtree",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Hash Block Size": "4096 bytes",
+        "Image File": "system_ext.img",
+        "Image size": "649338880",
+        "Partition Name": "system_ext",
+        "Props": {
+            "com.android.build.system_ext.fingerprint": "Lenovo/TB710FU/TB710FU:16/BP2A.250605.031.A3/ZUXOS_1.5.04.414_260320_PRC:user/release-keys",
+            "com.android.build.system_ext.os_version": "16",
+            "com.android.build.system_ext.security_patch": "2026-03-05"
+        },
+        "Rollback Index": "0",
+        "Root Digest": "f9ab540e9903039345af0402dd28b6cf7f777c017e7727e88db40a6d56a7b5a2",
+        "Salt": "acd7227ed8b301a42e93431c75a7466e7292f201a1abcbbe8eaa8a6081d67806",
+        "Version of dm-verity": "1"
+    },
+    "vbmeta": {
+        "Algorithm": "SHA256_RSA4096",
+        "Chain": [
+            "boot:3:",
+            "recovery:1:",
+            "vbmeta_system:2:"
+        ],
+        "Chain partition key": [
+            "testkey_rsa4096_pub.bin",
+            "testkey_rsa4096_pub.bin",
+            "testkey_rsa2048_pub.bin"
+        ],
+        "Flags": "0",
+        "Hash": [
+            "dtbo",
+            "init_boot",
+            "vendor_boot"
+        ],
+        "Hashtree": [
+            "odm",
+            "system_dlkm",
+            "vendor",
+            "vendor_dlkm"
+        ],
+        "Image File": "vbmeta.img",
+        "Public key (sha1)": "2597c218aae470a130f61162feaae70afd97f011",
+        "Public key file": "testkey_rsa4096.pem",
+        "Rollback Index": "0"
+    },
+    "vbmeta_system": {
+        "Algorithm": "SHA256_RSA2048",
+        "Chain": [],
+        "Chain partition key": [],
+        "Flags": "0",
+        "Hash": [
+            "pvmfw"
+        ],
+        "Hashtree": [
+            "product",
+            "system",
+            "system_ext"
+        ],
+        "Image File": "vbmeta_system.img",
+        "Public key (sha1)": "cdbb77177f731920bbe0a0f94f84d9038ae0617d",
+        "Public key file": "testkey_rsa2048.pem",
+        "Rollback Index": "1772668800"
+    },
+    "vendor": {
+        "Algorithm": "NONE",
+        "Data Block Size": "4096 bytes",
+        "Descriptor Type": "Hashtree",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Hash Block Size": "4096 bytes",
+        "Image File": "vendor.img",
+        "Image size": "1885597696",
+        "Partition Name": "vendor",
+        "Props": {
+            "com.android.build.vendor.fingerprint": "Lenovo/TB710FU_PRC/TB710FU:15/AQ3A.250129.001/ZUXOS_1.5.04.414_260320_PRC:user/release-keys",
+            "com.android.build.vendor.os_version": "14",
+            "com.android.build.vendor.security_patch": "2025-01-05"
+        },
+        "Rollback Index": "0",
+        "Root Digest": "1c7f474b251a8c0d25d27543291d6d4b391de65c0393135ea6d957874e2cd528",
+        "Salt": "fbacd9dde6a9d9e13c5c7fef9d653d5bb2b988841e9333e3db1907e7c499d965",
+        "Version of dm-verity": "1"
+    },
+    "vendor_boot": {
+        "Algorithm": "NONE",
+        "Descriptor Type": "Hash",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Image File": "vendor_boot.img",
+        "Image size": "100663296",
+        "Partition Name": "vendor_boot",
+        "Props": {
+            "com.android.build.vendor_boot.fingerprint": "Lenovo/TB710FU_PRC/TB710FU:15/AQ3A.250129.001/ZUXOS_1.5.04.414_260320_PRC:user/release-keys"
+        },
+        "Rollback Index": "0",
+        "Salt": "dafbf2226bc2fe7da04ea3752689a4982e2d648cb9236d2e630bba0aa71128c6"
+    },
+    "vendor_dlkm": {
+        "Algorithm": "NONE",
+        "Data Block Size": "4096 bytes",
+        "Descriptor Type": "Hashtree",
+        "Flags": "0",
+        "Hash Algorithm": "sha256",
+        "Hash Block Size": "4096 bytes",
+        "Image File": "vendor_dlkm.img",
+        "Image size": "105668608",
+        "Partition Name": "vendor_dlkm",
+        "Props": {
+            "com.android.build.vendor_dlkm.fingerprint": "Lenovo/TB710FU_PRC/TB710FU:15/AQ3A.250129.001/ZUXOS_1.5.04.414_260320_PRC:user/release-keys",
+            "com.android.build.vendor_dlkm.os_version": "14"
+        },
+        "Rollback Index": "0",
+        "Root Digest": "769475fb850b9a0a07700bd8e36cef70427a114dd0574951289b137e2c5b17c2",
+        "Salt": "fbacd9dde6a9d9e13c5c7fef9d653d5bb2b988841e9333e3db1907e7c499d965",
+        "Version of dm-verity": "1"
+    }
+}

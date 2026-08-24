@@ -7,6 +7,7 @@ A configuration-driven Python wrapper for AOSP `avbtool.py`. Provides CLI and TU
 - **Image Inspection**: Read AVB metadata from boot, system, vbmeta images
 - **Image Signing**: Sign images with hash/hashtree footers, generate vbmeta images
 - **Config Management**: Profile-based configuration with import/export via ZIP archives
+- **Legacy Config Import**: Auto-convert v1 (AVBPowerTool 1.x) config ZIPs to v2 (Settings page or `config import-legacy`)
 - **Key Management**: Per-profile key stores with manifest-based key resolution
 - **CLI Mode**: Full-featured command-line interface with `--json` output
 - **TUI Mode**: Curses-based interactive terminal UI with keyboard navigation
@@ -52,6 +53,7 @@ avbpowertool config show
 avbpowertool config validate
 avbpowertool config activate myprofile
 avbpowertool config import myconfig.zip
+avbpowertool config import-legacy mylegacy_v1.zip   # auto-convert legacy v1 config to v2
 avbpowertool config export myprofile
 
 # About
@@ -151,6 +153,7 @@ See [AGENTS.md](../AGENTS.md) for development guidelines.
 - [Backend API Reference](BACKEND_API.md) — use the backend from Python
 - [Adding Navigation](FRONTEND_NAVIGATION.md) — add entries to the TUI navigation tree
 - [Editing Pages](FRONTEND_PAGES.md) — create or modify TUI views
+- [Legacy Config Import](LEGACY_CONFIG_IMPORT.md) — v1 → v2 conversion design and implementation
 
 ## License
 

@@ -45,7 +45,7 @@ class SubprocessAvbTool:
         *,
         partition_name: str,
         algorithm: str,
-        key_path: Path,
+        key_path: Path | None = None,
         salt: str,
         rollback_index: int,
         flags: int = 0,
@@ -59,15 +59,13 @@ class SubprocessAvbTool:
             str(output_path),
             "--partition_name",
             partition_name,
-            "--algorithm",
-            algorithm,
-            "--key",
-            str(key_path),
             "--salt",
             salt,
             "--rollback_index",
             str(rollback_index),
         ]
+        if key_path is not None:
+            cmd.extend(["--algorithm", algorithm, "--key", str(key_path)])
         if flags:
             cmd.extend(["--flags", str(flags)])
         for k, v in props:
@@ -81,7 +79,7 @@ class SubprocessAvbTool:
         *,
         partition_name: str,
         algorithm: str,
-        key_path: Path,
+        key_path: Path | None = None,
         salt: str,
         rollback_index: int,
         data_block_size: int = 4096,
@@ -97,10 +95,6 @@ class SubprocessAvbTool:
             str(output_path),
             "--partition_name",
             partition_name,
-            "--algorithm",
-            algorithm,
-            "--key",
-            str(key_path),
             "--salt",
             salt,
             "--rollback_index",
@@ -110,6 +104,8 @@ class SubprocessAvbTool:
             "--hash_block_size",
             str(hash_block_size),
         ]
+        if key_path is not None:
+            cmd.extend(["--algorithm", algorithm, "--key", str(key_path)])
         if flags:
             cmd.extend(["--flags", str(flags)])
         for k, v in props:
@@ -121,7 +117,7 @@ class SubprocessAvbTool:
         output_path: Path,
         *,
         algorithm: str,
-        key_path: Path,
+        key_path: Path | None = None,
         rollback_index: int,
         include_descriptors: tuple[Path, ...] = (),
         chain_partitions: tuple[str, ...] = (),
@@ -132,13 +128,11 @@ class SubprocessAvbTool:
             "make_vbmeta_image",
             "--output",
             str(output_path),
-            "--algorithm",
-            algorithm,
-            "--key",
-            str(key_path),
             "--rollback_index",
             str(rollback_index),
         ]
+        if key_path is not None:
+            cmd.extend(["--algorithm", algorithm, "--key", str(key_path)])
         for desc in include_descriptors:
             cmd.extend(["--include_descriptors_from_image", str(desc)])
         for chain in chain_partitions:

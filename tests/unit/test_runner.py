@@ -59,3 +59,35 @@ class TestSubprocessAvbTool:
         assert hasattr(result, "stdout")
         assert hasattr(result, "stderr")
         assert hasattr(result, "command_summary")
+
+    def test_none_omits_algorithm_and_key(self, tmp_path: Path) -> None:
+        """NONE (unsigned) footers must not pass --algorithm/--key to avbtool."""
+        script = tmp_path / "avbtool.py"
+        script.write_text("# placeholder")
+        tool = SubprocessAvbTool(script)
+
+        result = tool.add_hash_footer(
+            Path("/img/boot.img"),
+            Path("/staging/boot.img"),
+            partition_name="boot",
+            algorithm="NONE",
+            key_path=None,
+            salt="",
+            rollback_index=0,
+        )
+        assert "--algorithm" not in result.command_summary
+        assert "--key" not in result.command_summary
+
+    def test_none_vbmeta_omits_algorithm_and_key(self, tmp_path: Path) -> None:
+        script = tmp_path / "avbtool.py"
+        script.write_text("# placeholder")
+        tool = SubprocessAvbTool(script)
+
+        result = tool.make_vbmeta_image(
+            Path("/staging/vbmeta.img"),
+            algorithm="NONE",
+            key_path=None,
+            rollback_index=0,
+        )
+        assert "--algorithm" not in result.command_summary
+        assert "--key" not in result.command_summary

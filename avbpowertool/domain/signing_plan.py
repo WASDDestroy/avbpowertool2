@@ -15,6 +15,7 @@ from .models import (
     DescriptorType,
     OperationIssue,
     PartitionConfig,
+    SigningAlgorithm,
     SigningPlan,
     SigningStep,
 )
@@ -128,11 +129,15 @@ class SigningPlanBuilder:
             issues.append(OperationIssue("image.not_found", f"Image not found: {config.image}"))
             return None, issues
 
-        # Resolve key path
-        key_path, key_issues = self._resolve_key_path(config.key_id)
-        issues.extend(key_issues)
-        if key_path is None:
-            return None, issues
+        # Resolve key path (unsigned NONE partitions need no key)
+        key_path: str | None
+        if config.algorithm == SigningAlgorithm.NONE:
+            key_path = None
+        else:
+            key_path, key_issues = self._resolve_key_path(config.key_id)
+            issues.extend(key_issues)
+            if key_path is None:
+                return None, issues
 
         staging_output = str(self._staging_dir / config.image)
 
@@ -172,10 +177,15 @@ class SigningPlanBuilder:
         """Build a signing step for a vbmeta partition."""
         issues: list[OperationIssue] = []
 
-        key_path, key_issues = self._resolve_key_path(config.key_id)
-        issues.extend(key_issues)
-        if key_path is None:
-            return None, issues
+        # Resolve key path (unsigned NONE vbmeta needs no key)
+        key_path: str | None
+        if config.algorithm == SigningAlgorithm.NONE:
+            key_path = None
+        else:
+            key_path, key_issues = self._resolve_key_path(config.key_id)
+            issues.extend(key_issues)
+            if key_path is None:
+                return None, issues
 
         staging_output = str(self._staging_dir / config.image)
 
@@ -183,15 +193,13 @@ class SigningPlanBuilder:
             "make_vbmeta_image",
             "--output",
             staging_output,
-            "--algorithm",
-            config.algorithm.value,
-            "--key",
-            key_path,
             "--rollback_index",
             str(config.rollback_index),
             "--rollback_index_location",
             str(config.rollback_index_location),
         ]
+        if key_path is not None:
+            cmd.extend(["--algorithm", config.algorithm.value, "--key", key_path])
         if config.flags:
             cmd.extend(["--flags", str(config.flags)])
         if config.set_hashtree_disabled_flag:
@@ -215,9 +223,9 @@ class SigningPlanBuilder:
             desc_path = str(self._staging_dir / included_config.image)
             cmd.extend(["--include_descriptors_from_image", desc_path])
 
-        # Chain partitions
+        # Chain partitions (resolve public-key files relative to the key store)
         for chain_entry in config.chain_partitions:
-            cmd.extend(["--chain_partition", chain_entry])
+            cmd.extend(["--chain_partition", self._resolve_chain_key(chain_entry)])
 
         # Properties
         for k, v in config.props:
@@ -244,7 +252,7 @@ class SigningPlanBuilder:
         image_path: str,
         output_path: str,
         config: PartitionConfig,
-        key_path: str,
+        key_path: str | None,
     ) -> list[str]:
         cmd = [
             "add_hash_footer",
@@ -254,10 +262,6 @@ class SigningPlanBuilder:
             output_path,
             "--partition_name",
             config.partition_name,
-            "--algorithm",
-            config.algorithm.value,
-            "--key",
-            key_path,
             "--salt",
             config.salt,
             "--rollback_index",
@@ -267,6 +271,8 @@ class SigningPlanBuilder:
             "--hash_algorithm",
             config.hash_algorithm,
         ]
+        if key_path is not None:
+            cmd.extend(["--algorithm", config.algorithm.value, "--key", key_path])
         if config.flags:
             cmd.extend(["--flags", str(config.flags)])
         if config.set_hashtree_disabled_flag:
@@ -282,7 +288,7 @@ class SigningPlanBuilder:
         image_path: str,
         output_path: str,
         config: PartitionConfig,
-        key_path: str,
+        key_path: str | None,
     ) -> list[str]:
         cmd = [
             "add_hashtree_footer",
@@ -292,10 +298,6 @@ class SigningPlanBuilder:
             output_path,
             "--partition_name",
             config.partition_name,
-            "--algorithm",
-            config.algorithm.value,
-            "--key",
-            key_path,
             "--salt",
             config.salt,
             "--rollback_index",
@@ -307,6 +309,8 @@ class SigningPlanBuilder:
             "--hash_block_size",
             str(config.hash_block_size),
         ]
+        if key_path is not None:
+            cmd.extend(["--algorithm", config.algorithm.value, "--key", key_path])
         if config.flags:
             cmd.extend(["--flags", str(config.flags)])
         if config.set_hashtree_disabled_flag:
@@ -320,6 +324,24 @@ class SigningPlanBuilder:
     # ------------------------------------------------------------------
     # Path resolution
     # ------------------------------------------------------------------
+
+    def _resolve_chain_key(self, chain_entry: str) -> str:
+        """Resolve the public-key segment of a chain entry relative to the key store.
+
+        Chain format: ``partition_name:rollback_index_location:public_key_file``.
+        If the public-key file is not absolute, resolve it against ``self._key_dir``
+        so v1-converted entries like ``boot:3:testkey_rsa4096_pub.bin`` work.
+        """
+        parts = chain_entry.split(":")
+        if len(parts) < 3:
+            return chain_entry
+        name = parts[0]
+        location = parts[1]
+        key_file = ":".join(parts[2:])  # key file itself may contain ':' (Windows drive)
+        key_path = Path(key_file)
+        if not key_path.is_absolute():
+            key_file = str(self._key_dir / key_file)
+        return f"{name}:{location}:{key_file}"
 
     def _resolve_image_path(self, image_file: str) -> str | None:
         """Resolve image file path. Returns None if not found."""

@@ -32,6 +32,7 @@
       "items": [
         {"action": "action:settings.edit", "shortcut": "E"},
         {"action": "action:settings.view", "shortcut": "V"},
+        {"action": "action:settings.import_legacy", "shortcut": "I"},
         {"action": "action:settings.check_l10n", "shortcut": "C"}
       ]
     }
@@ -75,6 +76,10 @@
     },
     "action:settings.view": {
       "label_key": "settings.action.view",
+      "description_key": ""
+    },
+    "action:settings.import_legacy": {
+      "label_key": "settings.action.import_legacy",
       "description_key": ""
     },
     "action:settings.check_l10n": {

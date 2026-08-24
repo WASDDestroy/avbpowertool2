@@ -18,6 +18,7 @@ class ActionId(StrEnum):
     CONFIG_SHOW = "config.show"
     CONFIG_VALIDATE = "config.validate"
     CONFIG_IMPORT = "config.import"
+    CONFIG_IMPORT_LEGACY = "config.import_legacy"
     CONFIG_EXPORT = "config.export"
     CONFIG_ACTIVATE = "config.activate"
     CONFIG_LIST = "config.list"

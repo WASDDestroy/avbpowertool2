@@ -219,3 +219,36 @@ profiles/my_device/
   }
 }
 ```
+
+## Unsigned (NONE) Partitions
+
+v2 supports `SigningAlgorithm.NONE`: the partition still gets its hash / hashtree footer
+or vbmeta contents, but **no** `--algorithm` / `--key` are passed, so avbtool skips
+hash/signature computation (equivalent to an unsigned image).
+
+```python
+PartitionConfig(
+    image="dtbo.img",
+    descriptor=DescriptorType.HASH,
+    algorithm=SigningAlgorithm.NONE,   # unsigned
+    key_id="",                          # no key_id required for NONE
+    partition_name="dtbo",
+)
+```
+
+vbmeta `included_partitions` / `chain_partitions` may reference NONE partitions; chain
+partition keys are resolved from the public-key filename in the `chain_partitions` triple.
+
+## Importing Legacy v1 Configs
+
+v1 (AVBPowerTool 1.x) config ZIP archives can be imported and automatically converted to v2:
+
+- **TUI**: Settings page → `[I] Import v1 legacy config`, pick a v1 zip in the project root.
+- **CLI**: `avbpowertool config import-legacy <archive> [--name ID] [--no-activate] [--json]`.
+
+The conversion decodes `imageInfo.json` (preserving signing-relevant fields, mapping
+`Algorithm: NONE` to `SigningAlgorithm.NONE`), completes vbmeta chain triples, and copies
+`Keys/` pem/pub.bin files into a generated `manifest.json`. v1 BATCH archives are rejected
+explicitly; conversion never modifies the v1 source files.
+
+Full design: [LEGACY_CONFIG_IMPORT.md](LEGACY_CONFIG_IMPORT.md).

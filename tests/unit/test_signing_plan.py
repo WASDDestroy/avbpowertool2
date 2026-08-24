@@ -87,9 +87,7 @@ def _setup_workspace(ws: Path) -> None:
         "key_store_path": profile.key_store_path,
         "partitions": {},
     }
-    (profile_dir / "profile.json").write_text(
-        json.dumps(profile_dict), encoding="utf-8"
-    )
+    (profile_dir / "profile.json").write_text(json.dumps(profile_dict), encoding="utf-8")
 
 
 class TestSigningPlanBuilder:
@@ -318,3 +316,170 @@ class TestSigningPlanBuilder:
         assert "--prop" in cmd
         prop_idx = cmd.index("--prop")
         assert cmd[prop_idx + 1] == "android.boot.vbmeta.digest:sha256_of_vbmeta"
+
+    # ------------------------------------------------------------------
+    # NONE (unsigned) partitions
+    # ------------------------------------------------------------------
+
+    def _build_none_hash_profile(self) -> AvbProfile:
+        return AvbProfile(
+            id="test",
+            name="Test",
+            partitions={
+                "dtbo": PartitionConfig(
+                    image="dtbo.img",
+                    descriptor=DescriptorType.HASH,
+                    algorithm=SigningAlgorithm.NONE,
+                    key_id="",
+                    partition_name="dtbo",
+                    rollback_index=0,
+                    salt="aabb",
+                ),
+            },
+        )
+
+    def test_hash_none_omits_algorithm_and_key(self, tmp_path: Path) -> None:
+        _setup_workspace(tmp_path)
+        (tmp_path / "Images" / "dtbo.img").write_bytes(b"fake dtbo image")
+        profile = self._build_none_hash_profile()
+        image_dir = tmp_path / "Images"
+        key_dir = tmp_path / "profiles" / "current" / "keys"
+        staging_dir = tmp_path / ".avbpowertool-staging"
+
+        builder = SigningPlanBuilder(profile, image_dir, key_dir, staging_dir)
+        plan = builder.build(("dtbo",))
+
+        assert len(plan.steps) == 1
+        cmd = plan.steps[0].command
+        assert "--algorithm" not in cmd
+        assert "--key" not in cmd
+        assert "--hash_algorithm" in cmd
+        assert plan.issues == ()
+
+    def test_hashtree_none_omits_algorithm_and_key(self, tmp_path: Path) -> None:
+        _setup_workspace(tmp_path)
+        profile = AvbProfile(
+            id="test",
+            name="Test",
+            partitions={
+                "system": PartitionConfig(
+                    image="system.img",
+                    descriptor=DescriptorType.HASHTREE,
+                    algorithm=SigningAlgorithm.NONE,
+                    key_id="",
+                    partition_name="system",
+                    data_block_size=4096,
+                    hash_block_size=4096,
+                ),
+            },
+        )
+        image_dir = tmp_path / "Images"
+        key_dir = tmp_path / "profiles" / "current" / "keys"
+        staging_dir = tmp_path / ".avbpowertool-staging"
+
+        builder = SigningPlanBuilder(profile, image_dir, key_dir, staging_dir)
+        plan = builder.build(("system",))
+
+        assert len(plan.steps) == 1
+        cmd = plan.steps[0].command
+        assert "--algorithm" not in cmd
+        assert "--key" not in cmd
+        assert "--data_block_size" in cmd
+
+    def test_vbmeta_none_omits_algorithm_and_key(self, tmp_path: Path) -> None:
+        _setup_workspace(tmp_path)
+        profile = AvbProfile(
+            id="test",
+            name="Test",
+            partitions={
+                "boot": PartitionConfig(
+                    image="boot.img",
+                    descriptor=DescriptorType.HASH,
+                    algorithm=SigningAlgorithm.NONE,
+                    key_id="",
+                    partition_name="boot",
+                ),
+                "vbmeta": PartitionConfig(
+                    image="vbmeta.img",
+                    descriptor=DescriptorType.VBMETA,
+                    algorithm=SigningAlgorithm.NONE,
+                    key_id="",
+                    partition_name="vbmeta",
+                    included_partitions=("boot",),
+                ),
+            },
+        )
+        image_dir = tmp_path / "Images"
+        key_dir = tmp_path / "profiles" / "current" / "keys"
+        staging_dir = tmp_path / ".avbpowertool-staging"
+
+        builder = SigningPlanBuilder(profile, image_dir, key_dir, staging_dir)
+        plan = builder.build(("vbmeta",))
+
+        assert len(plan.steps) == 1
+        cmd = plan.steps[0].command
+        assert "--algorithm" not in cmd
+        assert "--key" not in cmd
+        assert "--rollback_index" in cmd
+        assert plan.issues == ()
+
+    def test_chain_key_resolved_against_key_dir(self, tmp_path: Path) -> None:
+        _setup_workspace(tmp_path)
+        profile = AvbProfile(
+            id="test",
+            name="Test",
+            partitions={
+                "vbmeta": PartitionConfig(
+                    image="vbmeta.img",
+                    descriptor=DescriptorType.VBMETA,
+                    algorithm=SigningAlgorithm.SHA256_RSA4096,
+                    key_id="testkey_rsa4096",
+                    partition_name="vbmeta",
+                    included_partitions=(),
+                    chain_partitions=("vbmeta_system:1:testkey_rsa4096_pub.bin",),
+                ),
+            },
+        )
+        image_dir = tmp_path / "Images"
+        key_dir = tmp_path / "profiles" / "current" / "keys"
+        staging_dir = tmp_path / ".avbpowertool-staging"
+
+        builder = SigningPlanBuilder(profile, image_dir, key_dir, staging_dir)
+        plan = builder.build(("vbmeta",))
+
+        assert len(plan.steps) == 1
+        cmd = plan.steps[0].command
+        chain_idx = cmd.index("--chain_partition")
+        chain_entry = cmd[chain_idx + 1]
+        # The public-key segment must be resolved against the key store dir
+        assert chain_entry == (f"vbmeta_system:1:{key_dir / 'testkey_rsa4096_pub.bin'}")
+
+    def test_chain_absolute_key_kept(self, tmp_path: Path) -> None:
+        _setup_workspace(tmp_path)
+        abs_key = tmp_path / "keys" / "abs_pub.bin"
+        profile = AvbProfile(
+            id="test",
+            name="Test",
+            partitions={
+                "vbmeta": PartitionConfig(
+                    image="vbmeta.img",
+                    descriptor=DescriptorType.VBMETA,
+                    algorithm=SigningAlgorithm.SHA256_RSA4096,
+                    key_id="testkey_rsa4096",
+                    partition_name="vbmeta",
+                    included_partitions=(),
+                    chain_partitions=(f"vbmeta_system:1:{abs_key}",),
+                ),
+            },
+        )
+        image_dir = tmp_path / "Images"
+        key_dir = tmp_path / "profiles" / "current" / "keys"
+        staging_dir = tmp_path / ".avbpowertool-staging"
+
+        builder = SigningPlanBuilder(profile, image_dir, key_dir, staging_dir)
+        plan = builder.build(("vbmeta",))
+
+        assert len(plan.steps) == 1
+        cmd = plan.steps[0].command
+        chain_idx = cmd.index("--chain_partition")
+        assert cmd[chain_idx + 1] == f"vbmeta_system:1:{abs_key}"

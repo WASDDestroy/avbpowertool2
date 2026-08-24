@@ -7,6 +7,7 @@ AOSP `avbtool.py` 的配置驱动 Python 封装。提供 CLI 和 TUI 用于 Andr
 - **镜像检查**：读取 boot、system、vbmeta 镜像的 AVB 元数据
 - **镜像签名**：使用 hash/hashtree footer 签名镜像，生成 vbmeta 镜像
 - **配置管理**：基于 Profile 的配置，支持通过 ZIP 归档导入/导出
+- **旧版配置导入**：将 v1（AVBPowerTool 1.x）配置 zip 自动转换为 v2（设置页或 `config import-legacy`）
 - **密钥管理**：每个 Profile 独立的密钥库，基于 manifest 的密钥解析
 - **CLI 模式**：功能完整的命令行界面，支持 `--json` 输出
 - **TUI 模式**：基于 curses 的交互式终端界面，支持键盘导航
@@ -52,6 +53,7 @@ avbpowertool config show
 avbpowertool config validate
 avbpowertool config activate myprofile
 avbpowertool config import myconfig.zip
+avbpowertool config import-legacy mylegacy_v1.zip   # 旧版 v1 配置自动转换为 v2
 avbpowertool config export myprofile
 
 # 关于
@@ -151,6 +153,7 @@ profiles/
 - [后端 API 参考](BACKEND_API.md) — 在 Python 中调用后端
 - [添加导航](FRONTEND_NAVIGATION.md) — 在 TUI 导航树中添加条目
 - [编辑页面](FRONTEND_PAGES.md) — 创建或修改 TUI 视图
+- [旧版配置导入](LEGACY_CONFIG_IMPORT.md) — v1 → v2 转换设计与实现
 
 ## 许可证
 

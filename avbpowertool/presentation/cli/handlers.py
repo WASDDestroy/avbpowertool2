@@ -12,6 +12,7 @@ from avbpowertool.application.commands import (
     ConfigShowRequest,
     ConfigValidateRequest,
     InspectImagesRequest,
+    LegacyImportRequest,
     ProfileActivateRequest,
     ProfileListRequest,
     SignImagesRequest,
@@ -22,6 +23,7 @@ from avbpowertool.application.services.manage_configs import (
     ConfigImportUseCase,
     ConfigShowUseCase,
     ConfigValidateUseCase,
+    LegacyConfigImportUseCase,
 )
 from avbpowertool.application.services.manage_profiles import (
     ProfileActivateUseCase,
@@ -38,6 +40,7 @@ from avbpowertool.presentation.cli.renderer import (
     render_export,
     render_import,
     render_inspect,
+    render_legacy_import,
     render_profile_activate,
     render_profile_list,
     render_sign,
@@ -74,6 +77,7 @@ def dispatch(args: Namespace, out: TextIO = sys.stdout) -> int:
         ActionId.CONFIG_LIST: _handle_config_list,
         ActionId.CONFIG_ACTIVATE: _handle_config_activate,
         ActionId.CONFIG_IMPORT: _handle_config_import,
+        ActionId.CONFIG_IMPORT_LEGACY: _handle_config_import_legacy,
         ActionId.CONFIG_EXPORT: _handle_config_export,
     }
 
@@ -169,6 +173,20 @@ def _handle_config_import(
     request = ConfigImportRequest(archive_path=args.archive)
     result = uc.execute(request)
     render_import(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_config_import_legacy(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    uc = LegacyConfigImportUseCase(workspace)
+    request = LegacyImportRequest(
+        archive_path=args.archive,
+        new_profile_id=getattr(args, "profile_id", None),
+        activate=not getattr(args, "no_activate", False),
+    )
+    result = uc.execute(request)
+    render_legacy_import(result, as_json, out)
     return exit_code_from_issues(result.issues)
 
 

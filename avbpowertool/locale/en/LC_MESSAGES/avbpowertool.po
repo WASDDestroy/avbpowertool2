@@ -79,6 +79,22 @@ msgstr "View current settings"
 msgid "settings.action.check_l10n"
 msgstr "Check missing translations"
 
+msgid "settings.action.import_legacy"
+msgstr "Import v1 legacy config"
+
+# Legacy config import
+msgid "legacy.import.title"
+msgstr "Import Result"
+
+msgid "legacy.import.select_archive"
+msgstr "Select Legacy Archive to Import"
+
+msgid "legacy.import.no_archives"
+msgstr "No .zip files found in project root."
+
+msgid "legacy.import.success"
+msgstr "Imported legacy profile \"{profile}\" ({partitions} partitions, {keys} keys)."
+
 # Settings UI
 msgid "settings.language"
 msgstr "Language"

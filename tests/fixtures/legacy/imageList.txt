@@ -1,0 +1,17 @@
+# Non-super
+boot
+dtbo
+init_boot
+pvmfw
+recovery
+vbmeta
+vbmeta_system
+vendor_boot
+# Super
+odm
+product
+system
+system_dlkm
+system_ext
+vendor
+vendor_dlkm

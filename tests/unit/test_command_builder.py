@@ -99,6 +99,18 @@ class TestBuildHashFooterCommand:
         cmd2 = build_hash_footer_command(*args)
         assert cmd1 == cmd2
 
+    def test_none_omits_algorithm_and_key(self) -> None:
+        config = self._make_config(algorithm=SigningAlgorithm.NONE, key_id="")
+        cmd = build_hash_footer_command(
+            _p("/img/dtbo.img"),
+            _p("/staging/dtbo.img"),
+            config,
+            None,
+        )
+        assert "--algorithm" not in cmd
+        assert "--key" not in cmd
+        assert "--hash_algorithm" in cmd
+
 
 class TestBuildHashtreeFooterCommand:
     def _make_config(self, **overrides: object) -> PartitionConfig:
@@ -163,9 +175,7 @@ class TestBuildVbmetaCommand:
         assert cmd.count("--include_descriptors_from_image") == 2
         # Check the descriptor paths are in the command
         desc_args = [
-            cmd[i + 1]
-            for i, arg in enumerate(cmd)
-            if arg == "--include_descriptors_from_image"
+            cmd[i + 1] for i, arg in enumerate(cmd) if arg == "--include_descriptors_from_image"
         ]
         assert "/staging/boot.img" in desc_args
         assert "/staging/system.img" in desc_args
@@ -180,6 +190,16 @@ class TestBuildVbmetaCommand:
         )
         assert "--chain_partition" in cmd
         assert "vbmeta_system:1:sys_key.pem" in cmd
+
+    def test_none_omits_algorithm_and_key(self) -> None:
+        cmd = build_vbmeta_command(
+            output_path=_p("/staging/vbmeta.img"),
+            algorithm=SigningAlgorithm.NONE,
+            key_path=None,
+            rollback_index=0,
+        )
+        assert "--algorithm" not in cmd
+        assert "--key" not in cmd
 
 
 class TestBuildExtractPublicKeyCommand:

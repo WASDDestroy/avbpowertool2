@@ -85,6 +85,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_cfg_imp.add_argument("--json", action="store_true", help="JSON output")
     p_cfg_imp.set_defaults(action_id=ActionId.CONFIG_IMPORT)
 
+    # config import-legacy (v1 -> v2 auto-conversion)
+    p_cfg_imp_legacy = cfg_sub.add_parser(
+        "import-legacy",
+        help="Import a legacy v1 config archive (auto-converts to v2)",
+    )
+    p_cfg_imp_legacy.add_argument("archive", help="Path to legacy v1 ZIP archive")
+    p_cfg_imp_legacy.add_argument(
+        "--name",
+        dest="profile_id",
+        default=None,
+        help="New profile ID (default: derived from archive)",
+    )
+    p_cfg_imp_legacy.add_argument(
+        "--no-activate",
+        action="store_true",
+        help="Do not activate the imported profile",
+    )
+    p_cfg_imp_legacy.add_argument("--json", action="store_true", help="JSON output")
+    p_cfg_imp_legacy.set_defaults(action_id=ActionId.CONFIG_IMPORT_LEGACY)
+
     # config export
     p_cfg_exp = cfg_sub.add_parser("export", help="Export config to archive")
     p_cfg_exp.add_argument("profile", help="Profile ID to export")

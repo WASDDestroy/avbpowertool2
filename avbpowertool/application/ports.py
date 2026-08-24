@@ -41,13 +41,16 @@ class AvbToolPort(Protocol):
         *,
         partition_name: str,
         algorithm: str,
-        key_path: Path,
+        key_path: Path | None = None,
         salt: str,
         rollback_index: int,
         flags: int = 0,
         props: tuple[tuple[str, str], ...] = (),
     ) -> AvbToolResult:
-        """Run avbtool.py add_hash_footer."""
+        """Run avbtool.py add_hash_footer.
+
+        ``key_path`` may be None for unsigned (NONE algorithm) footers.
+        """
         ...
 
     def add_hashtree_footer(
@@ -57,7 +60,7 @@ class AvbToolPort(Protocol):
         *,
         partition_name: str,
         algorithm: str,
-        key_path: Path,
+        key_path: Path | None = None,
         salt: str,
         rollback_index: int,
         data_block_size: int = 4096,
@@ -65,7 +68,10 @@ class AvbToolPort(Protocol):
         flags: int = 0,
         props: tuple[tuple[str, str], ...] = (),
     ) -> AvbToolResult:
-        """Run avbtool.py add_hashtree_footer."""
+        """Run avbtool.py add_hashtree_footer.
+
+        ``key_path`` may be None for unsigned (NONE algorithm) footers.
+        """
         ...
 
     def make_vbmeta_image(
@@ -73,14 +79,17 @@ class AvbToolPort(Protocol):
         output_path: Path,
         *,
         algorithm: str,
-        key_path: Path,
+        key_path: Path | None = None,
         rollback_index: int,
         include_descriptors: tuple[Path, ...] = (),
         chain_partitions: tuple[str, ...] = (),
         flags: int = 0,
         props: tuple[tuple[str, str], ...] = (),
     ) -> AvbToolResult:
-        """Run avbtool.py make_vbmeta_image."""
+        """Run avbtool.py make_vbmeta_image.
+
+        ``key_path`` may be None for unsigned (NONE algorithm) vbmeta.
+        """
         ...
 
     def extract_public_key(self, key_path: Path, output_path: Path) -> AvbToolResult:

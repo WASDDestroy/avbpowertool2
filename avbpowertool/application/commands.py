@@ -160,6 +160,25 @@ class ConfigExportResult:
     issues: tuple[OperationIssue, ...] = ()
 
 
+@dataclass(frozen=True)
+class LegacyImportRequest:
+    """Request to import a legacy (v1) config archive with auto-conversion."""
+
+    archive_path: str
+    new_profile_id: str | None = None
+    activate: bool = True
+
+
+@dataclass(frozen=True)
+class LegacyImportResult:
+    """Result of a legacy (v1) config import."""
+
+    profile_id: str
+    partition_count: int = 0
+    key_count: int = 0
+    issues: tuple[OperationIssue, ...] = ()
+
+
 # ---------------------------------------------------------------------------
 # Profile Management
 # ---------------------------------------------------------------------------

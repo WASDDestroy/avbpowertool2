@@ -79,6 +79,22 @@ msgstr "查看当前设置"
 msgid "settings.action.check_l10n"
 msgstr "检查缺失的翻译"
 
+msgid "settings.action.import_legacy"
+msgstr "导入 v1 旧版配置"
+
+# 旧版配置导入
+msgid "legacy.import.title"
+msgstr "导入结果"
+
+msgid "legacy.import.select_archive"
+msgstr "选择要导入的旧版归档"
+
+msgid "legacy.import.no_archives"
+msgstr "项目根目录中未找到 .zip 文件。"
+
+msgid "legacy.import.success"
+msgstr "已导入旧版配置 \"{profile}\"（{partitions} 个分区，{keys} 个密钥）。"
+
 # Settings UI
 msgid "settings.language"
 msgstr "语言"

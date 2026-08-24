@@ -25,9 +25,12 @@ def build_hash_footer_command(
     image_path: Path,
     output_path: Path,
     config: PartitionConfig,
-    key_path: Path,
+    key_path: Path | None = None,
 ) -> list[str]:
-    """Build arg list for avbtool add_hash_footer."""
+    """Build arg list for avbtool add_hash_footer.
+
+    ``key_path`` may be None for unsigned (NONE algorithm) footers.
+    """
     cmd = [
         "add_hash_footer",
         "--image",
@@ -36,15 +39,17 @@ def build_hash_footer_command(
         str(output_path),
         "--partition_name",
         config.partition_name,
-        "--algorithm",
-        config.algorithm.value,
-        "--key",
-        str(key_path),
         "--salt",
         config.salt,
         "--rollback_index",
         str(config.rollback_index),
+        "--rollback_index_location",
+        str(config.rollback_index_location),
+        "--hash_algorithm",
+        config.hash_algorithm,
     ]
+    if key_path is not None:
+        cmd.extend(["--algorithm", config.algorithm.value, "--key", str(key_path)])
     if config.flags:
         cmd.extend(["--flags", str(config.flags)])
     for k, v in config.props:
@@ -56,9 +61,12 @@ def build_hashtree_footer_command(
     image_path: Path,
     output_path: Path,
     config: PartitionConfig,
-    key_path: Path,
+    key_path: Path | None = None,
 ) -> list[str]:
-    """Build arg list for avbtool add_hashtree_footer."""
+    """Build arg list for avbtool add_hashtree_footer.
+
+    ``key_path`` may be None for unsigned (NONE algorithm) footers.
+    """
     cmd = [
         "add_hashtree_footer",
         "--image",
@@ -67,19 +75,19 @@ def build_hashtree_footer_command(
         str(output_path),
         "--partition_name",
         config.partition_name,
-        "--algorithm",
-        config.algorithm.value,
-        "--key",
-        str(key_path),
         "--salt",
         config.salt,
         "--rollback_index",
         str(config.rollback_index),
+        "--rollback_index_location",
+        str(config.rollback_index_location),
         "--data_block_size",
         str(config.data_block_size),
         "--hash_block_size",
         str(config.hash_block_size),
     ]
+    if key_path is not None:
+        cmd.extend(["--algorithm", config.algorithm.value, "--key", str(key_path)])
     if config.flags:
         cmd.extend(["--flags", str(config.flags)])
     for k, v in config.props:
@@ -90,25 +98,26 @@ def build_hashtree_footer_command(
 def build_vbmeta_command(
     output_path: Path,
     algorithm: SigningAlgorithm,
-    key_path: Path,
+    key_path: Path | None,
     rollback_index: int,
     include_descriptors: tuple[Path, ...] = (),
     chain_partitions: tuple[str, ...] = (),
     flags: int = 0,
     props: tuple[tuple[str, str], ...] = (),
 ) -> list[str]:
-    """Build arg list for avbtool make_vbmeta_image."""
+    """Build arg list for avbtool make_vbmeta_image.
+
+    ``key_path`` may be None for unsigned (NONE algorithm) vbmeta.
+    """
     cmd = [
         "make_vbmeta_image",
         "--output",
         str(output_path),
-        "--algorithm",
-        algorithm.value,
-        "--key",
-        str(key_path),
         "--rollback_index",
         str(rollback_index),
     ]
+    if key_path is not None:
+        cmd.extend(["--algorithm", algorithm.value, "--key", str(key_path)])
     for desc_path in include_descriptors:
         cmd.extend(["--include_descriptors_from_image", str(desc_path)])
     for chain in chain_partitions:
