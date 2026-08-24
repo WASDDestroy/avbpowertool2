@@ -1,0 +1,3 @@
+"""avbtool stderr output when image has no vbmeta structure."""
+usage: avbtool info_image ...
+avbtool.py: error: Given image does not look like a vbmeta image.

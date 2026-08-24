@@ -1,0 +1,27 @@
+"""Hash descriptor with Prop entries."""
+Footer version:           1.0
+Image size:               33554432 bytes
+Original image size:      33554432 bytes
+VBMeta offset:            33546240
+VBMeta size:              1408 bytes
+--
+Minimum libavb version:   1.0
+Header Block:             256 bytes
+Authentication Block:     0 bytes
+Auxiliary Block:          576 bytes
+Public key (sha1):        1234567890abcdef1234567890abcdef12345678
+Algorithm:                SHA256_RSA4096
+Rollback Index:           3
+Flags:                    0
+Rollback Index Location:  0
+Release String:           'avbtool 1.3.0'
+Descriptors:
+    Hash descriptor:
+      Image Size:            33554432 bytes
+      Hash Algorithm:        sha256
+      Partition Name:        init_boot
+      Salt:                  deadbeefcafe
+      Digest:                0123456789abcdef0123456789abcdef01234567
+      Flags:                 0
+    Prop: com.android.build.boot.os_version -> '14'
+    Prop: com.android.build.boot.security_patch -> '2024-01-05'

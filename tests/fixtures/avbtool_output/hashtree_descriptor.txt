@@ -1,0 +1,33 @@
+"""Hashtree descriptor — system partition with dm-verity and FEC."""
+Footer version:           1.0
+Image size:               104857600 bytes
+Original image size:      104857600 bytes
+VBMeta offset:            104841216
+VBMeta size:              2112 bytes
+--
+Minimum libavb version:   1.0
+Header Block:             256 bytes
+Authentication Block:     0 bytes
+Auxiliary Block:          576 bytes
+Public key (sha1):        ab12cd34ef56ab78cd90ef12ab34cd56ef78ab90
+Algorithm:                NONE
+Rollback Index:           0
+Flags:                    0
+Rollback Index Location:  0
+Release String:           'avbtool 1.3.0'
+Descriptors:
+    Hashtree descriptor:
+      Version of dm-verity:  1
+      Image Size:            104857600 bytes
+      Tree Offset:           104841216
+      Tree Size:             8192 bytes
+      Data Block Size:       4096 bytes
+      Hash Block Size:       4096 bytes
+      FEC num roots:         2
+      FEC offset:            104849408
+      FEC size:              16384 bytes
+      Hash Algorithm:        sha256
+      Partition Name:        system
+      Salt:                  f1e2d3c4b5a6
+      Root Digest:           a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0
+      Flags:                 0

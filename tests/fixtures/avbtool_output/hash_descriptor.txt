@@ -1,0 +1,25 @@
+"""Hash descriptor — boot partition with SHA256, no FEC."""
+Footer version:           1.0
+Image size:               67108864 bytes
+Original image size:      67108864 bytes
+VBMeta offset:            67096576
+VBMeta size:              1152 bytes
+--
+Minimum libavb version:   1.0
+Header Block:             256 bytes
+Authentication Block:     0 bytes
+Auxiliary Block:          576 bytes
+Public key (sha1):        cd2c1e5e3c4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b
+Algorithm:                NONE
+Rollback Index:           0
+Flags:                    0
+Rollback Index Location:  0
+Release String:           'avbtool 1.3.0'
+Descriptors:
+    Hash descriptor:
+      Image Size:            67108864 bytes
+      Hash Algorithm:        sha256
+      Partition Name:        boot
+      Salt:                  a1b2c3d4e5f6
+      Digest:                d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0
+      Flags:                 0

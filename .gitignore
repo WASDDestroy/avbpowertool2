@@ -1,1 +1,38 @@
-/references
+# AVBPowerTool2
+
+# Runtime data — user-specific, generated, or private
+profiles/
+Logs/
+Images/
+Configs/
+Keys/
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual env
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Compiled gettext
+*.mo
+
+# Staging
+.avbpowertool-staging/
+
+# References (old project)
+/references/
+
+# Mimocode
+.mimocode/

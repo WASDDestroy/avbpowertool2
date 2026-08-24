@@ -1,0 +1,159 @@
+"""Domain models for AVB Power Tool.
+
+All models are immutable frozen dataclasses. They carry no presentation
+or filesystem logic.
+
+Python 3.11+ required.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
+
+
+class DescriptorType(Enum):
+    """AVB descriptor type."""
+
+    HASH = "hash"
+    HASHTREE = "hashtree"
+    VBMETA = "vbmeta"
+
+    @classmethod
+    def from_avbtool_label(cls, label: str) -> DescriptorType:
+        """Map an avbtool descriptor header line to a DescriptorType."""
+        lower = label.lower()
+        if "hashtree" in lower:
+            return cls.HASHTREE
+        if "hash" in lower:
+            return cls.HASH
+        if "chain partition" in lower or "vbmeta" in lower:
+            return cls.VBMETA
+        raise ValueError(f"Unknown descriptor label: {label!r}")
+
+
+class SigningAlgorithm(Enum):
+    """Supported AVB signing algorithms."""
+
+    NONE = "NONE"
+    SHA256_RSA2048 = "SHA256_RSA2048"
+    SHA256_RSA4096 = "SHA256_RSA4096"
+    SHA512_RSA2048 = "SHA512_RSA2048"
+    SHA512_RSA4096 = "SHA512_RSA4096"
+
+    @classmethod
+    def from_str(cls, value: str) -> SigningAlgorithm:
+        """Parse algorithm string. Raises ValueError for unknown values."""
+        for member in cls:
+            if member.value == value.upper():
+                return member
+        raise ValueError(f"Unknown signing algorithm: {value!r}")
+
+
+# ---------------------------------------------------------------------------
+# Config models (v2 schema)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class KeyRef:
+    """Reference to a key within a profile's key store."""
+
+    key_id: str
+    private_key_filename: str
+    public_key_filename: str | None = None
+    public_key_sha1: str | None = None
+
+
+@dataclass(frozen=True)
+class PartitionConfig:
+    """AVB signing configuration for a single partition."""
+
+    image: str
+    descriptor: DescriptorType
+    algorithm: SigningAlgorithm
+    key_id: str
+    partition_name: str
+    rollback_index: int = 0
+    salt: str = ""
+    flags: int = 0
+    props: tuple[tuple[str, str], ...] = ()
+    # vbmeta-specific
+    included_partitions: tuple[str, ...] = ()
+    chain_partitions: tuple[str, ...] = ()
+    # hashtree-specific
+    data_block_size: int = 4096
+    hash_block_size: int = 4096
+
+
+@dataclass(frozen=True)
+class AvbProfile:
+    """A complete AVB signing profile (v2 schema)."""
+
+    id: str
+    name: str
+    schema_version: int = 2
+    key_store_path: str = "keys"
+    partitions: dict[str, PartitionConfig] = field(default_factory=lambda: {})
+
+
+# ---------------------------------------------------------------------------
+# Execution models
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OperationIssue:
+    """A single issue (warning or error) from an operation."""
+
+    error_code: str
+    message: str
+
+
+@dataclass(frozen=True)
+class SigningStep:
+    """A single step in a signing plan."""
+
+    partition_name: str
+    operation: str
+    command: tuple[str, ...]
+    input_path: str
+    output_path: str
+    order: int
+
+
+@dataclass(frozen=True)
+class SigningPlan:
+    """Immutable, validated execution plan for batch signing."""
+
+    profile_id: str
+    steps: tuple[SigningStep, ...]
+    vbmeta_order: tuple[str, ...]
+    issues: tuple[OperationIssue, ...] = ()
+
+
+# ---------------------------------------------------------------------------
+# Inspection models
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ImageInspection:
+    """Parsed AVB metadata for a single image."""
+
+    image_name: str
+    image_path: str
+    descriptor: DescriptorType | None = None
+    algorithm: str | None = None
+    partition_name: str | None = None
+    public_key_sha1: str | None = None
+    rollback_index: str | None = None
+    salt: str | None = None
+    digest: str | None = None
+    flags: str | None = None
+    props: tuple[tuple[str, str], ...] = ()
+    raw_extensions: tuple[tuple[str, str], ...] = ()

@@ -1,0 +1,19 @@
+"""vbmeta image — SHA256_RSA4096, no descriptors."""
+Footer version:           1.0
+Image size:               4096 bytes
+Original image size:      4096 bytes
+VBMeta offset:            2048
+VBMeta size:              2048 bytes
+--
+Minimum libavb version:   1.0
+Header Block:             256 bytes
+Authentication Block:     320 bytes
+Auxiliary Block:          1472 bytes
+Public key (sha1):        d909d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0
+Algorithm:                SHA256_RSA4096
+Rollback Index:           0
+Flags:                    0
+Rollback Index Location:  0
+Release String:           'avbtool 1.3.0'
+Descriptors:
+    (none)

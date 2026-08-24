@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "avbpowertool"
+version = "2.0.0.dev0"
+description = "Android Verified Boot Power Tool — configuration-driven avbtool wrapper"
+requires-python = ">=3.11"
+dependencies = []
+license = {file = "LICENSE"}
+
+[project.optional-dependencies]
+windows = ["windows-curses"]
+dev = ["pytest>=7", "pytest-cov", "ruff", "pyright[nodejs]"]
+fec = ["numpy>=1.20,<3.0", "reedsolo>=1.7,<3.0"]
+
+[project.scripts]
+avbpowertool = "avbpowertool.presentation.cli.parser:main"
+
+[tool.setuptools.packages.find]
+include = ["avbpowertool*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+include = ["avbpowertool"]
+exclude = ["tests", "references", "avbpowertool/vendor"]
