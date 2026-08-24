@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "start_route": "route:home",
+  "routes": {
+    "route:home": {
+      "title_key": "node.home.name",
+      "description_key": "node.home.description",
+      "items": [
+        {"action": "action:image.read_info", "shortcut": "R"},
+        {"route": "route:config_manager", "shortcut": "M"},
+        {"action": "action:image.sign", "shortcut": "S"},
+        {"route": "route:settings", "shortcut": "T"},
+        {"action": "action:view_current_config", "shortcut": "V"}
+      ]
+    },
+    "route:config_manager": {
+      "title_key": "node.config_manager.name",
+      "description_key": "node.config_manager.description",
+      "parent": "route:home",
+      "items": [
+        {"action": "action:config.import", "shortcut": "I"},
+        {"action": "action:config.export", "shortcut": "E"},
+        {"action": "action:config.library", "shortcut": "M"}
+      ]
+    },
+    "route:settings": {
+      "title_key": "node.settings.name",
+      "description_key": "node.settings.description",
+      "parent": "route:home",
+      "items": [
+        {"action": "action:settings.edit", "shortcut": "E"},
+        {"action": "action:settings.view", "shortcut": "V"},
+        {"action": "action:settings.check_l10n", "shortcut": "C"}
+      ]
+    }
+  },
+  "actions": {
+    "action:image.read_info": {
+      "label_key": "node.read_image_info.name",
+      "description_key": "node.read_image_info.description"
+    },
+    "action:image.sign": {
+      "label_key": "node.sign_images.name",
+      "description_key": "node.sign_images.description"
+    },
+    "action:config.import": {
+      "label_key": "node.import_config.name",
+      "description_key": "node.import_config.description"
+    },
+    "action:config.export": {
+      "label_key": "node.export_config.name",
+      "description_key": "node.export_config.description"
+    },
+    "action:config.library": {
+      "label_key": "node.config_library.name",
+      "description_key": "node.config_library.description"
+    },
+    "action:view_current_config": {
+      "label_key": "home.action.view_current_config_info",
+      "description_key": ""
+    },
+    "action:settings.edit": {
+      "label_key": "settings.action.edit",
+      "description_key": ""
+    },
+    "action:settings.view": {
+      "label_key": "settings.action.view",
+      "description_key": ""
+    },
+    "action:settings.check_l10n": {
+      "label_key": "settings.action.check_l10n",
+      "description_key": ""
+    }
+  }
+}

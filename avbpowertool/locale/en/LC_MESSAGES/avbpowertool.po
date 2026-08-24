@@ -1,0 +1,68 @@
+# AVBPowerTool English translations
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en\n"
+
+# Navigation
+msgid "node.home.name"
+msgstr "AVBPowerTool Home Page"
+
+msgid "node.home.description"
+msgstr "Welcome to AVBPowerTool."
+
+msgid "node.read_image_info.name"
+msgstr "Read Image Info"
+
+msgid "node.read_image_info.description"
+msgstr "Read AVB configs of images in working dir."
+
+msgid "node.config_manager.name"
+msgstr "Config Manager"
+
+msgid "node.config_manager.description"
+msgstr "Manage, import and export configs."
+
+msgid "node.sign_images.name"
+msgstr "Sign Images"
+
+msgid "node.sign_images.description"
+msgstr "Sign images in working dir."
+
+msgid "node.import_config.name"
+msgstr "Import Config"
+
+msgid "node.import_config.description"
+msgstr "Import archived configs."
+
+msgid "node.export_config.name"
+msgstr "Export Config"
+
+msgid "node.export_config.description"
+msgstr "Export config(s)."
+
+msgid "node.config_library.name"
+msgstr "Config Library Manager"
+
+msgid "node.config_library.description"
+msgstr "Manage configs added to AVBPowerTool."
+
+msgid "node.settings.name"
+msgstr "Settings"
+
+msgid "node.settings.description"
+msgstr "Manage global settings."
+
+# Home
+msgid "home.action.view_current_config_info"
+msgstr "View Current Config Info"
+
+# Settings
+msgid "settings.action.edit"
+msgstr "Edit settings"
+
+msgid "settings.action.view"
+msgstr "View current settings"
+
+msgid "settings.action.check_l10n"
+msgstr "Check missing translations"

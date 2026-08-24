@@ -130,8 +130,13 @@ def main(argv: Sequence[str] | None = None, out: TextIO = sys.stdout) -> int:
         return 0
 
     if action_id is None:
-        # No command: launch TUI (Phase 6) or show help
-        parser.print_help(out)
+        # No command: launch TUI
+        from avbpowertool.bootstrap import bootstrap
+        from avbpowertool.presentation.tui.app import App
+
+        ws = bootstrap()
+        app = App(ws)
+        app.run()
         return 0
 
     # Handle --execute flag for sign

@@ -1,0 +1,68 @@
+# AVBPowerTool 中文翻译
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: zh\n"
+
+# Navigation
+msgid "node.home.name"
+msgstr "AVBPowerTool 主页"
+
+msgid "node.home.description"
+msgstr "欢迎使用 AVBPowerTool。"
+
+msgid "node.read_image_info.name"
+msgstr "读取镜像信息"
+
+msgid "node.read_image_info.description"
+msgstr "读取工作目录中镜像的 AVB 配置。"
+
+msgid "node.config_manager.name"
+msgstr "配置管理器"
+
+msgid "node.config_manager.description"
+msgstr "管理、导入和导出配置。"
+
+msgid "node.sign_images.name"
+msgstr "签名镜像"
+
+msgid "node.sign_images.description"
+msgstr "签名工作目录中的镜像。"
+
+msgid "node.import_config.name"
+msgstr "导入配置"
+
+msgid "node.import_config.description"
+msgstr "导入归档配置。"
+
+msgid "node.export_config.name"
+msgstr "导出配置"
+
+msgid "node.export_config.description"
+msgstr "导出配置。"
+
+msgid "node.config_library.name"
+msgstr "配置库管理器"
+
+msgid "node.config_library.description"
+msgstr "管理已添加到 AVBPowerTool 的配置。"
+
+msgid "node.settings.name"
+msgstr "设置"
+
+msgid "node.settings.description"
+msgstr "管理全局设置。"
+
+# Home
+msgid "home.action.view_current_config_info"
+msgstr "查看当前配置信息"
+
+# Settings
+msgid "settings.action.edit"
+msgstr "编辑设置"
+
+msgid "settings.action.view"
+msgstr "查看当前设置"
+
+msgid "settings.action.check_l10n"
+msgstr "检查缺失的翻译"
