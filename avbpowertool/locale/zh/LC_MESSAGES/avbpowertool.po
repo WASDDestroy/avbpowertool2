@@ -66,3 +66,10 @@ msgstr "查看当前设置"
 
 msgid "settings.action.check_l10n"
 msgstr "检查缺失的翻译"
+
+# UI 字符串
+msgid "Exit"
+msgstr "退出"
+
+msgid "Back"
+msgstr "返回"

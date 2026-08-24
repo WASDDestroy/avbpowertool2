@@ -12,6 +12,7 @@ from avbpowertool.application.services.manage_profiles import (
 )
 from avbpowertool.infrastructure.avbtool.runner import SubprocessAvbTool
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
+from avbpowertool.presentation.i18n import _
 from avbpowertool.presentation.tui.router import Router
 from avbpowertool.presentation.tui.widgets import (
     SelectorWidget,
@@ -55,24 +56,29 @@ class App:
 
             for nav_item in route.items:
                 if nav_item.action_id:
-                    label = nav_item.action_id  # Will be localized in Phase 6 i18n
+                    label = _(nav_item.label_key) if nav_item.label_key else nav_item.action_id
                     items.append(f"[{nav_item.shortcut}] {label}")
                     action_ids.append(nav_item.action_id)
                 elif nav_item.route_id:
-                    label = nav_item.route_id
+                    sub_route = self._router.get_route(nav_item.route_id)
+                    label = (
+                        _(sub_route.title_key)
+                        if sub_route and sub_route.title_key
+                        else nav_item.route_id
+                    )
                     items.append(f"[{nav_item.shortcut}] {label} >")
                     action_ids.append(f"route:{nav_item.route_id}")
 
             # Add back/exit
             if self._router.is_root():
-                items.append("[E] Exit")
+                items.append(f"[E] {_('Exit')}")
                 action_ids.append("system:exit")
             else:
-                items.append("[B] Back")
+                items.append(f"[B] {_('Back')}")
                 action_ids.append("system:back")
 
             # Show selector
-            title = route.title_key or route.route_id
+            title = _(route.title_key) if route.title_key else route.route_id
             sel = SelectorWidget(title, items)
             result = sel.run(stdscr)
 

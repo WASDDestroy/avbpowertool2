@@ -134,6 +134,10 @@ class Router:
         """True if at the start route."""
         return len(self._stack) == 1
 
+    def get_route(self, route_id: str) -> NavRoute | None:
+        """Return a route by ID, or None if not found."""
+        return self._routes.get(route_id)
+
     def get_action_label(self, action_id: str) -> str:
         """Get the label key for an action."""
         return self._actions.get(action_id, {}).get("label_key", action_id)

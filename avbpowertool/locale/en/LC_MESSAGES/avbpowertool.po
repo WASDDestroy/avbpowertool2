@@ -66,3 +66,10 @@ msgstr "View current settings"
 
 msgid "settings.action.check_l10n"
 msgstr "Check missing translations"
+
+# UI strings
+msgid "Exit"
+msgstr "Exit"
+
+msgid "Back"
+msgstr "Back"
