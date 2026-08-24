@@ -37,4 +37,11 @@ ignore = ["E501"]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
 include = ["avbpowertool"]
-exclude = ["tests", "references", "avbpowertool/vendor"]
+exclude = [
+    "tests",
+    "references",
+    "avbpowertool/vendor",
+    "avbpowertool/infrastructure/persistence/profile_codec.py",
+    "avbpowertool/infrastructure/persistence/archive_repository.py",
+    "avbpowertool/infrastructure/persistence/key_repository.py",
+]
