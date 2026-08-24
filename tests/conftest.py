@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 
+from avbpowertool.application.ports import AvbToolResult
+
 
 # ---------------------------------------------------------------------------
 # Fixture paths
@@ -131,6 +133,85 @@ def tmp_workspace(tmp_path: Path) -> Path:
     )
 
     return ws
+
+
+# ---------------------------------------------------------------------------
+# FakeAvbTool
+# ---------------------------------------------------------------------------
+
+
+class FakeAvbTool:
+    """Configurable fake that returns pre-canned AvbToolResult objects."""
+
+    def __init__(self, responses: dict[str, AvbToolResult] | None = None) -> None:
+        self._responses: dict[str, AvbToolResult] = responses or {}
+        self.calls: list[tuple[str, tuple, dict]] = []
+
+    def _record(self, name: str, args: tuple, kwargs: dict) -> AvbToolResult:
+        self.calls.append((name, args, kwargs))
+        if name in self._responses:
+            return self._responses[name]
+        return AvbToolResult(0, "", "", name)
+
+    def inspect_image(self, image_path: Path) -> AvbToolResult:
+        return self._record("inspect_image", (image_path,), {})
+
+    def erase_footer(self, image_path: Path) -> AvbToolResult:
+        return self._record("erase_footer", (image_path,), {})
+
+    def add_hash_footer(
+        self,
+        image_path: Path,
+        output_path: Path,
+        *,
+        partition_name: str,
+        algorithm: str,
+        key_path: Path,
+        salt: str,
+        rollback_index: int,
+        flags: int = 0,
+        props: tuple[tuple[str, str], ...] = (),
+    ) -> AvbToolResult:
+        return self._record("add_hash_footer", (image_path, output_path), {})
+
+    def add_hashtree_footer(
+        self,
+        image_path: Path,
+        output_path: Path,
+        *,
+        partition_name: str,
+        algorithm: str,
+        key_path: Path,
+        salt: str,
+        rollback_index: int,
+        data_block_size: int = 4096,
+        hash_block_size: int = 4096,
+        flags: int = 0,
+        props: tuple[tuple[str, str], ...] = (),
+    ) -> AvbToolResult:
+        return self._record("add_hashtree_footer", (image_path, output_path), {})
+
+    def make_vbmeta_image(
+        self,
+        output_path: Path,
+        *,
+        algorithm: str,
+        key_path: Path,
+        rollback_index: int,
+        include_descriptors: tuple[Path, ...] = (),
+        chain_partitions: tuple[str, ...] = (),
+        flags: int = 0,
+        props: tuple[tuple[str, str], ...] = (),
+    ) -> AvbToolResult:
+        return self._record("make_vbmeta_image", (output_path,), {})
+
+    def extract_public_key(self, key_path: Path, output_path: Path) -> AvbToolResult:
+        return self._record("extract_public_key", (key_path, output_path), {})
+
+
+@pytest.fixture
+def fake_avb_tool() -> FakeAvbTool:
+    return FakeAvbTool()
 
 
 @pytest.fixture
