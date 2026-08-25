@@ -192,7 +192,9 @@ class ImageInspection:
     partition_name: str | None = None
     public_key_sha1: str | None = None
     rollback_index: str | None = None
+    rollback_index_location: str | None = None
     salt: str | None = None
+    hash_algorithm: str | None = None
     digest: str | None = None
     flags: str | None = None
     props: tuple[tuple[str, str], ...] = ()

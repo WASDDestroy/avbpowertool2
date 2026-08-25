@@ -12,6 +12,7 @@ from avbpowertool.application.ports import AvbToolPort
 from avbpowertool.application.services.manage_configs import ConfigCreateUseCase
 from avbpowertool.domain.models import (
     DescriptorType,
+    ImageInspection,
     PartitionConfig,
     SigningAlgorithm,
 )
@@ -178,57 +179,25 @@ def _collect_partitions_auto(
     partitions: list[PartitionConfig] = []
     by_name: dict[str, PartitionConfig] = {}
     size_notes: list[str] = []
+    meta_lines: list[str] = []
     for img in result.images:
-        if img.descriptor is None:
+        config = _build_auto_partition(img, image_dir)
+        if config is None:
             continue
-
-        # Determine key_id from public_key_sha1 or default
-        key_id = "default"
-
-        # Map descriptor type
-        descriptor = img.descriptor
-        algorithm = SigningAlgorithm.SHA256_RSA4096
-        if img.algorithm:
-            with contextlib.suppress(ValueError):
-                algorithm = SigningAlgorithm.from_str(img.algorithm)
-
-        # Build props from inspection
-        props = img.props if img.props else ()
-
-        # Determine flags from inspection
-        flags = 0
-        if img.flags:
-            with contextlib.suppress(ValueError):
-                flags = int(img.flags)
-
-        partition_name = img.partition_name or img.image_name
-
-        # Hash footers require partition_size (or dynamic_partition_size):
-        # default to the image file size rounded up to the 4096 block size,
-        # which is the smallest valid value avbtool accepts.
-        partition_size = 0
-        if descriptor == DescriptorType.HASH:
-            image_file = image_dir / f"{img.image_name}.img"
-            with contextlib.suppress(OSError):
-                if image_file.is_file():
-                    partition_size = (int(image_file.stat().st_size) + 4095) // 4096 * 4096
-            if partition_size > 0:
-                size_notes.append(f"{partition_name}: {partition_size}")
-
-        config = PartitionConfig(
-            image=f"{img.image_name}.img",
-            descriptor=descriptor,
-            algorithm=algorithm,
-            key_id=key_id,
-            partition_name=partition_name,
-            rollback_index=int(img.rollback_index) if img.rollback_index else 0,
-            salt=img.salt or "",
-            flags=flags,
-            props=props,
-            partition_size=partition_size,
-        )
         partitions.append(config)
-        by_name[partition_name] = config
+        by_name[config.partition_name] = config
+
+        if config.partition_size > 0:
+            size_notes.append(f"{config.partition_name}: {config.partition_size}")
+
+        # Summary of the metadata read back from the image.
+        meta = (
+            f"{config.partition_name}: {config.descriptor.value} "
+            f"alg={config.algorithm.value} rbi={config.rollback_index} "
+            f"rbl={config.rollback_index_location} flags={config.flags} "
+            f"props={len(config.props)} hash={config.hash_algorithm}"
+        )
+        meta_lines.append(meta)
 
     # VBMeta partitions include every other scanned partition (Android
     # convention); chain/extra includes can be tuned afterwards.
@@ -242,6 +211,11 @@ def _collect_partitions_auto(
     result_lines = [_("config.wizard.auto_result", count=len(partitions))]
     for p in partitions:
         result_lines.append(f"  - {p.partition_name}: {p.descriptor.value}, {p.algorithm.value}")
+    if meta_lines:
+        result_lines.append("")
+        result_lines.append(_("config.wizard.auto_meta_note"))
+        for line in meta_lines:
+            result_lines.append(f"    {line}")
     if size_notes:
         result_lines.append("")
         result_lines.append(_("config.wizard.auto_size_note"))
@@ -252,6 +226,75 @@ def _collect_partitions_auto(
 
     message_screen(stdscr, _("config.wizard.auto_result_title"), result_lines)
     return partitions
+
+
+_VALID_HASH_ALGORITHMS = ("sha1", "sha256", "sha512")
+
+
+def _build_auto_partition(img: ImageInspection, image_dir: Path) -> PartitionConfig | None:
+    """Build a PartitionConfig from an ImageInspection (auto mode).
+
+    Reads back the image's footer metadata — rollback index, rollback
+    index location, salt, flags (incl. flag-bit shortcuts), props and
+    hash algorithm — with safe defaults when the image has none.
+    """
+    if img.descriptor is None:
+        return None
+
+    descriptor = img.descriptor
+
+    # Signing algorithm (vbmeta header ``Algorithm`` line, e.g. NONE or
+    # SHA256_RSA4096); falls back to the default when unparseable.
+    algorithm = SigningAlgorithm.SHA256_RSA4096
+    if img.algorithm:
+        with contextlib.suppress(ValueError):
+            algorithm = SigningAlgorithm.from_str(img.algorithm)
+
+    # Flags integer plus the two flag-bit shortcuts (VBMeta image flags:
+    # 1 = HASHTREE_DISABLED, 2 = VERIFICATION_DISABLED).
+    flags = 0
+    if img.flags:
+        with contextlib.suppress(ValueError):
+            flags = int(img.flags)
+
+    rollback_index = int(img.rollback_index) if img.rollback_index else 0
+    rollback_index_location = 0
+    if img.rollback_index_location:
+        with contextlib.suppress(ValueError):
+            rollback_index_location = int(img.rollback_index_location)
+
+    hash_algorithm = "sha256"
+    if descriptor != DescriptorType.VBMETA:
+        candidate = (img.hash_algorithm or "sha256").strip().lower()
+        if candidate in _VALID_HASH_ALGORITHMS:
+            hash_algorithm = candidate
+
+    # Hash footers require partition_size (or dynamic_partition_size):
+    # default to the image file size rounded up to the 4096 block size,
+    # which is the smallest valid value avbtool accepts.
+    partition_size = 0
+    if descriptor == DescriptorType.HASH:
+        image_file = image_dir / f"{img.image_name}.img"
+        with contextlib.suppress(OSError):
+            if image_file.is_file():
+                partition_size = (int(image_file.stat().st_size) + 4095) // 4096 * 4096
+
+    return PartitionConfig(
+        image=f"{img.image_name}.img",
+        descriptor=descriptor,
+        algorithm=algorithm,
+        key_id="default",
+        partition_name=img.partition_name or img.image_name,
+        rollback_index=rollback_index,
+        rollback_index_location=rollback_index_location,
+        salt=img.salt or "",
+        flags=flags,
+        set_hashtree_disabled_flag=bool(flags & 1),
+        set_verification_disabled_flag=bool(flags & 2),
+        props=img.props if img.props else (),
+        hash_algorithm=hash_algorithm,
+        partition_size=partition_size,
+    )
 
 
 def _collect_partition(stdscr: curses.window) -> PartitionConfig | None:

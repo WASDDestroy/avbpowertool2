@@ -53,6 +53,13 @@ class TestInspectImagesUseCase:
         assert img.descriptor == DescriptorType.HASH
         assert img.partition_name == "boot"
         assert "cd2c1e5e" in (img.public_key_sha1 or "")
+        # metadata read back from the footer
+        assert img.algorithm == "NONE"  # signing algorithm from header
+        assert img.hash_algorithm == "sha256"  # hash algorithm from descriptor
+        assert img.rollback_index == "0"
+        assert img.rollback_index_location == "0"
+        assert img.salt == "a1b2c3d4e5f6"
+        assert img.flags == "0"
         assert len(result.issues) == 0
 
     def test_inspect_vbmeta_image(self, tmp_path: Path) -> None:

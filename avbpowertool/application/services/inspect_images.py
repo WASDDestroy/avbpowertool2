@@ -109,7 +109,9 @@ def _build_inspection(
     algorithm: str | None = None
     public_key_sha1: str | None = None
     rollback_index: str | None = None
+    rollback_index_location: str | None = None
     salt: str | None = None
+    hash_algorithm: str | None = None
     digest: str | None = None
     flags: str | None = None
     raw_extensions: list[tuple[str, str]] = []
@@ -119,7 +121,9 @@ def _build_inspection(
         descriptor = _map_descriptor_type(block["type"])
         fields = block["fields"]
         partition_name = fields.get("Partition Name")
-        algorithm = fields.get("Hash Algorithm") or fields.get("Algorithm")
+        # ``Hash Algorithm`` is the descriptor's hash algorithm (e.g. sha256);
+        # the signing algorithm lives in the vbmeta header ``Algorithm`` line.
+        hash_algorithm = fields.get("Hash Algorithm")
         salt = fields.get("Salt")
         digest = fields.get("Digest") or fields.get("Root Digest")
         flags = fields.get("Flags")
@@ -151,6 +155,8 @@ def _build_inspection(
 
     public_key_sha1 = header.get("Public key (sha1)")
     rollback_index = header.get("Rollback Index")
+    rollback_index_location = header.get("Rollback Index Location")
+    algorithm = header.get("Algorithm") or (fields.get("Algorithm") if descs else None)
     if descriptor is None and header.get("Algorithm"):
         descriptor = DescriptorType.VBMETA
 
@@ -158,11 +164,13 @@ def _build_inspection(
         image_name=image_name,
         image_path=image_path,
         descriptor=descriptor,
-        algorithm=algorithm or header.get("Algorithm"),
+        algorithm=algorithm,
         partition_name=partition_name,
         public_key_sha1=public_key_sha1,
         rollback_index=rollback_index,
+        rollback_index_location=rollback_index_location,
         salt=salt,
+        hash_algorithm=hash_algorithm,
         digest=digest,
         flags=flags or header.get("Flags"),
         props=tuple(props),

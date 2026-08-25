@@ -289,6 +289,9 @@ msgstr "正在扫描镜像..."
 msgid "config.wizard.auto_found"
 msgstr "找到 {count} 个镜像："
 
+msgid "config.wizard.auto_meta_note"
+msgstr "从镜像读回的元数据（回滚指数、回滚指数位置、盐、flags、属性、哈希算法）："
+
 msgid "config.wizard.auto_size_note"
 msgstr "hash 分区大小已按镜像文件大小向上取整到 4096（如需调整请用 'config edit --set partition_size=...'）："
 
