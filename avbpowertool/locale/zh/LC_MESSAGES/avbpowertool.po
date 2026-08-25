@@ -302,7 +302,7 @@ msgid "config.wizard.kernel_cmdlines"
 msgstr "内核命令行参数（逗号分隔，可选）："
 
 msgid "config.wizard.auto_dir"
-msgstr "输入镜像目录路径："
+msgstr "输入镜像目录路径（回车 = {default}）："
 
 msgid "config.wizard.auto_dir_not_found"
 msgstr "目录不存在。"

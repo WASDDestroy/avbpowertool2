@@ -302,7 +302,7 @@ msgid "config.wizard.kernel_cmdlines"
 msgstr "Kernel cmdlines (comma-separated, optional):"
 
 msgid "config.wizard.auto_dir"
-msgstr "Enter image directory path:"
+msgstr "Enter image directory path (Enter = {default}):"
 
 msgid "config.wizard.auto_dir_not_found"
 msgstr "Directory not found."

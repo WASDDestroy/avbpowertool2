@@ -185,6 +185,21 @@ def _collect_partitions_manual(
     return partitions
 
 
+def _auto_dir_default(ws: WorkspacePaths) -> tuple[Path, str]:
+    """Return the default auto-mode scan directory and its display form.
+
+    The workspace-level ``Images/`` directory is the project-wide
+    default (aligned with the legacy implementation's ``./Images``).
+    The display form stays relative to the current working directory
+    whenever possible so prompts remain short.
+    """
+    default_dir = ws.images
+    try:
+        return default_dir, f"./{default_dir.relative_to(Path.cwd())}"
+    except ValueError:
+        return default_dir, str(default_dir)
+
+
 def _collect_partitions_auto(
     stdscr: curses.window,
     ws: WorkspacePaths,
@@ -211,12 +226,12 @@ def _collect_partitions_auto(
         elif not key_choice:
             return None
 
-    # Ask for image directory
-    dir_path = input_prompt(stdscr, _("config.wizard.auto_dir"))
-    if not dir_path or not dir_path.strip():
-        return None
-
-    image_dir = Path(dir_path.strip())
+    # Ask for image directory; pressing Enter accepts the workspace
+    # default (./Images) so an empty answer no longer aborts the wizard.
+    default_dir, default_display = _auto_dir_default(ws)
+    dir_path = input_prompt(stdscr, _("config.wizard.auto_dir", default=default_display))
+    raw = dir_path.strip() if dir_path else ""
+    image_dir = Path(raw) if raw else default_dir
     if not image_dir.is_dir():
         message_screen(stdscr, "Error", [_("config.wizard.auto_dir_not_found")])
         return None
