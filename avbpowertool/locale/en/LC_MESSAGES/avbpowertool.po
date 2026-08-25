@@ -289,6 +289,9 @@ msgstr "Scanning images..."
 msgid "config.wizard.auto_found"
 msgstr "Found {count} image(s):"
 
+msgid "config.wizard.auto_size_note"
+msgstr "Hash partition sizes set to image size rounded up to 4096 (adjust via 'config edit --set partition_size=...' if needed):"
+
 msgid "config.wizard.auto_result"
 msgstr "Generated {count} partition config(s):"
 

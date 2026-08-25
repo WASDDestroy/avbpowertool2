@@ -361,7 +361,6 @@ class ConfigCreateUseCase:
         profile = AvbProfile(
             id=request.profile_id,
             name=request.profile_name,
-            schema_version=2,
             key_store_path="keys",
             partitions=partitions,
         )

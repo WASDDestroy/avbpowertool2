@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import curses
+from dataclasses import replace
 from pathlib import Path
 
 from avbpowertool.application.commands import ConfigCreateRequest
@@ -172,7 +173,11 @@ def _collect_partitions_auto(
     uc = InspectImagesUseCase(ws, avb)
     result = uc.execute(InspectImagesRequest(image_names=tuple(image_names)))
 
+    # Build (name -> PartitionConfig) so vbmeta includes can reference the
+    # other scanned partitions.
     partitions: list[PartitionConfig] = []
+    by_name: dict[str, PartitionConfig] = {}
+    size_notes: list[str] = []
     for img in result.images:
         if img.descriptor is None:
             continue
@@ -196,24 +201,52 @@ def _collect_partitions_auto(
             with contextlib.suppress(ValueError):
                 flags = int(img.flags)
 
-        partitions.append(
-            PartitionConfig(
-                image=f"{img.image_name}.img",
-                descriptor=descriptor,
-                algorithm=algorithm,
-                key_id=key_id,
-                partition_name=img.partition_name or img.image_name,
-                rollback_index=int(img.rollback_index) if img.rollback_index else 0,
-                salt=img.salt or "",
-                flags=flags,
-                props=props,
-            )
+        partition_name = img.partition_name or img.image_name
+
+        # Hash footers require partition_size (or dynamic_partition_size):
+        # default to the image file size rounded up to the 4096 block size,
+        # which is the smallest valid value avbtool accepts.
+        partition_size = 0
+        if descriptor == DescriptorType.HASH:
+            image_file = image_dir / f"{img.image_name}.img"
+            with contextlib.suppress(OSError):
+                if image_file.is_file():
+                    partition_size = (int(image_file.stat().st_size) + 4095) // 4096 * 4096
+            if partition_size > 0:
+                size_notes.append(f"{partition_name}: {partition_size}")
+
+        config = PartitionConfig(
+            image=f"{img.image_name}.img",
+            descriptor=descriptor,
+            algorithm=algorithm,
+            key_id=key_id,
+            partition_name=partition_name,
+            rollback_index=int(img.rollback_index) if img.rollback_index else 0,
+            salt=img.salt or "",
+            flags=flags,
+            props=props,
+            partition_size=partition_size,
         )
+        partitions.append(config)
+        by_name[partition_name] = config
+
+    # VBMeta partitions include every other scanned partition (Android
+    # convention); chain/extra includes can be tuned afterwards.
+    for partition_name, config in by_name.items():
+        if config.descriptor == DescriptorType.VBMETA:
+            others = tuple(n for n in by_name if n != partition_name)
+            by_name[partition_name] = replace(config, included_partitions=others)
+    partitions = list(by_name.values())
 
     # Show results
     result_lines = [_("config.wizard.auto_result", count=len(partitions))]
     for p in partitions:
         result_lines.append(f"  - {p.partition_name}: {p.descriptor.value}, {p.algorithm.value}")
+    if size_notes:
+        result_lines.append("")
+        result_lines.append(_("config.wizard.auto_size_note"))
+        for note in size_notes:
+            result_lines.append(f"    {note}")
     for iss in result.issues:
         result_lines.append(f"  [{iss.error_code}] {iss.message}")
 

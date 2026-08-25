@@ -6,18 +6,26 @@ import json
 from pathlib import Path
 
 from avbpowertool.application.commands import (
+    ConfigCreateRequest,
     ConfigExportRequest,
     ConfigImportRequest,
     ConfigShowRequest,
     ConfigValidateRequest,
 )
 from avbpowertool.application.services.manage_configs import (
+    ConfigCreateUseCase,
     ConfigExportUseCase,
     ConfigImportUseCase,
     ConfigShowUseCase,
     ConfigValidateUseCase,
 )
-from avbpowertool.domain.models import AvbProfile
+from avbpowertool.domain.models import (
+    AvbProfile,
+    DescriptorType,
+    PartitionConfig,
+    SigningAlgorithm,
+)
+from avbpowertool.domain.validation import validate_profile
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.infrastructure.persistence.profile_codec import encode_profile
 from avbpowertool.infrastructure.persistence.profile_repository import ProfileRepository
@@ -129,3 +137,91 @@ class TestConfigImportExportUseCase:
             ConfigExportRequest(profile_id="nonexistent", output_path=str(tmp_path / "out.zip"))
         )
         assert any(i.error_code == "config.export_failed" for i in result.issues)
+
+
+class TestConfigCreateUseCase:
+    def test_create_profile_is_schema_v3_and_valid(self, tmp_path: Path) -> None:
+        ws = WorkspacePaths.discover(tmp_path)
+        ws.ensure_dirs()
+        uc = ConfigCreateUseCase(ws)
+
+        result = uc.execute(
+            ConfigCreateRequest(
+                profile_id="my_device",
+                profile_name="My Device",
+                partitions=(
+                    PartitionConfig(
+                        image="boot.img",
+                        descriptor=DescriptorType.HASH,
+                        algorithm=SigningAlgorithm.SHA256_RSA4096,
+                        key_id="testkey_rsa4096",
+                        partition_name="boot",
+                        partition_size=67108864,
+                    ),
+                    PartitionConfig(
+                        image="vbmeta.img",
+                        descriptor=DescriptorType.VBMETA,
+                        algorithm=SigningAlgorithm.SHA256_RSA4096,
+                        key_id="testkey_rsa4096",
+                        partition_name="vbmeta",
+                        included_partitions=("boot",),
+                    ),
+                ),
+                activate=False,
+            )
+        )
+
+        assert result.issues == ()
+        profile = ProfileRepository(ws).load("my_device")
+        assert profile.schema_version == 3
+        # The created profile must pass domain validation (regression: the
+        # create path used to hardcode schema_version=2).
+        assert validate_profile(profile) == []
+
+    def test_create_hash_without_size_reports_issue_but_creates(
+        self, tmp_path: Path
+    ) -> None:
+        ws = WorkspacePaths.discover(tmp_path)
+        ws.ensure_dirs()
+        uc = ConfigCreateUseCase(ws)
+
+        result = uc.execute(
+            ConfigCreateRequest(
+                profile_id="incomplete",
+                profile_name="Incomplete",
+                partitions=(
+                    PartitionConfig(
+                        image="boot.img",
+                        descriptor=DescriptorType.HASH,
+                        algorithm=SigningAlgorithm.SHA256_RSA4096,
+                        key_id="testkey_rsa4096",
+                        partition_name="boot",
+                    ),
+                ),
+                activate=False,
+            )
+        )
+
+        # Not a hard failure: the profile is still created, but the user is
+        # told the hash partition needs a size (fixable via 'config edit').
+        assert any(
+            i.error_code == "config.missing_partition_size" for i in result.issues
+        )
+        assert any(
+            i.error_code == "config.invalid_schema_version" for i in result.issues
+        ) is False
+        profile = ProfileRepository(ws).load("incomplete")
+        assert profile.schema_version == 3
+
+    def test_create_duplicate_id_rejected(self, tmp_path: Path) -> None:
+        ws = _setup_profile(tmp_path)  # creates profile id "test"
+        uc = ConfigCreateUseCase(ws)
+        result = uc.execute(
+            ConfigCreateRequest(
+                profile_id="test",
+                profile_name="Duplicate",
+                partitions=(),
+                activate=False,
+            )
+        )
+        assert any(i.error_code == "config.profile_exists" for i in result.issues)
