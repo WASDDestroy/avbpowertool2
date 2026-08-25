@@ -6,8 +6,12 @@ import hashlib
 import json
 from pathlib import Path
 
-from avbpowertool.application.commands import ResolveChainKeysRequest
+from avbpowertool.application.commands import (
+    KeyDiscoveryRequest,
+    ResolveChainKeysRequest,
+)
 from avbpowertool.application.ports import AvbToolResult
+from avbpowertool.application.services.manage_keys import KeyDiscoveryUseCase
 from avbpowertool.application.services.resolve_chains import ResolveChainKeysUseCase
 from avbpowertool.domain.models import ChainDescriptor
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
@@ -143,3 +147,37 @@ class TestResolveChainKeys:
         assert len(result.resolutions) == 1
         assert result.resolutions[0].entry == ""
         assert any(i.error_code == "chain.key_not_found" for i in result.issues)
+
+    def test_discovered_keys_resolve_after_wizard_prepares_store(
+        self, tmp_path: Path
+    ) -> None:
+        """The wizard runs key discovery before scanning images; chains must
+        then resolve against the manifest discovery just wrote."""
+        ws = WorkspacePaths(
+            root=tmp_path,
+            images=tmp_path / "Images",
+            profiles=tmp_path / "profiles",
+            logs=tmp_path / "Logs",
+            staging=tmp_path / ".avbpowertool-staging",
+            avbtool_script=tmp_path / "avbtool.py",
+        )
+        ws.ensure_dirs()
+        # The wizard creates the key dir and the user drops a .pem in it.
+        key_dir = ws.resolve_key_dir("my_device")
+        key_dir.mkdir(parents=True, exist_ok=True)
+        (key_dir / "release.pem").write_text("fake key", encoding="utf-8")
+
+        discovery = KeyDiscoveryUseCase(ws).execute(
+            KeyDiscoveryRequest(profile_id="my_device")
+        )
+        assert discovery.discovered_count == 1
+        assert discovery.manifest_entries == (("release", "release.pem"),)
+
+        resolution = ResolveChainKeysUseCase(ws, _WritingFakeAvbTool()).execute(
+            ResolveChainKeysRequest(
+                profile_id="my_device",
+                chains=(_chain("vbmeta_system"),),
+            )
+        )
+        assert resolution.issues == ()
+        assert resolution.resolutions[0].entry == "vbmeta_system:1:release.pem"

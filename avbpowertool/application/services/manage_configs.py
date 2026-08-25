@@ -397,8 +397,11 @@ class ConfigCreateUseCase:
                 json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
             )
 
-            # Write empty manifest
-            (key_dir / "manifest.json").write_bytes(b"{}")
+            # Write an empty manifest only when none exists yet — the
+            # creation wizard may have already discovered keys into the
+            # key store before this use case ran.
+            if not (key_dir / "manifest.json").exists():
+                (key_dir / "manifest.json").write_bytes(b"{}")
 
             # Activate if requested
             if request.activate:

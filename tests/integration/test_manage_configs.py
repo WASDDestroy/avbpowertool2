@@ -225,3 +225,43 @@ class TestConfigCreateUseCase:
             )
         )
         assert any(i.error_code == "config.profile_exists" for i in result.issues)
+
+    def test_create_keeps_existing_key_manifest(self, tmp_path: Path) -> None:
+        """Regression: creation used to overwrite manifest.json with {} —
+        the wizard prepares the key store (discovery) before creating, and
+        that manifest must survive profile creation."""
+        ws = WorkspacePaths.discover(tmp_path)
+        ws.ensure_dirs()
+        key_dir = ws.resolve_key_dir("my_device")
+        key_dir.mkdir(parents=True, exist_ok=True)
+        (key_dir / "release.pem").write_text("fake key", encoding="utf-8")
+        (key_dir / "manifest.json").write_text(
+            json.dumps({"release": {"private_key": "release.pem"}}), encoding="utf-8"
+        )
+
+        uc = ConfigCreateUseCase(ws)
+        result = uc.execute(
+            ConfigCreateRequest(
+                profile_id="my_device",
+                profile_name="My Device",
+                partitions=(
+                    PartitionConfig(
+                        image="boot.img",
+                        descriptor=DescriptorType.HASH,
+                        algorithm=SigningAlgorithm.SHA256_RSA4096,
+                        key_id="release",
+                        partition_name="boot",
+                        partition_size=67108864,
+                    ),
+                ),
+                activate=False,
+            )
+        )
+
+        assert result.issues == ()
+        on_disk = json.loads(
+            (ws.resolve_key_dir("my_device") / "manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert on_disk == {"release": {"private_key": "release.pem"}}

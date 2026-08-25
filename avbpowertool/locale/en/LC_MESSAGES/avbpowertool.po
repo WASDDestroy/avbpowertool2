@@ -229,6 +229,30 @@ msgstr "Signing algorithm:"
 msgid "config.wizard.key_id"
 msgstr "Key ID (e.g. release_rsa4096):"
 
+msgid "config.wizard.key_prepare_title"
+msgstr "Prepare Keys"
+
+msgid "config.wizard.key_prepare_msg"
+msgstr "Key store directory: {path}\nPlace your .pem private keys in this directory (filename minus .pem becomes the key_id)."
+
+msgid "config.wizard.key_prepare_continue"
+msgstr "Press Enter to run key discovery and continue."
+
+msgid "config.wizard.key_discovered"
+msgstr "Discovered {count} key(s):"
+
+msgid "config.wizard.key_none"
+msgstr "No keys found yet. You can still continue and register keys later via Key Management; partitions referencing the keys will fail at sign time until then."
+
+msgid "config.wizard.select_default_key"
+msgstr "Default key for all generated partitions:"
+
+msgid "config.wizard.select_key"
+msgstr "Select the key for this partition:"
+
+msgid "config.wizard.key_custom"
+msgstr "Enter manually..."
+
 msgid "config.wizard.rollback_index"
 msgstr "Rollback index (default 0):"
 

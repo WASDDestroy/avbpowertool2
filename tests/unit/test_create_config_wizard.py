@@ -70,6 +70,15 @@ class TestBuildAutoPartition:
         assert config is not None
         assert config.algorithm == SigningAlgorithm.SHA256_RSA4096
 
+    def test_key_id_defaults_and_param(self, tmp_path: Path) -> None:
+        default = _build_auto_partition(_inspection(), tmp_path)
+        assert default is not None
+        assert default.key_id == "default"
+
+        chosen = _build_auto_partition(_inspection(), tmp_path, key_id="release")
+        assert chosen is not None
+        assert chosen.key_id == "release"
+
     def test_flag_bits(self, tmp_path: Path) -> None:
         config = _build_auto_partition(_inspection(flags="3"), tmp_path)
         assert config is not None

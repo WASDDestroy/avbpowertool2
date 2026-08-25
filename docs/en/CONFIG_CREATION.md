@@ -22,7 +22,14 @@ avbpowertool
 The wizard will guide you through:
 1. **Profile ID** — unique identifier (e.g. `my_device`)
 2. **Profile name** — display name (e.g. "My Device ROM")
-3. **Partitions** — add one or more partitions with their signing settings
+3. **Choose mode** — manual or auto
+4. **Prepare keys** (shared, BEFORE collecting images) — the wizard
+   creates the key store `profiles/<id>/keys/`, asks you to drop your
+   `.pem` private keys in it, then runs key discovery (filename minus
+   `.pem` becomes the key_id). Manual mode can then pick key_ids from
+   the discovered keys; auto mode's chain-partition public-key
+   resolution has a populated manifest to match against.
+5. **Partitions** — add one or more partitions with their signing settings
 
 ### Using the API (Python)
 

@@ -229,6 +229,30 @@ msgstr "签名算法："
 msgid "config.wizard.key_id"
 msgstr "密钥 ID（如 release_rsa4096）："
 
+msgid "config.wizard.key_prepare_title"
+msgstr "准备密钥"
+
+msgid "config.wizard.key_prepare_msg"
+msgstr "密钥库目录：{path}\n请将 .pem 私钥文件放入该目录（文件名去掉 .pem 即为 key_id）。"
+
+msgid "config.wizard.key_prepare_continue"
+msgstr "按回车运行密钥发现并继续。"
+
+msgid "config.wizard.key_discovered"
+msgstr "发现 {count} 个密钥："
+
+msgid "config.wizard.key_none"
+msgstr "尚未发现密钥。可继续创建，之后在密钥管理中注册；在此之前引用这些密钥的分区在签名时会失败。"
+
+msgid "config.wizard.select_default_key"
+msgstr "为所有生成的分区选择默认密钥："
+
+msgid "config.wizard.select_key"
+msgstr "为该分区选择密钥："
+
+msgid "config.wizard.key_custom"
+msgstr "手动输入..."
+
 msgid "config.wizard.rollback_index"
 msgstr "回滚索引（默认 0）："
 

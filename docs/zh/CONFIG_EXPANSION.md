@@ -583,6 +583,10 @@ def migrate_v2_to_v3(data: dict[str, Any]) -> tuple[dict[str, Any], list[Operati
 - vbmeta 属性（props）签名时默认不写入生成的 vbmeta：TUI 签名页会先询问
   （默认否，`SignImagesRequest.include_vbmeta_props`），避免 avbtool 不过滤重复
   属性导致的 vbmeta 膨胀与信息冗余；手动创建 vbmeta 分区时仍可输入属性。
+- 创建向导在收集镜像**之前**新增密钥准备步骤（建 `keys/` 目录 + 自动发现 +
+  写 manifest），手动模式从发现的 key_id 中选择、自动模式链解析可匹配 manifest；
+  `ConfigCreateUseCase` 只在新目录缺失 manifest 时才写空 manifest（不再清空
+  向导刚发现的结果）。
 
 ---
 

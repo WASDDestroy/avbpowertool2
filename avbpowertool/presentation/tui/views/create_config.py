@@ -55,15 +55,20 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     if not mode_result:
         return
 
+    # Step 4: Prepare the key store BEFORE collecting partitions, so the
+    # manual mode can offer real key_ids and auto mode's chain-partition
+    # resolution has a populated manifest to match against.
+    available_keys = _prepare_keys(stdscr_c, ws, profile_id)
+
     if mode_result[0] == 0:
-        partitions = _collect_partitions_manual(stdscr_c, ws, avb, profile_id)
+        partitions = _collect_partitions_manual(stdscr_c, ws, avb, profile_id, available_keys)
     else:
-        partitions = _collect_partitions_auto(stdscr_c, ws, avb, profile_id)
+        partitions = _collect_partitions_auto(stdscr_c, ws, avb, profile_id, available_keys)
 
     if partitions is None:
         return
 
-    # Step 4: Confirm
+    # Step 5: Confirm
     if not partitions:
         message_screen(
             stdscr_c,
@@ -105,11 +110,54 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     message_screen(stdscr_c, _("config.wizard.result_title"), lines)
 
 
+def _prepare_keys(stdscr: curses.window, ws: WorkspacePaths, profile_id: str) -> list[str]:
+    """Ensure the key store exists and run key discovery.
+
+    Runs BEFORE any image is scanned or any partition is collected, so
+    manual mode can offer the real key_ids and auto mode's chain
+    resolution has a populated manifest to match public keys against.
+    Returns the discovered key_ids.
+    """
+    from avbpowertool.application.commands import KeyDiscoveryRequest
+    from avbpowertool.application.services.manage_keys import KeyDiscoveryUseCase
+
+    key_dir = ws.resolve_key_dir(profile_id)
+    try:
+        key_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        message_screen(stdscr, _("config.wizard.key_prepare_title"), [str(exc)])
+        return []
+
+    message_screen(
+        stdscr,
+        _("config.wizard.key_prepare_title"),
+        [
+            _("config.wizard.key_prepare_msg", path=str(key_dir)),
+            "",
+            _("config.wizard.key_prepare_continue"),
+        ],
+    )
+
+    result = KeyDiscoveryUseCase(ws).execute(KeyDiscoveryRequest(profile_id=profile_id))
+
+    lines = [_("config.wizard.key_discovered", count=result.discovered_count)]
+    for key_id, filename in result.manifest_entries:
+        lines.append(f"  {key_id} -> {filename}")
+    if not result.manifest_entries:
+        lines.append(_("config.wizard.key_none"))
+    for iss in result.issues:
+        lines.append(f"  [{iss.error_code}] {iss.message}")
+
+    message_screen(stdscr, _("keys.discover_title"), lines)
+    return [key_id for key_id, _filename in result.manifest_entries]
+
+
 def _collect_partitions_manual(
     stdscr: curses.window,
     ws: WorkspacePaths,
     avb: AvbToolPort,
     profile_id: str,
+    available_keys: list[str],
 ) -> list[PartitionConfig] | None:
     """Collect partitions interactively."""
     partitions: list[PartitionConfig] = []
@@ -130,7 +178,7 @@ def _collect_partitions_manual(
         if not confirm_dialog(stdscr, _("config.wizard.add_partition_confirm")):
             break
 
-        partition = _collect_partition(stdscr)
+        partition = _collect_partition(stdscr, available_keys)
         if partition is not None:
             partitions.append(partition)
 
@@ -142,11 +190,26 @@ def _collect_partitions_auto(
     ws: WorkspacePaths,
     avb: AvbToolPort,
     profile_id: str,
+    available_keys: list[str],
 ) -> list[PartitionConfig] | None:
     """Auto-generate config from images in a directory."""
 
     from avbpowertool.application.commands import InspectImagesRequest
     from avbpowertool.application.services.inspect_images import InspectImagesUseCase
+
+    # When keys were prepared, pick the default key_id for the generated
+    # partitions (single key -> use it; several -> let the user choose).
+    default_key_id = "default"
+    if len(available_keys) == 1:
+        default_key_id = available_keys[0]
+    elif len(available_keys) > 1:
+        key_options = available_keys + [_("config.wizard.key_custom")]
+        key_sel = SelectorWidget(_("config.wizard.select_default_key"), key_options)
+        key_choice = key_sel.run(stdscr)
+        if key_choice and key_choice[0] < len(available_keys):
+            default_key_id = available_keys[key_choice[0]]
+        elif not key_choice:
+            return None
 
     # Ask for image directory
     dir_path = input_prompt(stdscr, _("config.wizard.auto_dir"))
@@ -188,7 +251,7 @@ def _collect_partitions_auto(
     size_notes: list[str] = []
     meta_lines: list[str] = []
     for img in result.images:
-        config = _build_auto_partition(img, image_dir)
+        config = _build_auto_partition(img, image_dir, key_id=default_key_id)
         if config is None:
             continue
         by_image[config.image] = config
@@ -255,7 +318,11 @@ def _collect_partitions_auto(
 _VALID_HASH_ALGORITHMS = ("sha1", "sha256", "sha512")
 
 
-def _build_auto_partition(img: ImageInspection, image_dir: Path) -> PartitionConfig | None:
+def _build_auto_partition(
+    img: ImageInspection,
+    image_dir: Path,
+    key_id: str = "default",
+) -> PartitionConfig | None:
     """Build a PartitionConfig from an ImageInspection (auto mode).
 
     Reads back the image's footer metadata — rollback index, rollback
@@ -307,7 +374,7 @@ def _build_auto_partition(img: ImageInspection, image_dir: Path) -> PartitionCon
         image=f"{img.image_name}.img",
         descriptor=descriptor,
         algorithm=algorithm,
-        key_id="default",
+        key_id=key_id,
         partition_name=img.partition_name or img.image_name,
         rollback_index=rollback_index,
         rollback_index_location=rollback_index_location,
@@ -369,7 +436,7 @@ def _apply_chain_resolutions(
     return by_image
 
 
-def _collect_partition(stdscr: curses.window) -> PartitionConfig | None:
+def _collect_partition(stdscr: curses.window, available_keys: list[str]) -> PartitionConfig | None:
     """Collect a single partition config interactively."""
     # Partition name
     name = input_prompt(stdscr, _("config.wizard.partition_name"))
@@ -399,11 +466,21 @@ def _collect_partition(stdscr: curses.window) -> PartitionConfig | None:
         return None
     algorithm = SigningAlgorithm(alg_options[alg_result[0]])
 
-    # Key ID
-    key_id = input_prompt(stdscr, _("config.wizard.key_id"))
-    if not key_id or not key_id.strip():
-        key_id = "default"
-    key_id = key_id.strip()
+    # Key ID — offered from the prepared key store when available
+    key_id = ""
+    if available_keys:
+        key_options = available_keys + [_("config.wizard.key_custom")]
+        key_sel = SelectorWidget(_("config.wizard.select_key"), key_options)
+        key_result = key_sel.run(stdscr)
+        if not key_result:
+            return None
+        if key_result[0] < len(available_keys):
+            key_id = available_keys[key_result[0]]
+    if not key_id:
+        key_id = input_prompt(stdscr, _("config.wizard.key_id"))
+        if not key_id or not key_id.strip():
+            key_id = "default"
+        key_id = key_id.strip()
 
     # Rollback index
     rb_str = input_prompt(stdscr, _("config.wizard.rollback_index"))
