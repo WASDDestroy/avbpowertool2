@@ -1,0 +1,33 @@
+"""vbmeta image — SHA256_RSA4096, embeds descriptors for dtbo/init_boot and props."""
+Footer version:           1.0
+Image size:               4096 bytes
+Original image size:      4096 bytes
+VBMeta offset:            2048
+VBMeta size:              2048 bytes
+--
+Minimum libavb version:   1.0
+Header Block:             256 bytes
+Authentication Block:     576 bytes
+Auxiliary Block:          2528 bytes
+Public key (sha1):        d909d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0
+Algorithm:                SHA256_RSA4096
+Rollback Index:           0
+Flags:                    2
+Rollback Index Location:  0
+Release String:           'avbtool 1.3.0'
+Descriptors:
+    Hash descriptor:
+      Image Size:            4194304 bytes
+      Hash Algorithm:        sha256
+      Partition Name:        dtbo
+      Salt:                  fb6c6d7033c1f13e3bb2570bc879faaefb2db579314278831e51f252458ef191
+      Digest:                1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+      Flags:                 0
+    Hash descriptor:
+      Image Size:            67108864 bytes
+      Hash Algorithm:        sha256
+      Partition Name:        init_boot
+      Salt:                  88bb01eafaaaef2bec0100b4e8ecbdc3c86bddc83ea7c38a219f2f8c635a296e
+      Digest:                fedcba9876543210fedcba9876543210fedcba98
+      Flags:                 0
+    Prop: com.android.build.dtbo.fingerprint -> 'Lenovo/TB710FU/TB710FU:16/BP2A.250605.031.A3/ZUXOS_1.5.04.428_260422_PRC:user/release-keys'

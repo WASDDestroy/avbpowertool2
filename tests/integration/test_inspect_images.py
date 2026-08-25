@@ -17,6 +17,9 @@ SAMPLE_HASH = (FIXTURES_DIR / "avbtool_output" / "hash_descriptor.txt").read_tex
 SAMPLE_VBMETA = (FIXTURES_DIR / "avbtool_output" / "vbmeta_no_descriptors.txt").read_text(
     encoding="utf-8"
 )
+SAMPLE_VBMETA_WITH_DESCS = (
+    FIXTURES_DIR / "avbtool_output" / "vbmeta_with_descriptors.txt"
+).read_text(encoding="utf-8")
 SAMPLE_NO_FOOTER = (
     "usage: avbtool info_image ...\n"
     "avbtool.py: error: Given image does not look like a vbmeta image.\n"
@@ -75,6 +78,34 @@ class TestInspectImagesUseCase:
         assert len(result.images) == 1
         assert result.images[0].descriptor == DescriptorType.VBMETA
         assert result.images[0].algorithm == "SHA256_RSA4096"
+
+    def test_inspect_vbmeta_with_embedded_descriptors(self, tmp_path: Path) -> None:
+        """A vbmeta image embedding other partitions' descriptors must be
+        recognized as VBMETA — not mistaken for its first descriptor."""
+        ws = _make_workspace(tmp_path)
+        (ws.images / "vbmeta.img").write_bytes(b"fake vbmeta")
+
+        fake_avb = FakeAvbTool(
+            {
+                "inspect_image": AvbToolResult(
+                    0, SAMPLE_VBMETA_WITH_DESCS, "", "info_image"
+                )
+            }
+        )
+        uc = InspectImagesUseCase(ws, fake_avb)
+        result = uc.execute(InspectImagesRequest(image_names=("vbmeta",)))
+
+        assert len(result.images) == 1
+        img = result.images[0]
+        assert img.descriptor == DescriptorType.VBMETA
+        # the image's own identity, not the first embedded descriptor
+        assert img.partition_name is None
+        assert img.included_partitions == ("dtbo", "init_boot")
+        assert img.algorithm == "SHA256_RSA4096"
+        assert img.flags == "2"
+        assert any(
+            k == "com.android.build.dtbo.fingerprint" for k, _v in img.props
+        )
 
     def test_inspect_missing_image(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)

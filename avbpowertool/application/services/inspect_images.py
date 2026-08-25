@@ -114,9 +114,29 @@ def _build_inspection(
     hash_algorithm: str | None = None
     digest: str | None = None
     flags: str | None = None
+    included_partitions: tuple[str, ...] = ()
     raw_extensions: list[tuple[str, str]] = []
 
-    if descs:
+    # All partition names referenced by the image's descriptors.
+    descriptor_partitions = [
+        block["fields"]["Partition Name"]
+        for block in descs
+        if block["fields"].get("Partition Name")
+    ]
+
+    first_fields = descs[0]["fields"] if descs else {}
+
+    # A vbmeta image embeds descriptors for OTHER partitions (several of
+    # them, or named differently from the file), whereas a partition
+    # image's footer holds exactly one descriptor — its own.
+    is_vbmeta_image = bool(descs) and (
+        len(descs) != 1 or first_fields.get("Partition Name") != image_name
+    )
+
+    if is_vbmeta_image:
+        descriptor = DescriptorType.VBMETA
+        included_partitions = tuple(descriptor_partitions)
+    elif descs:
         block = descs[0]
         descriptor = _map_descriptor_type(block["type"])
         fields = block["fields"]
@@ -156,7 +176,8 @@ def _build_inspection(
     public_key_sha1 = header.get("Public key (sha1)")
     rollback_index = header.get("Rollback Index")
     rollback_index_location = header.get("Rollback Index Location")
-    algorithm = header.get("Algorithm") or (fields.get("Algorithm") if descs else None)
+    # The signing algorithm lives in the vbmeta header ``Algorithm`` line.
+    algorithm = header.get("Algorithm")
     if descriptor is None and header.get("Algorithm"):
         descriptor = DescriptorType.VBMETA
 
@@ -174,6 +195,7 @@ def _build_inspection(
         digest=digest,
         flags=flags or header.get("Flags"),
         props=tuple(props),
+        included_partitions=included_partitions,
         raw_extensions=tuple(raw_extensions),
     )
 

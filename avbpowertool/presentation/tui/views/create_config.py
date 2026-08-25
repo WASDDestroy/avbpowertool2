@@ -174,18 +174,19 @@ def _collect_partitions_auto(
     uc = InspectImagesUseCase(ws, avb)
     result = uc.execute(InspectImagesRequest(image_names=tuple(image_names)))
 
-    # Build (name -> PartitionConfig) so vbmeta includes can reference the
-    # other scanned partitions.
-    partitions: list[PartitionConfig] = []
-    by_name: dict[str, PartitionConfig] = {}
+    # Build (image -> PartitionConfig) keyed by FILE so later images can
+    # never overwrite an earlier partition's entry (a vbmeta image embeds
+    # descriptors for other partitions and must not clobber their configs).
+    by_image: dict[str, PartitionConfig] = {}
+    included_by_image: dict[str, tuple[str, ...]] = {}
     size_notes: list[str] = []
     meta_lines: list[str] = []
     for img in result.images:
         config = _build_auto_partition(img, image_dir)
         if config is None:
             continue
-        partitions.append(config)
-        by_name[config.partition_name] = config
+        by_image[config.image] = config
+        included_by_image[config.image] = img.included_partitions
 
         if config.partition_size > 0:
             size_notes.append(f"{config.partition_name}: {config.partition_size}")
@@ -199,13 +200,7 @@ def _collect_partitions_auto(
         )
         meta_lines.append(meta)
 
-    # VBMeta partitions include every other scanned partition (Android
-    # convention); chain/extra includes can be tuned afterwards.
-    for partition_name, config in by_name.items():
-        if config.descriptor == DescriptorType.VBMETA:
-            others = tuple(n for n in by_name if n != partition_name)
-            by_name[partition_name] = replace(config, included_partitions=others)
-    partitions = list(by_name.values())
+    partitions = _finalize_vbmeta_includes(by_image, included_by_image)
 
     # Show results
     result_lines = [_("config.wizard.auto_result", count=len(partitions))]
@@ -295,6 +290,32 @@ def _build_auto_partition(img: ImageInspection, image_dir: Path) -> PartitionCon
         hash_algorithm=hash_algorithm,
         partition_size=partition_size,
     )
+
+
+def _finalize_vbmeta_includes(
+    by_image: dict[str, PartitionConfig],
+    included_by_image: dict[str, tuple[str, ...]],
+) -> list[PartitionConfig]:
+    """Fill vbmeta ``included_partitions`` and return the final config list.
+
+    Prefers the descriptors really embedded in the vbmeta image (limited
+    to partitions present in the scan); falls back to every other scanned
+    non-vbmeta partition when the image carries no descriptors.
+    """
+    scanned_names = {c.partition_name for c in by_image.values()}
+    for image_name, config in by_image.items():
+        if config.descriptor != DescriptorType.VBMETA:
+            continue
+        real = included_by_image.get(image_name, ())
+        included = tuple(n for n in real if n in scanned_names)
+        if not included:
+            included = tuple(
+                c.partition_name
+                for c in by_image.values()
+                if c.image != image_name and c.descriptor != DescriptorType.VBMETA
+            )
+        by_image[image_name] = replace(config, included_partitions=included)
+    return list(by_image.values())
 
 
 def _collect_partition(stdscr: curses.window) -> PartitionConfig | None:

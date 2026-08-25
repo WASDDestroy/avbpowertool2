@@ -198,4 +198,5 @@ class ImageInspection:
     digest: str | None = None
     flags: str | None = None
     props: tuple[tuple[str, str], ...] = ()
+    included_partitions: tuple[str, ...] = ()
     raw_extensions: tuple[tuple[str, str], ...] = ()

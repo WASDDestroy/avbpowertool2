@@ -7,9 +7,13 @@ from pathlib import Path
 from avbpowertool.domain.models import (
     DescriptorType,
     ImageInspection,
+    PartitionConfig,
     SigningAlgorithm,
 )
-from avbpowertool.presentation.tui.views.create_config import _build_auto_partition
+from avbpowertool.presentation.tui.views.create_config import (
+    _build_auto_partition,
+    _finalize_vbmeta_includes,
+)
 
 
 def _inspection(**overrides: object) -> ImageInspection:
@@ -138,3 +142,71 @@ class TestBuildAutoPartition:
         assert config.salt == ""
         assert config.flags == 0
         assert config.props == ()
+
+
+def _config(image: str, partition: str, descriptor: DescriptorType) -> PartitionConfig:
+    return PartitionConfig(
+        image=image,
+        descriptor=descriptor,
+        algorithm=SigningAlgorithm.SHA256_RSA4096,
+        key_id="default",
+        partition_name=partition,
+    )
+
+
+class TestFinalizeVbmetaIncludes:
+    def test_uses_real_includes_limited_to_scan(self) -> None:
+        by_image = {
+            "boot.img": _config("boot.img", "boot", DescriptorType.HASH),
+            "dtbo.img": _config("dtbo.img", "dtbo", DescriptorType.HASH),
+            "vbmeta.img": _config("vbmeta.img", "vbmeta", DescriptorType.VBMETA),
+        }
+        included = {"vbmeta.img": ("dtbo", "odm", "init_boot")}
+        partitions = _finalize_vbmeta_includes(by_image, included)
+        vbmeta = next(p for p in partitions if p.partition_name == "vbmeta")
+        # "odm"/"init_boot" are not in the scan -> dropped
+        assert vbmeta.included_partitions == ("dtbo",)
+
+    def test_falls_back_to_other_scanned_partitions(self) -> None:
+        by_image = {
+            "boot.img": _config("boot.img", "boot", DescriptorType.HASH),
+            "system.img": _config("system.img", "system", DescriptorType.HASHTREE),
+            "vbmeta.img": _config("vbmeta.img", "vbmeta", DescriptorType.VBMETA),
+        }
+        partitions = _finalize_vbmeta_includes(by_image, {})
+        vbmeta = next(p for p in partitions if p.partition_name == "vbmeta")
+        assert vbmeta.included_partitions == ("boot", "system")
+
+    def test_fallback_excludes_other_vbmeta(self) -> None:
+        by_image = {
+            "boot.img": _config("boot.img", "boot", DescriptorType.HASH),
+            "vbmeta.img": _config("vbmeta.img", "vbmeta", DescriptorType.VBMETA),
+            "vbmeta_system.img": _config(
+                "vbmeta_system.img", "vbmeta_system", DescriptorType.VBMETA
+            ),
+        }
+        partitions = _finalize_vbmeta_includes(by_image, {})
+        vbmeta = next(p for p in partitions if p.partition_name == "vbmeta")
+        assert vbmeta.included_partitions == ("boot",)
+        vbmeta_system = next(
+            p for p in partitions if p.partition_name == "vbmeta_system"
+        )
+        assert vbmeta_system.included_partitions == ("boot",)
+
+    def test_no_image_entries_are_lost(self) -> None:
+        """Every scanned image keeps its own entry (regression for the
+        vbmeta.img overwriting the real dtbo.img entry bug)."""
+        by_image = {
+            "boot.img": _config("boot.img", "boot", DescriptorType.HASH),
+            "dtbo.img": _config("dtbo.img", "dtbo", DescriptorType.HASH),
+            "vbmeta.img": _config("vbmeta.img", "vbmeta", DescriptorType.VBMETA),
+            "vbmeta_system.img": _config(
+                "vbmeta_system.img", "vbmeta_system", DescriptorType.VBMETA
+            ),
+        }
+        partitions = _finalize_vbmeta_includes(by_image, {"vbmeta.img": ("dtbo",)})
+        names = {p.partition_name for p in partitions}
+        assert names == {"boot", "dtbo", "vbmeta", "vbmeta_system"}
+        # the real dtbo.img config keeps its own image file
+        dtbo = next(p for p in partitions if p.partition_name == "dtbo")
+        assert dtbo.image == "dtbo.img"
