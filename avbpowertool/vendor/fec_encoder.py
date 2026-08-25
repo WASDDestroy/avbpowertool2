@@ -355,5 +355,7 @@ def generate_fec_data(image_filename: str, num_roots: int) -> bytes:
         pass
 
     raise RuntimeError(
-        "No FEC encoding method available. Install numpy or reedsolo: pip install avbpowertool[fec]"
+        "No FEC encoding method available. numpy and reedsolo are mandatory "
+        "dependencies of avbpowertool — reinstall the package "
+        "(pip install --force-reinstall avbpowertool)."
     )

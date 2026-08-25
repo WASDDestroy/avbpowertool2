@@ -28,6 +28,10 @@ AOSP `avbtool.py` 的配置驱动 Python 封装。提供 CLI 和 TUI 用于 Andr
 子进程（回退发生时会打印一次提示）。设置 `AVB_CRYPTO_BACKEND=openssl`
 可强制使用回退路径。
 
+内嵌 `avbtool.py` 的全部本地补丁（加密后端、纯 Python FEC）记录在
+[VENDORED_AVBTOOL_PATCHES.md](VENDORED_AVBTOOL_PATCHES.md)，
+升级上游 avbtool 时可据此重新打补丁。
+
 ### 安装
 
 ```shell
@@ -38,14 +42,11 @@ cd AVBPowerTool2
 # 使用 uv 安装（推荐）
 uv sync
 
-# 推荐：纯 Python 密钥操作，无需 OpenSSL
-uv sync --extra crypto
-
-# 或安装全部可选功能（Windows TUI、FEC 编码器、crypto 后端）
+# 或安装全部可选功能（Windows TUI 支持）
 uv sync --all-extras
 
 # 或使用 pip 安装
-pip install -e .[crypto]
+pip install -e .
 ```
 
 ### CLI 用法

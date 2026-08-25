@@ -7,14 +7,16 @@ name = "avbpowertool"
 version = "2.0.0.dev0"
 description = "Android Verified Boot Power Tool — configuration-driven avbtool wrapper"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "cryptography>=42",
+    "numpy>=1.20,<3.0",
+    "reedsolo>=1.7,<3.0",
+]
 license = {file = "LICENSE"}
 
 [project.optional-dependencies]
 windows = ["windows-curses"]
 dev = ["pytest>=7", "pytest-cov", "ruff", "pyright[nodejs]"]
-fec = ["numpy>=1.20,<3.0", "reedsolo>=1.7,<3.0"]
-crypto = ["cryptography>=42"]
 
 [project.scripts]
 avbpowertool = "avbpowertool.presentation.cli.parser:main"

@@ -10,21 +10,19 @@ resolution-markers = [
 name = "avbpowertool"
 version = "2.0.0.dev0"
 source = { editable = "." }
+dependencies = [
+    { name = "cryptography" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "reedsolo" },
+]
 
 [package.optional-dependencies]
-crypto = [
-    { name = "cryptography" },
-]
 dev = [
     { name = "pyright", extra = ["nodejs"] },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
-]
-fec = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "reedsolo" },
 ]
 windows = [
     { name = "windows-curses" },
@@ -32,16 +30,16 @@ windows = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cryptography", marker = "extra == 'crypto'", specifier = ">=42" },
-    { name = "numpy", marker = "extra == 'fec'", specifier = ">=1.20,<3.0" },
+    { name = "cryptography", specifier = ">=42" },
+    { name = "numpy", specifier = ">=1.20,<3.0" },
     { name = "pyright", extras = ["nodejs"], marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "reedsolo", marker = "extra == 'fec'", specifier = ">=1.7,<3.0" },
+    { name = "reedsolo", specifier = ">=1.7,<3.0" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "windows-curses", marker = "extra == 'windows'" },
 ]
-provides-extras = ["windows", "dev", "fec", "crypto"]
+provides-extras = ["windows", "dev"]
 
 [[package]]
 name = "cffi"

@@ -11,7 +11,7 @@ The entry point is `avbpowertool/presentation/cli/parser.py:main`. Running `avbp
 ## Repository Layout
 
 ```
-avbtool.py                          Vendored AOSP avbtool (minimally patched for FEC)
+avbtool.py                          Vendored AOSP avbtool (patched: in-process crypto + pure-Python FEC fallback; see docs/en/VENDORED_AVBTOOL_PATCHES.md)
 avbpowertool/                       Python package
   domain/                           Pure models, validation, signing plan (no I/O)
   application/                      Use cases, ports (Protocol), events
@@ -79,8 +79,7 @@ If any step fails, fix the issue and restart from step 2.
 
 ```shell
 uv sync                              # Install all deps (including dev)
-uv sync --extra crypto               # Optional: in-process crypto backend (no OpenSSL needed)
-uv sync --all-extras                 # Install with fec, windows, and crypto extras
+uv sync --all-extras                 # Install with windows extra (numpy/reedsolo/cryptography are core deps)
 uv run pytest tests/                 # Run all tests
 uv run pytest tests/ -v              # Verbose test output
 uv run pytest tests/ -q              # Quiet test output

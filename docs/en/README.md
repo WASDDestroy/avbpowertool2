@@ -29,6 +29,11 @@ automatically falls back to the `openssl` command-line tool otherwise (a
 one-time notice is printed when this happens). Set `AVB_CRYPTO_BACKEND=openssl`
 to force the fallback path.
 
+All local patches carried by the vendored `avbtool.py` (crypto backend,
+pure-Python FEC) are recorded in
+[VENDORED_AVBTOOL_PATCHES.md](VENDORED_AVBTOOL_PATCHES.md); use it to
+re-apply patches when upgrading upstream avbtool.
+
 ### Install
 
 ```shell
@@ -39,14 +44,11 @@ cd AVBPowerTool2
 # Install with uv (recommended)
 uv sync
 
-# Recommended: pure-Python key operations, no OpenSSL required
-uv sync --extra crypto
-
-# Or install every optional feature (Windows TUI, FEC encoder, crypto backend)
+# Or install every optional feature (Windows TUI support)
 uv sync --all-extras
 
 # Or install with pip
-pip install -e .[crypto]
+pip install -e .
 ```
 
 ### CLI Usage
