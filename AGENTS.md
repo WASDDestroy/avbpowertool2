@@ -79,7 +79,8 @@ If any step fails, fix the issue and restart from step 2.
 
 ```shell
 uv sync                              # Install all deps (including dev)
-uv sync --all-extras                 # Install with fec and windows extras
+uv sync --extra crypto               # Optional: in-process crypto backend (no OpenSSL needed)
+uv sync --all-extras                 # Install with fec, windows, and crypto extras
 uv run pytest tests/                 # Run all tests
 uv run pytest tests/ -v              # Verbose test output
 uv run pytest tests/ -q              # Quiet test output
