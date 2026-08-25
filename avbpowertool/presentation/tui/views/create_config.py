@@ -7,10 +7,14 @@ import curses
 from dataclasses import replace
 from pathlib import Path
 
-from avbpowertool.application.commands import ConfigCreateRequest
+from avbpowertool.application.commands import (
+    ChainKeyResolution,
+    ConfigCreateRequest,
+)
 from avbpowertool.application.ports import AvbToolPort
 from avbpowertool.application.services.manage_configs import ConfigCreateUseCase
 from avbpowertool.domain.models import (
+    ChainDescriptor,
     DescriptorType,
     ImageInspection,
     PartitionConfig,
@@ -179,6 +183,8 @@ def _collect_partitions_auto(
     # descriptors for other partitions and must not clobber their configs).
     by_image: dict[str, PartitionConfig] = {}
     included_by_image: dict[str, tuple[str, ...]] = {}
+    chain_descriptors_by_image: dict[str, tuple[ChainDescriptor, ...]] = {}
+    chain_issues: list[str] = []
     size_notes: list[str] = []
     meta_lines: list[str] = []
     for img in result.images:
@@ -187,6 +193,8 @@ def _collect_partitions_auto(
             continue
         by_image[config.image] = config
         included_by_image[config.image] = img.included_partitions
+        if config.descriptor == DescriptorType.VBMETA and img.chain_descriptors:
+            chain_descriptors_by_image[config.image] = img.chain_descriptors
 
         if config.partition_size > 0:
             size_notes.append(f"{config.partition_name}: {config.partition_size}")
@@ -199,6 +207,23 @@ def _collect_partitions_auto(
             f"props={len(config.props)} hash={config.hash_algorithm}"
         )
         meta_lines.append(meta)
+
+    # Restore chain partitions read from the vbmeta images: resolve each
+    # chain descriptor's public-key SHA1 to a key file in the key store.
+    if chain_descriptors_by_image:
+        from avbpowertool.application.commands import ResolveChainKeysRequest
+        from avbpowertool.application.services.resolve_chains import (
+            ResolveChainKeysUseCase,
+        )
+
+        all_chains = tuple(c for descs in chain_descriptors_by_image.values() for c in descs)
+        chain_result = ResolveChainKeysUseCase(ws, avb).execute(
+            ResolveChainKeysRequest(profile_id=profile_id, chains=all_chains)
+        )
+        by_image = _apply_chain_resolutions(
+            by_image, chain_descriptors_by_image, chain_result.resolutions
+        )
+        chain_issues = [f"  [{iss.error_code}] {iss.message}" for iss in chain_result.issues]
 
     partitions = _finalize_vbmeta_includes(by_image, included_by_image)
 
@@ -218,6 +243,10 @@ def _collect_partitions_auto(
             result_lines.append(f"    {note}")
     for iss in result.issues:
         result_lines.append(f"  [{iss.error_code}] {iss.message}")
+    if chain_issues:
+        result_lines.append("")
+        result_lines.append(_("config.wizard.auto_chain_note"))
+        result_lines.extend(chain_issues)
 
     message_screen(stdscr, _("config.wizard.auto_result_title"), result_lines)
     return partitions
@@ -318,6 +347,28 @@ def _finalize_vbmeta_includes(
     return list(by_image.values())
 
 
+def _apply_chain_resolutions(
+    by_image: dict[str, PartitionConfig],
+    chain_descriptors: dict[str, tuple[ChainDescriptor, ...]],
+    resolutions: tuple[ChainKeyResolution, ...],
+) -> dict[str, PartitionConfig]:
+    """Write resolved ``PART:SLOT:KEY_FILE`` entries into vbmeta configs.
+
+    ``resolutions`` is parallel to the flattened chain descriptors (in
+    the insertion order of ``chain_descriptors``); entries that were not
+    resolved (empty) are skipped so the config stays signable.
+    """
+    idx = 0
+    for image_name, descriptors in chain_descriptors.items():
+        entries: list[str] = []
+        for _descriptor in descriptors:
+            if idx < len(resolutions) and resolutions[idx].entry:
+                entries.append(resolutions[idx].entry)
+            idx += 1
+        by_image[image_name] = replace(by_image[image_name], chain_partitions=tuple(entries))
+    return by_image
+
+
 def _collect_partition(stdscr: curses.window) -> PartitionConfig | None:
     """Collect a single partition config interactively."""
     # Partition name
@@ -396,6 +447,7 @@ def _collect_partition(stdscr: curses.window) -> PartitionConfig | None:
     padding_size = 0
     kernel_cmdlines: tuple[str, ...] = ()
     chain_partitions_do_not_use_ab: tuple[str, ...] = ()
+    props: tuple[tuple[str, str], ...] = ()
 
     if descriptor == DescriptorType.HASH:
         if confirm_dialog(stdscr, _("config.wizard.dynamic_partition_size")):
@@ -424,6 +476,14 @@ def _collect_partition(stdscr: curses.window) -> PartitionConfig | None:
             )
         cmdlines = input_prompt(stdscr, _("config.wizard.kernel_cmdlines"))
         kernel_cmdlines = tuple(c.strip() for c in cmdlines.split(",") if c.strip())
+        # Manual props: comma-separated key:value pairs (optional).
+        props_str = input_prompt(stdscr, _("config.wizard.props"))
+        props = tuple(
+            (k.strip(), v.strip())
+            for entry in props_str.split(",")
+            if ":" in entry
+            for k, v in [entry.split(":", 1)]
+        )
 
     return PartitionConfig(
         image=image,
@@ -445,4 +505,5 @@ def _collect_partition(stdscr: curses.window) -> PartitionConfig | None:
         padding_size=padding_size,
         kernel_cmdlines=kernel_cmdlines,
         chain_partitions_do_not_use_ab=chain_partitions_do_not_use_ab,
+        props=props,
     )

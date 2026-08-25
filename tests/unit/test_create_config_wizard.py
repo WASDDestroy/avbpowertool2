@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from avbpowertool.application.commands import ChainKeyResolution
 from avbpowertool.domain.models import (
+    ChainDescriptor,
     DescriptorType,
     ImageInspection,
     PartitionConfig,
     SigningAlgorithm,
 )
 from avbpowertool.presentation.tui.views.create_config import (
+    _apply_chain_resolutions,
     _build_auto_partition,
     _finalize_vbmeta_includes,
 )
@@ -210,3 +213,45 @@ class TestFinalizeVbmetaIncludes:
         # the real dtbo.img config keeps its own image file
         dtbo = next(p for p in partitions if p.partition_name == "dtbo")
         assert dtbo.image == "dtbo.img"
+
+
+class TestApplyChainResolutions:
+    def test_writes_resolved_entries_into_vbmeta_config(self) -> None:
+        by_image = {
+            "vbmeta.img": _config("vbmeta.img", "vbmeta", DescriptorType.VBMETA),
+            "boot.img": _config("boot.img", "boot", DescriptorType.HASH),
+        }
+        chains = {
+            "vbmeta.img": (
+                ChainDescriptor("vbmeta_system", "1", "a" * 40),
+                ChainDescriptor("vbmeta_vendor", "2", "b" * 40),
+            )
+        }
+        resolutions = (
+            ChainKeyResolution(entry="vbmeta_system:1:key.pem", key_id="k1"),
+            ChainKeyResolution(entry="vbmeta_vendor:2:other.pem", key_id="k2"),
+        )
+        result = _apply_chain_resolutions(by_image, chains, resolutions)
+        vbmeta = result["vbmeta.img"]
+        assert vbmeta.chain_partitions == (
+            "vbmeta_system:1:key.pem",
+            "vbmeta_vendor:2:other.pem",
+        )
+
+    def test_unresolved_entries_are_skipped(self) -> None:
+        by_image = {
+            "vbmeta.img": _config("vbmeta.img", "vbmeta", DescriptorType.VBMETA),
+        }
+        chains = {
+            "vbmeta.img": (ChainDescriptor("vbmeta_system", "1", "a" * 40),)
+        }
+        resolutions = (ChainKeyResolution(entry=""),)
+        result = _apply_chain_resolutions(by_image, chains, resolutions)
+        assert result["vbmeta.img"].chain_partitions == ()
+
+    def test_no_chain_images_unchanged(self) -> None:
+        by_image = {
+            "boot.img": _config("boot.img", "boot", DescriptorType.HASH),
+        }
+        result = _apply_chain_resolutions(by_image, {}, ())
+        assert result["boot.img"].chain_partitions == ()

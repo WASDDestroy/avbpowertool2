@@ -130,6 +130,12 @@ avbpowertool image sign boot vbmeta --dry-run  # 预览
 avbpowertool image sign boot vbmeta --execute --yes  # 执行
 ```
 
+**TUI 签名页**：当所选镜像包含 vbmeta 分区时，会额外询问
+"是否将此配置中的属性附加到即将生成的 vbmeta 镜像？"，**默认否**。
+avbtool 本身不过滤重复属性，自动创建读回的 `com.android.build.*`
+等属性通常与子分区重复，默认不写入可避免 vbmeta 体积膨胀和信息冗余；
+需要保留时在询问页选择"是"（属性来自该 vbmeta 分区配置的 `props` 字段）。
+
 ## 分区类型
 
 ### Hash 分区
@@ -184,6 +190,14 @@ PartitionConfig(
     chain_partitions=("vbmeta_system:1:system_key.pem",),
 )
 ```
+
+#### 自动创建时的链式分区与属性
+
+自动创建（扫描目录 → 自动生成配置）时：
+
+- **链式分区**：vbmeta 镜像内嵌的 `Chain Partition` 描述符会被识别为该 vbmeta 的链式分区（而不是混入 `included_partitions`），并尝试还原为 `PART:SLOT:KEY_FILE` 三元组 —— SLOT 取自描述符的 `Rollback Index Location`，KEY_FILE 通过描述符的 `Public key (sha1)` 与密钥清单中每个密钥的 `avbtool extract_public_key` 输出（SHA1）匹配。匹配不到密钥时该链**不会写入配置**，并在结果页给出 `chain.key_not_found` 提示（可之后用 `config edit --set chain_partitions=...` 补齐）。
+- **属性（props）**：从镜像读回的属性字符串**保留**在自动生成的配置中（可审查、可手动编辑），但**签名时默认不写入**生成的 vbmeta —— 请在签名确认页选择"是"才会附加（见下文"签名"）。手动创建 vbmeta 分区时也可直接输入属性（逗号分隔的 `key:value`）。
+- **已知限制**：`info_image` 输出无法区分 `Chain Partition` 与 `Chain Partition (do not use ab)`，自动创建统一还原为标准 `chain_partitions`；`chain_partitions_do_not_use_ab` 需手动设置。
 
 ## 配置目录结构
 

@@ -69,7 +69,7 @@ class SignImagesUseCase:
         staging_dir = self._ws.staging / f"sign-{request.profile_id}"
 
         builder = SigningPlanBuilder(profile, image_dir, key_dir, staging_dir)
-        plan = builder.build(request.image_names)
+        plan = builder.build(request.image_names, include_vbmeta_props=request.include_vbmeta_props)
         issues.extend(plan.issues)
 
         self._progress.on_event(

@@ -45,11 +45,18 @@ class SigningPlanBuilder:
         self._key_dir = key_dir
         self._staging_dir = staging_dir
 
-    def build(self, partition_names: tuple[str, ...]) -> SigningPlan:
+    def build(
+        self,
+        partition_names: tuple[str, ...],
+        include_vbmeta_props: bool = True,
+    ) -> SigningPlan:
         """Build a signing plan for the given partition names.
 
         Non-vbmeta images are signed first (alphabetical), then vbmeta
-        images in dependency order.
+        images in dependency order.  ``include_vbmeta_props`` controls
+        whether the config's props are emitted into generated vbmeta
+        images (default True keeps builder-level behavior stable; the
+        use case passes the user's choice).
         """
         issues: list[OperationIssue] = []
 
@@ -102,7 +109,9 @@ class SigningPlanBuilder:
         # Pass 2: vbmeta images (dependency order)
         for name in vbmeta_order:
             config = self._profile.partitions[name]
-            step, step_issues = self._build_vbmeta_step(name, config, order_counter)
+            step, step_issues = self._build_vbmeta_step(
+                name, config, order_counter, include_vbmeta_props
+            )
             issues.extend(step_issues)
             if step is not None:
                 steps.append(step)
@@ -180,6 +189,7 @@ class SigningPlanBuilder:
         name: str,
         config: PartitionConfig,
         order: int,
+        include_vbmeta_props: bool = True,
     ) -> tuple[SigningStep | None, list[OperationIssue]]:
         """Build a signing step for a vbmeta partition."""
         issues: list[OperationIssue] = []
@@ -234,6 +244,7 @@ class SigningPlanBuilder:
             key,
             include_descriptors=tuple(include_descriptors),
             chain_partitions=chain_partitions,
+            include_props=include_vbmeta_props,
         )
 
         return (

@@ -577,6 +577,12 @@ def migrate_v2_to_v3(data: dict[str, Any]) -> tuple[dict[str, Any], list[Operati
 - `--salt ""` 语义：盐为空时省略 `--salt`（avbtool 生成随机盐），与 Android 语义一致。
 - v2 → v3 迁移为**只读推导**；`decode_profile` 在内存中自动迁移，
   `config migrate` 才把 v3 写回磁盘。
+- 自动创建时 `info_image` 解析按描述符类型分流：hash/hashtree 名字进
+  `included_partitions`，`Chain Partition` 描述符进 `ImageInspection.chain_descriptors`，
+  向导按 `Public key (sha1)` 与密钥库匹配还原为 `PART:SLOT:KEY_FILE`（不匹配则跳过并提示）。
+- vbmeta 属性（props）签名时默认不写入生成的 vbmeta：TUI 签名页会先询问
+  （默认否，`SignImagesRequest.include_vbmeta_props`），避免 avbtool 不过滤重复
+  属性导致的 vbmeta 膨胀与信息冗余；手动创建 vbmeta 分区时仍可输入属性。
 
 ---
 

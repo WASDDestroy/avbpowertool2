@@ -130,6 +130,15 @@ avbpowertool image sign boot vbmeta --dry-run  # Preview
 avbpowertool image sign boot vbmeta --execute --yes  # Execute
 ```
 
+**TUI signing page**: when the selected images include a vbmeta
+partition, an extra question asks whether to attach this config's props
+to the generated vbmeta image — **default No**. avbtool does not filter
+duplicate props, and the props read back from images (e.g.
+`com.android.build.*`) usually duplicate what the sub-partitions carry;
+leaving them out avoids vbmeta size bloat and redundant info. Choose
+"Yes" when the props should be preserved (they come from the vbmeta
+partition config's `props` field).
+
 ## Partition Types
 
 ### Hash Partition
@@ -184,6 +193,29 @@ PartitionConfig(
     chain_partitions=("vbmeta_system:1:system_key.pem",),
 )
 ```
+
+#### Auto-create: chain partitions and props
+
+When auto-creating a config by scanning a directory of images:
+
+- **Chain partitions**: `Chain Partition` descriptors embedded in a
+  vbmeta image are recognized as that vbmeta's chain partitions (never
+  mixed into `included_partitions`) and restored as `PART:SLOT:KEY_FILE`
+  triples — SLOT from the descriptor's `Rollback Index Location`, KEY_FILE
+  by matching the descriptor's `Public key (sha1)` against each key store
+  entry's `avbtool extract_public_key` output (SHA1). When no key
+  matches, the chain is **not** written to the config and a
+  `chain.key_not_found` issue is shown (fill it in later with
+  `config edit --set chain_partitions=...`).
+- **Props**: props read back from images stay in the generated config
+  (reviewable, editable), but by default are **not** written into a
+  generated vbmeta at signing time — the signing page asks first (see
+  "Sign" above). Manually created vbmeta partitions can also take props
+  directly (comma-separated `key:value`).
+- **Known limitation**: `info_image` output cannot distinguish
+  `Chain Partition` from `Chain Partition (do not use ab)`, so auto
+  creation restores standard `chain_partitions` only;
+  `chain_partitions_do_not_use_ab` must be set manually.
 
 ## Profile Directory Structure
 

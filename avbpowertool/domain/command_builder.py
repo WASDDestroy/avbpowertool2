@@ -122,6 +122,7 @@ def build_vbmeta_command(
     key_path: Path | None = None,
     include_descriptors: tuple[Path, ...] = (),
     chain_partitions: tuple[str, ...] = (),
+    include_props: bool = True,
 ) -> list[str]:
     """Build arg list for avbtool make_vbmeta_image.
 
@@ -129,7 +130,8 @@ def build_vbmeta_command(
     ``included_partitions`` + ``include_descriptors_from_image``);
     ``chain_partitions`` holds fully-resolved ``PART:SLOT:KEY_PATH``
     triples.  ``key_path`` may be None for unsigned (NONE algorithm)
-    vbmeta.
+    vbmeta.  ``include_props`` gates emission of the config's props
+    (both ``--prop`` and ``--prop_from_file``).
     """
     cmd = [
         "make_vbmeta_image",
@@ -156,10 +158,11 @@ def build_vbmeta_command(
         cmd.append("--set_verification_disabled_flag")
     if config.padding_size:
         cmd.extend(["--padding_size", str(config.padding_size)])
-    for k, v in config.props:
-        cmd.extend(["--prop", f"{k}:{v}"])
-    for k, path in config.prop_from_file:
-        cmd.extend(["--prop_from_file", f"{k}:{path}"])
+    if include_props:
+        for k, v in config.props:
+            cmd.extend(["--prop", f"{k}:{v}"])
+        for k, path in config.prop_from_file:
+            cmd.extend(["--prop_from_file", f"{k}:{path}"])
     for cmdline in config.kernel_cmdlines:
         cmd.extend(["--kernel_cmdline", cmdline])
     if config.setup_rootfs_from_kernel:

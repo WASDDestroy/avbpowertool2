@@ -481,3 +481,38 @@ class TestSigningPlanBuilder:
         cmd = plan.steps[0].command
         chain_idx = cmd.index("--chain_partition")
         assert cmd[chain_idx + 1] == f"vbmeta_system:1:{abs_key}"
+
+    def test_vbmeta_props_emitted_when_requested(self, tmp_path: Path) -> None:
+        _setup_workspace(tmp_path)
+        profile = _make_profile()
+        vbmeta = profile.partitions["vbmeta"]
+        profile = AvbProfile(
+            id=profile.id,
+            name=profile.name,
+            partitions={
+                **profile.partitions,
+                "vbmeta": PartitionConfig(
+                    image=vbmeta.image,
+                    descriptor=vbmeta.descriptor,
+                    algorithm=vbmeta.algorithm,
+                    key_id=vbmeta.key_id,
+                    partition_name=vbmeta.partition_name,
+                    included_partitions=vbmeta.included_partitions,
+                    props=(("com.android.build.os_version", "16"),),
+                ),
+            },
+        )
+        image_dir = tmp_path / "Images"
+        key_dir = tmp_path / "profiles" / "current" / "keys"
+        staging_dir = tmp_path / ".avbpowertool-staging"
+
+        builder = SigningPlanBuilder(profile, image_dir, key_dir, staging_dir)
+
+        with_props = builder.build(("vbmeta",), include_vbmeta_props=True)
+        cmd = with_props.steps[0].command
+        assert "--prop" in cmd
+        assert "com.android.build.os_version:16" in cmd
+
+        without_props = builder.build(("vbmeta",), include_vbmeta_props=False)
+        cmd = without_props.steps[0].command
+        assert "--prop" not in cmd

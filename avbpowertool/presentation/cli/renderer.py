@@ -60,6 +60,15 @@ def render_inspect(result: InspectImagesResult, as_json: bool, out: TextIO = sys
                         "digest": img.digest,
                         "flags": img.flags,
                         "props": [{"key": k, "value": v} for k, v in img.props],
+                        "included_partitions": list(img.included_partitions),
+                        "chain_partitions": [
+                            {
+                                "partition_name": c.partition_name,
+                                "rollback_index_location": c.rollback_index_location,
+                                "public_key_sha1": c.public_key_sha1,
+                            }
+                            for c in img.chain_descriptors
+                        ],
                         "extensions": [{"key": k, "value": v} for k, v in img.raw_extensions],
                     }
                     for img in result.images
@@ -90,6 +99,15 @@ def render_inspect(result: InspectImagesResult, as_json: bool, out: TextIO = sys
             _emit_text(f"  Flags:           {img.flags}", out)
         for k, v in img.props:
             _emit_text(f"  Prop:            {k} -> {v}", out)
+        if img.included_partitions:
+            _emit_text(f"  Included:        {', '.join(img.included_partitions)}", out)
+        for chain in img.chain_descriptors:
+            _emit_text(
+                f"  Chain:           {chain.partition_name} "
+                f"slot={chain.rollback_index_location} "
+                f"pubkey={chain.public_key_sha1 or 'N/A'}",
+                out,
+            )
         for k, v in img.raw_extensions:
             _emit_text(f"  {k}:  {v}", out)
         _emit_text("", out)

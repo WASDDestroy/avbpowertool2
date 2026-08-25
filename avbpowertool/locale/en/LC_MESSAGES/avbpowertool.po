@@ -271,6 +271,9 @@ msgstr "Add chain partitions for non-A/B (--chain_partition_do_not_use_ab)?"
 msgid "config.wizard.chain_do_not_use_ab_list"
 msgstr "Chain partitions (comma-separated PART:SLOT:KEY_PATH):"
 
+msgid "config.wizard.props"
+msgstr "Props (comma-separated key:value, optional):"
+
 msgid "config.wizard.kernel_cmdlines"
 msgstr "Kernel cmdlines (comma-separated, optional):"
 
@@ -300,6 +303,12 @@ msgstr "Generated {count} partition config(s):"
 
 msgid "config.wizard.auto_result_title"
 msgstr "Auto-Generated Config"
+
+msgid "config.wizard.auto_chain_note"
+msgstr "Chain partitions were NOT written to the config (resolve keys first):"
+
+msgid "sign.vbmeta.props_prompt"
+msgstr "Attach this config's props to the generated vbmeta image?"
 
 # Key management
 msgid "keys.management_title"

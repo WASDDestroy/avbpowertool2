@@ -20,6 +20,9 @@ SAMPLE_VBMETA = (FIXTURES_DIR / "avbtool_output" / "vbmeta_no_descriptors.txt").
 SAMPLE_VBMETA_WITH_DESCS = (
     FIXTURES_DIR / "avbtool_output" / "vbmeta_with_descriptors.txt"
 ).read_text(encoding="utf-8")
+SAMPLE_VBMETA_WITH_CHAIN = (
+    FIXTURES_DIR / "avbtool_output" / "vbmeta_with_chain.txt"
+).read_text(encoding="utf-8")
 SAMPLE_NO_FOOTER = (
     "usage: avbtool info_image ...\n"
     "avbtool.py: error: Given image does not look like a vbmeta image.\n"
@@ -106,6 +109,35 @@ class TestInspectImagesUseCase:
         assert any(
             k == "com.android.build.dtbo.fingerprint" for k, _v in img.props
         )
+
+    def test_inspect_vbmeta_chain_partitions_separated(self, tmp_path: Path) -> None:
+        """Chain-partition descriptors must not leak into included_partitions."""
+        ws = _make_workspace(tmp_path)
+        (ws.images / "vbmeta.img").write_bytes(b"fake vbmeta")
+
+        fake_avb = FakeAvbTool(
+            {
+                "inspect_image": AvbToolResult(
+                    0, SAMPLE_VBMETA_WITH_CHAIN, "", "info_image"
+                )
+            }
+        )
+        uc = InspectImagesUseCase(ws, fake_avb)
+        result = uc.execute(InspectImagesRequest(image_names=("vbmeta",)))
+
+        assert len(result.images) == 1
+        img = result.images[0]
+        assert img.descriptor == DescriptorType.VBMETA
+        # chain names must NOT be treated as included descriptors
+        assert img.included_partitions == ()
+        assert len(img.chain_descriptors) == 2
+        first = img.chain_descriptors[0]
+        assert first.partition_name == "vbmeta_system"
+        assert first.rollback_index_location == "1"
+        assert first.public_key_sha1 == "b" * 40
+        second = img.chain_descriptors[1]
+        assert second.partition_name == "vbmeta_vendor"
+        assert second.rollback_index_location == "2"
 
     def test_inspect_missing_image(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)

@@ -132,3 +132,64 @@ class TestSignImagesUseCase:
 
         assert not result.executed
         assert any(i.error_code == "config.partition_missing" for i in result.issues)
+
+    def test_include_vbmeta_props_gates_props_in_plan(self, tmp_path: Path) -> None:
+        ws = _setup_profile(tmp_path)
+        profile_dir = ws.resolve_profile_dir("current")
+        # add a vbmeta partition with props targeting the same key store
+        (ws.images / "vbmeta.img").write_bytes(b"fake vbmeta")
+        profile = AvbProfile(
+            id="current",
+            name="Current",
+            partitions={
+                "boot": PartitionConfig(
+                    image="boot.img",
+                    descriptor=DescriptorType.HASH,
+                    algorithm=SigningAlgorithm.SHA256_RSA4096,
+                    key_id="testkey",
+                    partition_name="boot",
+                    rollback_index=0,
+                    salt="abcdef",
+                ),
+                "vbmeta": PartitionConfig(
+                    image="vbmeta.img",
+                    descriptor=DescriptorType.VBMETA,
+                    algorithm=SigningAlgorithm.SHA256_RSA4096,
+                    key_id="testkey",
+                    partition_name="vbmeta",
+                    rollback_index=0,
+                    included_partitions=("boot",),
+                    props=(("com.android.build.os_version", "16"),),
+                ),
+            },
+        )
+        (profile_dir / "profile.json").write_text(
+            json.dumps(encode_profile(profile), indent=2), encoding="utf-8"
+        )
+
+        fake_avb = FakeAvbTool({"make_vbmeta_image": AvbToolResult(0, "", "", "make_vbmeta_image")})
+        uc = SignImagesUseCase(ws, fake_avb)
+
+        with_props = uc.execute(
+            SignImagesRequest(
+                image_names=("boot", "vbmeta"),
+                profile_id="current",
+                dry_run=True,
+                include_vbmeta_props=True,
+            )
+        )
+        vbmeta_step = next(s for s in with_props.plan.steps if s.operation == "make_vbmeta_image")
+        assert "--prop" in vbmeta_step.command
+
+        without_props = uc.execute(
+            SignImagesRequest(
+                image_names=("boot", "vbmeta"),
+                profile_id="current",
+                dry_run=True,
+                include_vbmeta_props=False,
+            )
+        )
+        vbmeta_step = next(
+            s for s in without_props.plan.steps if s.operation == "make_vbmeta_image"
+        )
+        assert "--prop" not in vbmeta_step.command

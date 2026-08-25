@@ -271,6 +271,9 @@ msgstr "添加非 A/B 链分区（--chain_partition_do_not_use_ab）？"
 msgid "config.wizard.chain_do_not_use_ab_list"
 msgstr "链分区（逗号分隔 PART:SLOT:KEY_PATH）："
 
+msgid "config.wizard.props"
+msgstr "属性（逗号分隔 key:value，可选）："
+
 msgid "config.wizard.kernel_cmdlines"
 msgstr "内核命令行参数（逗号分隔，可选）："
 
@@ -300,6 +303,12 @@ msgstr "生成了 {count} 个分区配置："
 
 msgid "config.wizard.auto_result_title"
 msgstr "自动生成的配置"
+
+msgid "config.wizard.auto_chain_note"
+msgstr "链式分区未写入配置（请先解析匹配密钥）："
+
+msgid "sign.vbmeta.props_prompt"
+msgstr "是否将此配置中的属性附加到即将生成的 vbmeta 镜像？"
 
 # 密钥管理
 msgid "keys.management_title"

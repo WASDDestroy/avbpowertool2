@@ -182,6 +182,20 @@ class SigningPlan:
 
 
 @dataclass(frozen=True)
+class ChainDescriptor:
+    """A chain partition descriptor read from a vbmeta image.
+
+    ``public_key_sha1`` is the SHA1 of the raw public-key blob (the same
+    value avbtool prints as ``Public key (sha1)``), used to resolve the
+    matching key file in the profile's key store.
+    """
+
+    partition_name: str
+    rollback_index_location: str = "0"
+    public_key_sha1: str | None = None
+
+
+@dataclass(frozen=True)
 class ImageInspection:
     """Parsed AVB metadata for a single image."""
 
@@ -199,4 +213,5 @@ class ImageInspection:
     flags: str | None = None
     props: tuple[tuple[str, str], ...] = ()
     included_partitions: tuple[str, ...] = ()
+    chain_descriptors: tuple[ChainDescriptor, ...] = ()
     raw_extensions: tuple[tuple[str, str], ...] = ()

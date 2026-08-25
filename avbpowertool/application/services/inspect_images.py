@@ -11,6 +11,7 @@ from avbpowertool.application.commands import (
 )
 from avbpowertool.application.ports import AvbToolPort, AvbToolResult
 from avbpowertool.domain.models import (
+    ChainDescriptor,
     DescriptorType,
     ImageInspection,
     OperationIssue,
@@ -115,14 +116,30 @@ def _build_inspection(
     digest: str | None = None
     flags: str | None = None
     included_partitions: tuple[str, ...] = ()
+    chain_descriptors: tuple[ChainDescriptor, ...] = ()
     raw_extensions: list[tuple[str, str]] = []
 
-    # All partition names referenced by the image's descriptors.
-    descriptor_partitions = [
-        block["fields"]["Partition Name"]
-        for block in descs
-        if block["fields"].get("Partition Name")
-    ]
+    # Split the image's descriptors by type: hash/hashtree descriptors
+    # name the partitions EMBEDDED in the image, chain-partition
+    # descriptors reference OTHER vbmeta images and must never be
+    # treated as included descriptors.
+    included_names: list[str] = []
+    chain_entries: list[ChainDescriptor] = []
+    for block in descs:
+        fields = block["fields"]
+        name = fields.get("Partition Name")
+        if not name:
+            continue
+        if block["type"] == "Chain Partition":
+            chain_entries.append(
+                ChainDescriptor(
+                    partition_name=name,
+                    rollback_index_location=fields.get("Rollback Index Location", "0"),
+                    public_key_sha1=fields.get("Public key (sha1)"),
+                )
+            )
+        else:
+            included_names.append(name)
 
     first_fields = descs[0]["fields"] if descs else {}
 
@@ -135,7 +152,8 @@ def _build_inspection(
 
     if is_vbmeta_image:
         descriptor = DescriptorType.VBMETA
-        included_partitions = tuple(descriptor_partitions)
+        included_partitions = tuple(included_names)
+        chain_descriptors = tuple(chain_entries)
     elif descs:
         block = descs[0]
         descriptor = _map_descriptor_type(block["type"])
@@ -196,6 +214,7 @@ def _build_inspection(
         flags=flags or header.get("Flags"),
         props=tuple(props),
         included_partitions=included_partitions,
+        chain_descriptors=chain_descriptors,
         raw_extensions=tuple(raw_extensions),
     )
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from avbpowertool.domain.models import (
+    ChainDescriptor,
     ImageInspection,
     OperationIssue,
     PartitionConfig,
@@ -37,6 +38,39 @@ class InspectImagesResult:
 
 
 # ---------------------------------------------------------------------------
+# Resolve chain keys
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ResolveChainKeysRequest:
+    """Request to resolve chain descriptors to key files in the key store."""
+
+    profile_id: str = "current"
+    chains: tuple[ChainDescriptor, ...] = ()
+
+
+@dataclass(frozen=True)
+class ChainKeyResolution:
+    """Resolution of one chain descriptor to a key-store entry.
+
+    ``entry`` is the ``PART:SLOT:KEY_FILE`` triple with the key file
+    relative to the profile's key store; empty when no key matched.
+    """
+
+    entry: str = ""
+    key_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ResolveChainKeysResult:
+    """Result of chain-to-key resolution."""
+
+    resolutions: tuple[ChainKeyResolution, ...] = ()
+    issues: tuple[OperationIssue, ...] = ()
+
+
+# ---------------------------------------------------------------------------
 # Sign Images
 # ---------------------------------------------------------------------------
 
@@ -49,6 +83,7 @@ class SignImagesRequest:
     profile_id: str = "current"
     remove_existing_footers: bool = False
     dry_run: bool = True  # default to safe
+    include_vbmeta_props: bool = False  # emit config props into generated vbmeta
 
 
 @dataclass(frozen=True)
