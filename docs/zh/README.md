@@ -1,5 +1,7 @@
 # AVBPowerTool2
 
+> [English](/README.md) | 中文版
+
 AOSP `avbtool.py` 的配置驱动 Python 封装。提供 CLI 和 TUI 用于 Android Verified Boot 镜像签名、检查和配置管理。
 
 ## 功能特性
@@ -42,7 +44,7 @@ cd AVBPowerTool2
 # 使用 uv 安装（推荐）
 uv sync
 
-# 或安装全部可选功能（Windows TUI 支持）
+# 或安装开发工具（测试、Lint、类型检查）
 uv sync --all-extras
 
 # 或使用 pip 安装

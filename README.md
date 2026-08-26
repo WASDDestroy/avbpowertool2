@@ -1,5 +1,7 @@
 # AVBPowerTool2
 
+> English | [中文版](/docs/zh/README.md)
+
 A configuration-driven Python wrapper for AOSP `avbtool.py`. Provides CLI and TUI for Android Verified Boot image signing, inspection, and config management.
 
 ## Features
@@ -44,7 +46,7 @@ cd AVBPowerTool2
 # Install with uv (recommended)
 uv sync
 
-# Or install every optional feature (Windows TUI support)
+# Install dev tools (tests, linting, type checking)
 uv sync --all-extras
 
 # Or install with pip
