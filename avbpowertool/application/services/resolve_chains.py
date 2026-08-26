@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import tempfile
 from pathlib import Path
 
 from avbpowertool.application.commands import (
@@ -41,7 +40,7 @@ class ResolveChainKeysUseCase:
         key_dir = self._ws.resolve_key_dir(request.profile_id)
         manifest = KeyRepository(key_dir).load_manifest()
 
-        # Map public-key SHA1 -> (key_id, private_key_filename).
+        # Map public-key SHA1 -> (key_id, extracted public-key filename).
         sha1_map: dict[str, tuple[str, str]] = {}
         for key_id, entry in manifest.items():
             filename = entry.get("private_key", "")
@@ -50,9 +49,12 @@ class ResolveChainKeysUseCase:
             key_path = key_dir / filename
             if not key_path.exists():
                 continue
-            digest = self._public_key_sha1(key_path)
+            public_key = Path(entry.get("public_key", "")) if entry.get("public_key") else key_path.with_name(key_path.name + ".bin")
+            if not public_key.is_absolute():
+                public_key = key_dir / public_key
+            digest = self._public_key_sha1(key_path, public_key)
             if digest:
-                sha1_map[digest] = (key_id, filename)
+                sha1_map[digest] = (key_id, public_key.name)
 
         resolutions: list[ChainKeyResolution] = []
         issues: list[OperationIssue] = []
@@ -83,14 +85,14 @@ class ResolveChainKeysUseCase:
             issues=tuple(issues),
         )
 
-    def _public_key_sha1(self, key_path: Path) -> str | None:
+    def _public_key_sha1(self, key_path: Path, public_key: Path) -> str | None:
         """Return the SHA1 of the public-key blob extracted from a private key.
 
         This is the same value avbtool info_image prints as
         ``Public key (sha1)`` (SHA1 over the encoded RSA public key).
         """
-        with tempfile.TemporaryDirectory() as tmp:
-            pub_out = Path(tmp) / "public_key.bin"
+        pub_out = public_key
+        if not pub_out.exists():
             result = self._avb.extract_public_key(key_path, pub_out)
             if result.returncode != 0:
                 logger.warning(
@@ -99,9 +101,9 @@ class ResolveChainKeysUseCase:
                     (result.stderr or "").strip(),
                 )
                 return None
-            try:
-                blob = pub_out.read_bytes()
-            except OSError as exc:
-                logger.warning("Failed to read public key blob: %s", exc)
-                return None
-            return hashlib.sha1(blob).hexdigest()
+        try:
+            blob = pub_out.read_bytes()
+        except OSError as exc:
+            logger.warning("Failed to read public key blob: %s", exc)
+            return None
+        return hashlib.sha1(blob).hexdigest()
