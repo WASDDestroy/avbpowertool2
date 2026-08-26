@@ -31,6 +31,10 @@ build/
 # Staging
 .avbpowertool-staging/
 
+# Runtime generated files
+settings.json
+.active-profile
+
 # References (old project)
 /references/
 
