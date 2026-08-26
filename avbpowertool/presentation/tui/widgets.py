@@ -99,9 +99,19 @@ def confirm_dialog(stdscr: curses.window, prompt: str) -> bool:
 
 
 def message_screen(stdscr: curses.window, title: str, lines: list[str]) -> None:
-    """Display a message screen. Waits for Enter or Esc."""
+    """Display a scrollable message screen.
+
+    Content that does not fit on screen can be scrolled with the arrow
+    keys (or ``j``/``k``), ``PageUp``/``PageDown``, ``Home``/``End`` and
+    the mouse wheel.  Enter or Esc closes the screen.
+    """
     curses.curs_set(0)
     stdscr.keypad(True)
+    with contextlib.suppress(curses.error):
+        curses.mousemask(curses.ALL_MOUSE_EVENTS | curses.REPORT_MOUSE_POSITION)
+
+    total = len(lines)
+    top = 0  # index of the first visible content line
 
     while True:
         stdscr.clear()
@@ -110,21 +120,65 @@ def message_screen(stdscr: curses.window, title: str, lines: list[str]) -> None:
         stdscr.addstr(0, 0, f"  {title}"[: cols - 1], curses.A_BOLD)
         stdscr.addstr(1, 0, "=" * min(80, cols - 1))
 
-        for i, line in enumerate(lines):
-            row = 2 + i
-            if row >= rows - 2:
+        # Content area: rows 2 .. rows-3 (bottom line is the help bar).
+        body_rows = max(1, rows - 4)
+        max_top = max(0, total - body_rows)
+        top = min(max(top, 0), max_top)
+
+        for i in range(body_rows):
+            idx = top + i
+            if idx >= total:
                 break
             with contextlib.suppress(curses.error):
-                stdscr.addstr(row, 0, line[: cols - 1])
+                stdscr.addstr(2 + i, 0, lines[idx][: cols - 1])
 
+        help_text = "  Up/Down: Scroll  PgUp/PgDn: Page  Enter/Esc: Exit"
         with contextlib.suppress(curses.error):
-            stdscr.addstr(rows - 1, 0, "  Press Enter or Esc to continue"[: cols - 1], curses.A_DIM)
+            stdscr.addstr(rows - 1, 0, help_text[: cols - 1], curses.A_DIM)
+
+        if total > body_rows:
+            # Right-aligned scroll position indicator.
+            percent = 100 * top // max_top if max_top else 0
+            indicator = f" {percent}% "
+            with contextlib.suppress(curses.error):
+                stdscr.addstr(rows - 1, cols - len(indicator) - 1, indicator, curses.A_DIM)
 
         stdscr.refresh()
 
         key = stdscr.getch()
+
         if key in (curses.KEY_ENTER, 10, 13, 27):
             return
+        if key == curses.KEY_RESIZE:
+            continue
+        if key in (curses.KEY_UP, ord("k")):
+            top -= 1
+        elif key in (curses.KEY_DOWN, ord("j")):
+            top += 1
+        elif key == curses.KEY_PPAGE:
+            top -= body_rows
+        elif key == curses.KEY_NPAGE:
+            top += body_rows
+        elif key == curses.KEY_HOME:
+            top = 0
+        elif key == curses.KEY_END:
+            top = max_top
+        elif key == curses.KEY_MOUSE:
+            top = _scroll_from_mouse(top, body_rows)
+
+
+def _scroll_from_mouse(top: int, body_rows: int) -> int:
+    """Apply a mouse-wheel scroll to ``top`` and return the new offset."""
+    try:
+        _id, _x, _y, _z, bstate = curses.getmouse()
+    except curses.error:
+        return top
+    step = max(1, body_rows // 3)
+    if bstate & curses.BUTTON4_PRESSED:  # wheel up
+        return top - step
+    if bstate & curses.BUTTON5_PRESSED:  # wheel down
+        return top + step
+    return top
 
 
 def input_prompt(stdscr: curses.window, prompt: str) -> str:
