@@ -32,6 +32,7 @@ from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.infrastructure.persistence.profile_repository import (
     ProfileRepository,
 )
+from avbpowertool.application.services.manage_keys import ensure_public_keys
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class SignImagesUseCase:
         # Build signing plan
         image_dir = self._ws.images
         key_dir = self._ws.resolve_key_dir(request.profile_id)
+        issues.extend(ensure_public_keys(self._ws, self._avb, request.profile_id))
         staging_dir = self._ws.staging / f"sign-{request.profile_id}"
 
         builder = SigningPlanBuilder(profile, image_dir, key_dir, staging_dir)
