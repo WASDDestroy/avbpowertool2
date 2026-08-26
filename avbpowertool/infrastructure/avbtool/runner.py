@@ -173,6 +173,7 @@ class SubprocessAvbTool:
         summary = " ".join(summary_parts)
 
         logger.debug("avbtool: %s", summary)
+        logger.info("avbtool command: %s", subprocess.list2cmdline(cmd))
 
         try:
             result = subprocess.run(
