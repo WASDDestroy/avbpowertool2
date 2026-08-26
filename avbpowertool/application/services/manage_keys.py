@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from avbpowertool.application.commands import (
     KeyAddRequest,
@@ -14,11 +15,30 @@ from avbpowertool.application.commands import (
     KeyRemoveRequest,
     KeyRemoveResult,
 )
+from avbpowertool.application.ports import AvbToolPort
 from avbpowertool.domain.models import OperationIssue
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.infrastructure.persistence.key_repository import KeyRepository
 
 logger = logging.getLogger(__name__)
+
+def ensure_public_keys(workspace: WorkspacePaths, avb_tool: AvbToolPort, profile_id: str) -> tuple[OperationIssue, ...]:
+    key_dir = workspace.resolve_key_dir(profile_id)
+    repo = KeyRepository(key_dir)
+    manifest = repo.load_manifest(); issues: list[OperationIssue] = []; changed = False
+    for key_id, entry in manifest.items():
+        private_name = entry.get("private_key", "")
+        private = key_dir / private_name
+        if not private_name or not private.is_file(): continue
+        public_name = entry.get("public_key") or f"{private_name}.bin"
+        public = key_dir / public_name
+        if not public.is_file():
+            result = avb_tool.extract_public_key(private, public)
+            if result.returncode != 0 or not public.is_file():
+                issues.append(OperationIssue("keys.public_key_extract_failed", f"Failed to extract public key for {key_id!r}")); continue
+        if entry.get("public_key") != public_name: entry["public_key"] = public_name; changed = True
+    if changed: repo.save_manifest(manifest)
+    return tuple(issues)
 
 
 class KeyDiscoveryUseCase:
