@@ -11,11 +11,11 @@ dependencies = [
     "cryptography>=42",
     "numpy>=1.20,<3.0",
     "reedsolo>=1.7,<3.0",
+    "windows-curses>=2.4; sys_platform == 'win32'",
 ]
 license = {file = "LICENSE"}
 
 [project.optional-dependencies]
-windows = ["windows-curses"]
 dev = ["pytest>=7", "pytest-cov", "ruff", "pyright[nodejs]"]
 
 [project.scripts]

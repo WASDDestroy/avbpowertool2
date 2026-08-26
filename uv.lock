@@ -15,6 +15,7 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "reedsolo" },
+    { name = "windows-curses", marker = "sys_platform == 'win32'" },
 ]
 
 [package.optional-dependencies]
@@ -23,9 +24,6 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
-]
-windows = [
-    { name = "windows-curses" },
 ]
 
 [package.metadata]
@@ -37,9 +35,9 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "reedsolo", specifier = ">=1.7,<3.0" },
     { name = "ruff", marker = "extra == 'dev'" },
-    { name = "windows-curses", marker = "extra == 'windows'" },
+    { name = "windows-curses", marker = "sys_platform == 'win32'", specifier = ">=2.4" },
 ]
-provides-extras = ["windows", "dev"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "cffi"

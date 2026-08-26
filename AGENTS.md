@@ -79,7 +79,7 @@ If any step fails, fix the issue and restart from step 2.
 
 ```shell
 uv sync                              # Install all deps (including dev)
-uv sync --all-extras                 # Install with windows extra (numpy/reedsolo/cryptography are core deps)
+uv sync --all-extras                 # Install with dev tools (crypto/FEC/windows-curses are core deps)
 uv run pytest tests/                 # Run all tests
 uv run pytest tests/ -v              # Verbose test output
 uv run pytest tests/ -q              # Quiet test output
