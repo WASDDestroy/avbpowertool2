@@ -11,6 +11,7 @@ from avbpowertool.application.commands import (
     ConfigImportRequest,
     ConfigShowRequest,
     ConfigValidateRequest,
+    ProfileDeleteRequest,
 )
 from avbpowertool.application.services.manage_configs import (
     ConfigCreateUseCase,
@@ -19,6 +20,7 @@ from avbpowertool.application.services.manage_configs import (
     ConfigShowUseCase,
     ConfigValidateUseCase,
 )
+from avbpowertool.application.services.manage_profiles import ProfileDeleteUseCase
 from avbpowertool.domain.models import (
     AvbProfile,
     DescriptorType,
@@ -45,6 +47,21 @@ def _setup_profile(tmp_path: Path) -> WorkspacePaths:
         encoding="utf-8",
     )
     return ws
+
+
+class TestProfileDeleteUseCase:
+    def test_delete_profile(self, tmp_path: Path) -> None:
+        ws = _setup_profile(tmp_path)
+        result = ProfileDeleteUseCase(ws).execute(ProfileDeleteRequest(profile_id="test"))
+        assert result.issues == ()
+        assert "test" not in ProfileRepository(ws).list_profiles()
+
+    def test_delete_active_profile_is_forbidden(self, tmp_path: Path) -> None:
+        ws = _setup_profile(tmp_path)
+        ProfileRepository(ws).activate("test")
+        result = ProfileDeleteUseCase(ws).execute(ProfileDeleteRequest(profile_id="test"))
+        assert any(i.error_code == "config.active_delete_forbidden" for i in result.issues)
+        assert "test" in ProfileRepository(ws).list_profiles()
 
 
 class TestConfigShowUseCase:

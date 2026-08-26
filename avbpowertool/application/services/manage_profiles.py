@@ -7,6 +7,8 @@ import logging
 from avbpowertool.application.commands import (
     ProfileActivateRequest,
     ProfileActivateResult,
+    ProfileDeleteRequest,
+    ProfileDeleteResult,
     ProfileListItem,
     ProfileListRequest,
     ProfileListResult,
@@ -98,3 +100,31 @@ class ProfileActivateUseCase:
             profile_id=request.profile_id,
             issues=tuple(issues),
         )
+
+
+class ProfileDeleteUseCase:
+    """Delete a profile, refusing to remove the active profile."""
+
+    def __init__(self, workspace: WorkspacePaths) -> None:
+        self._ws = workspace
+
+    def execute(self, request: ProfileDeleteRequest) -> ProfileDeleteResult:
+        repo = ProfileRepository(self._ws)
+        if request.profile_id not in repo.list_profiles():
+            return ProfileDeleteResult(
+                request.profile_id,
+                (OperationIssue("config.not_found", f"Profile not found: {request.profile_id}"),),
+            )
+        if repo.get_active_profile_id() == request.profile_id:
+            return ProfileDeleteResult(
+                request.profile_id,
+                (OperationIssue("config.active_delete_forbidden", "Cannot delete the active profile"),),
+            )
+        try:
+            repo.delete(request.profile_id)
+        except Exception as exc:
+            return ProfileDeleteResult(
+                request.profile_id,
+                (OperationIssue("config.delete_failed", f"Failed to delete profile: {exc}"),),
+            )
+        return ProfileDeleteResult(request.profile_id)

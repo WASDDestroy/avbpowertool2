@@ -8,6 +8,7 @@ from pathlib import Path
 
 from avbpowertool.application.services.manage_profiles import (
     ProfileActivateUseCase,
+    ProfileDeleteUseCase,
     ProfileListUseCase,
 )
 from avbpowertool.infrastructure.avbtool.runner import SubprocessAvbTool
@@ -166,7 +167,7 @@ class App:
             return
 
         profile = result.profiles[choice[0]]
-        actions = ["Activate", "Back"]
+        actions = ["Activate", "Delete", "Back"]
         action_sel = SelectorWidget(f"Options for {profile.profile_id}", actions)
         action_choice = action_sel.run(stdscr)
         if action_choice and action_choice[0] == 0:
@@ -180,3 +181,19 @@ class App:
                 message_screen(stdscr, "Error", [i.message for i in activate_result.issues])
             else:
                 message_screen(stdscr, "Success", [f"Activated: {profile.profile_id}"])
+        elif action_choice and action_choice[0] == 1:
+            from avbpowertool.presentation.tui.widgets import confirm_dialog
+
+            if not confirm_dialog(
+                stdscr, f"Delete profile '{profile.profile_id}'? This cannot be undone."
+            ):
+                return
+            from avbpowertool.application.commands import ProfileDeleteRequest
+
+            result = ProfileDeleteUseCase(ws).execute(
+                ProfileDeleteRequest(profile_id=profile.profile_id)
+            )
+            if result.issues:
+                message_screen(stdscr, "Error", [i.message for i in result.issues])
+            else:
+                message_screen(stdscr, "Success", [f"Deleted: {profile.profile_id}"])

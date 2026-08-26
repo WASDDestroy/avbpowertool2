@@ -303,6 +303,21 @@ class ProfileActivateResult:
     issues: tuple[OperationIssue, ...] = ()
 
 
+@dataclass(frozen=True)
+class ProfileDeleteRequest:
+    """Request to delete a profile."""
+
+    profile_id: str
+
+
+@dataclass(frozen=True)
+class ProfileDeleteResult:
+    """Result of deleting a profile."""
+
+    profile_id: str
+    issues: tuple[OperationIssue, ...] = ()
+
+
 # ---------------------------------------------------------------------------
 # Key Management
 # ---------------------------------------------------------------------------
