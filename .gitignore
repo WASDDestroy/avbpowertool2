@@ -36,3 +36,7 @@ build/
 
 # Mimocode
 .mimocode/
+
+# pytest temp
+.pytest_cache/
+.pytest_tmp/
