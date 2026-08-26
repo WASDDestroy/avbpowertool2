@@ -58,7 +58,7 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     # Step 4: Prepare the key store BEFORE collecting partitions, so the
     # manual mode can offer real key_ids and auto mode's chain-partition
     # resolution has a populated manifest to match against.
-    available_keys = _prepare_keys(stdscr_c, ws, profile_id)
+    available_keys = _prepare_keys(stdscr_c, ws, avb, profile_id)
 
     if mode_result[0] == 0:
         partitions = _collect_partitions_manual(stdscr_c, ws, avb, profile_id, available_keys)
@@ -110,7 +110,7 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     message_screen(stdscr_c, _("config.wizard.result_title"), lines)
 
 
-def _prepare_keys(stdscr: curses.window, ws: WorkspacePaths, profile_id: str) -> list[str]:
+def _prepare_keys(stdscr: curses.window, ws: WorkspacePaths, avb: AvbToolPort, profile_id: str) -> list[str]:
     """Ensure the key store exists and run key discovery.
 
     Runs BEFORE any image is scanned or any partition is collected, so
@@ -139,6 +139,8 @@ def _prepare_keys(stdscr: curses.window, ws: WorkspacePaths, profile_id: str) ->
     )
 
     result = KeyDiscoveryUseCase(ws).execute(KeyDiscoveryRequest(profile_id=profile_id))
+    from avbpowertool.application.services.manage_keys import ensure_public_keys
+    public_key_issues = ensure_public_keys(ws, avb, profile_id)
 
     lines = [_("config.wizard.key_discovered", count=result.discovered_count)]
     for key_id, filename in result.manifest_entries:
@@ -146,6 +148,8 @@ def _prepare_keys(stdscr: curses.window, ws: WorkspacePaths, profile_id: str) ->
     if not result.manifest_entries:
         lines.append(_("config.wizard.key_none"))
     for iss in result.issues:
+        lines.append(f"  [{iss.error_code}] {iss.message}")
+    for iss in public_key_issues:
         lines.append(f"  [{iss.error_code}] {iss.message}")
 
     message_screen(stdscr, _("keys.discover_title"), lines)
@@ -266,7 +270,8 @@ def _collect_partitions_auto(
     size_notes: list[str] = []
     meta_lines: list[str] = []
     for img in result.images:
-        config = _build_auto_partition(img, image_dir, key_id=default_key_id)
+        key_id = _key_for_algorithm(img.algorithm, available_keys, default_key_id)
+        config = _build_auto_partition(img, image_dir, key_id=key_id)
         if config is None:
             continue
         by_image[config.image] = config
@@ -331,6 +336,17 @@ def _collect_partitions_auto(
 
 
 _VALID_HASH_ALGORITHMS = ("sha1", "sha256", "sha512")
+
+def _key_for_algorithm(algorithm: str | None, available: list[str], default: str) -> str:
+    """Select an RSA key matching the inspected image algorithm size."""
+    if algorithm:
+        upper = algorithm.upper()
+        size = "2048" if "2048" in upper else "4096" if "4096" in upper else ""
+        if size:
+            for key_id in available:
+                if size in key_id:
+                    return key_id
+    return default
 
 
 def _build_auto_partition(
