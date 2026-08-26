@@ -277,8 +277,29 @@ class SigningPlanBuilder:
         location = parts[1]
         key_file = ":".join(parts[2:])  # key file itself may contain ':' (Windows drive)
         key_path = Path(key_file)
+        # Normalize legacy Windows absolute entries before constructing the
+        # avbtool triple; drive-letter ':' is invalid inside the third field.
+        marker = "\\profiles\\"
+        if marker.lower() in key_file.lower():
+            key_file = "profiles/" + key_file.lower().split(marker.lower(), 1)[1].replace("\\", "/")
+            return f"{name}:{location}:{key_file}"
         if not key_path.is_absolute():
-            key_file = str(self._key_dir / key_file)
+            # Keep the chain field colon-free and portable on Windows.
+            try:
+                root = self._key_dir.parents[2].resolve()
+                key_file = (self._key_dir / key_file).resolve().relative_to(root).as_posix()
+            except ValueError:
+                key_file = key_path.name
+        else:
+            # avbtool parses chain entries by ':'; Windows drive letters would
+            # introduce a fourth field. Use a workspace-relative path instead.
+            root = self._key_dir.parents[2].resolve()
+            full = key_path.resolve()
+            try:
+                key_file = full.relative_to(root).as_posix()
+            except ValueError:
+                # Keep the third field colon-free even for external keys.
+                key_file = key_path.name
         return f"{name}:{location}:{key_file}"
 
     def _resolve_image_path(self, image_file: str) -> str | None:
