@@ -6,7 +6,11 @@ import curses
 
 import pytest
 
-from avbpowertool.presentation.tui.widgets import message_screen
+from avbpowertool.presentation.tui.widgets import (
+    SelectorWidget,
+    message_screen,
+    wrap_text,
+)
 
 
 class FakeWindow:
@@ -64,6 +68,77 @@ def _content(paint: list[tuple[int, int, str]], rows: int) -> list[str]:
 def _status_line(win: FakeWindow) -> str:
     paint = win.paints[-1]
     return "".join(text for (row, _x, text) in paint if row == win._rows - 1)
+
+
+class TestWrapText:
+    def test_short_line_unchanged(self) -> None:
+        assert wrap_text(["hello world"], 40) == ["hello world"]
+
+    def test_wraps_at_word_boundaries(self) -> None:
+        wrapped = wrap_text(["one two three four five"], 10)
+        assert wrapped == ["one two", "three four", "five"]
+
+    def test_hard_breaks_over_long_token(self) -> None:
+        wrapped = wrap_text(["abcdefghijklmno"], 5)
+        assert wrapped == ["abcde", "fghij", "klmno"]
+
+    def test_mixed_long_token_breaks_after_fitting_words(self) -> None:
+        wrapped = wrap_text(["ab abcdefghijkl"], 6)
+        assert wrapped == ["ab", "abcdef", "ghijkl"]
+
+    def test_preserves_empty_lines(self) -> None:
+        wrapped = wrap_text(["aaa bbb ccc", "", "ddd"], 5)
+        assert wrapped == ["aaa", "bbb", "ccc", "", "ddd"]
+
+    def test_keeps_leading_indent_on_continuation(self) -> None:
+        wrapped = wrap_text(["  one two three four"], 10)
+        assert wrapped == ["  one two", "  three", "  four"]
+
+    def test_cjk_wraps_by_display_width(self) -> None:
+        # Each CJK char is 2 columns wide, so only 4 fit in width 9.
+        wrapped = wrap_text(["一二三四五六"], 9)
+        assert wrapped == ["一二三四", "五六"]
+
+    def test_nothing_never_exceeds_width(self) -> None:
+        lines = [
+            "No keys found yet. You can still continue and register keys later via Key "
+            "Management; partitions referencing the keys will fail at sign time until then.",
+            "   [config.key_missing] A very long issue message that keeps going far past the "
+            "available columns and must be wrapped",
+        ]
+        for line in wrap_text(lines, 25):
+            assert len(line) <= 25
+
+
+class TestMessageScreenWrapping:
+    def test_long_line_is_wrapped_not_truncated(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        long = "one two three four five six seven eight nine ten"
+        win = _run_message_screen(monkeypatch, [long], keys=[27], cols=12)
+        rendered = _content(win.paints[0], 12)
+        assert rendered != [long]  # not kept as a single over-wide line
+        assert all(len(line) <= 11 for line in rendered)
+        assert " ".join(rendered).replace(" ", "") == long.replace(" ", "")
+
+    def test_wrap_grows_scrollable_total(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        long = "line " + " ".join(f"w{i}" for i in range(40))
+        # cols=10 -> width 9, one line wraps into ~14 rows; body_rows = 8
+        win = _run_message_screen(monkeypatch, [long], keys=[27], cols=10)
+        assert "%" in _status_line(win)
+
+
+class TestSelectorWrapping:
+    def test_long_item_wraps_without_truncation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(curses, "curs_set", lambda v: None)
+        item = "key_a -> a_really_long_private_key_filename_that_overflows.pem"
+        win = FakeWindow(12, 24, [curses.KEY_ENTER])
+        SelectorWidget("Title", [item]).run(win)
+
+        body = [
+            text for (row, _x, text) in win.paints[0] if 2 <= row <= win._rows - 3 and text.strip()
+        ]
+        # item renders as >1 rows and no rendered line exceeds the width
+        assert len(body) > 1
+        assert all(len(text) <= 23 for text in body)
 
 
 class TestMessageScreenScrolling:

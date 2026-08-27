@@ -7,7 +7,91 @@ from __future__ import annotations
 
 import contextlib
 import curses
+import unicodedata
 from collections.abc import Sequence
+
+
+def _char_width(ch: str) -> int:
+    """Terminal column width of one character (CJK-aware)."""
+    if unicodedata.combining(ch):
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+
+
+def _display_width(text: str) -> int:
+    """Approximate terminal column width of ``text`` (CJK-aware)."""
+    return sum(_char_width(ch) for ch in text)
+
+
+def _split_token(token: str, width: int) -> list[str]:
+    """Break an over-long token into chunks that each fit ``width`` columns."""
+    chunks: list[str] = []
+    current = ""
+    current_width = 0
+    for ch in token:
+        ch_width = _char_width(ch)
+        if current and current_width + ch_width > width:
+            chunks.append(current)
+            current = ""
+            current_width = 0
+        current += ch
+        current_width += ch_width
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _wrap_line(line: str, width: int) -> list[str]:
+    """Wrap one line to fit within ``width`` terminal columns.
+
+    Words are kept intact where they fit; a single token wider than
+    ``width`` is hard-broken. Leading spaces are preserved on every
+    continuation line. Empty lines stay single empty lines.
+    """
+    if width < 1 or _display_width(line) <= width:
+        return [line]
+
+    indent = line[: len(line) - len(line.lstrip(" "))]
+    indent_width = _display_width(indent)
+    content = line[len(indent) :]
+    words = content.split()
+    if not words:
+        return [line]
+
+    result: list[str] = []
+    current = indent
+    current_width = indent_width
+
+    for word in words:
+        word_width = _display_width(word)
+        separator = 1 if current_width > indent_width else 0
+        if current_width + separator + word_width <= width:
+            current += (" " if separator else "") + word
+            current_width += separator + word_width
+            continue
+        if current_width > indent_width:
+            result.append(current)
+        if word_width > width:
+            for chunk in _split_token(word, width):
+                result.append(indent + chunk)
+            current = indent
+            current_width = indent_width
+        else:
+            current = indent + word
+            current_width = indent_width + word_width
+
+    if current_width > indent_width:
+        result.append(current)
+
+    return result
+
+
+def wrap_text(lines: Sequence[str], width: int) -> list[str]:
+    """Wrap a sequence of lines so each fits within ``width`` columns."""
+    wrapped: list[str] = []
+    for line in lines:
+        wrapped.extend(_wrap_line(line, width))
+    return wrapped
 
 
 class SelectorWidget:
@@ -38,19 +122,25 @@ class SelectorWidget:
             stdscr.addstr(0, 0, f"  {self.title}"[: cols - 1], curses.A_BOLD)
             stdscr.addstr(1, 0, "=" * min(80, cols - 1))
 
-            # Items
+            # Items — long items are wrapped instead of truncated.
             start_row = 2
+            row = start_row
             for i, item in enumerate(self.items):
-                row = start_row + i
-                if row >= rows - 3:
-                    break
-
                 cursor = "-> " if i == self.current else "   "
                 checkbox = ("[x] " if i in self.selected else "[ ] ") if self.multi_select else ""
-                line = f"{cursor}{checkbox}{item}"
+                prefix = f"{cursor}{checkbox}"
+                prefix_width = _display_width(prefix)
+                content_width = max(1, cols - 1 - prefix_width)
+                item_lines = wrap_text([item], content_width)
+                if row + len(item_lines) > rows - 3:
+                    break
+
                 attr = curses.A_REVERSE if i == self.current else 0
                 with contextlib.suppress(curses.error):
-                    stdscr.addstr(row, 0, line[: cols - 1], attr)
+                    for j, item_line in enumerate(item_lines):
+                        pad = prefix if j == 0 else " " * prefix_width
+                        stdscr.addstr(row + j, 0, pad + item_line, attr)
+                row += len(item_lines)
 
             # Status bar
             status_row = rows - 2
@@ -101,16 +191,16 @@ def confirm_dialog(stdscr: curses.window, prompt: str) -> bool:
 def message_screen(stdscr: curses.window, title: str, lines: list[str]) -> None:
     """Display a scrollable message screen.
 
-    Content that does not fit on screen can be scrolled with the arrow
-    keys (or ``j``/``k``), ``PageUp``/``PageDown``, ``Home``/``End`` and
-    the mouse wheel.  Enter or Esc closes the screen.
+    Long lines are automatically wrapped to the available width so no
+    text is truncated.  Content that does not fit on screen can be
+    scrolled with the arrow keys (or ``j``/``k``), ``PageUp``/``PageDown``,
+    ``Home``/``End`` and the mouse wheel.  Enter or Esc closes the screen.
     """
     curses.curs_set(0)
     stdscr.keypad(True)
     with contextlib.suppress(curses.error):
         curses.mousemask(curses.ALL_MOUSE_EVENTS | curses.REPORT_MOUSE_POSITION)
 
-    total = len(lines)
     top = 0  # index of the first visible content line
 
     while True:
@@ -119,6 +209,11 @@ def message_screen(stdscr: curses.window, title: str, lines: list[str]) -> None:
 
         stdscr.addstr(0, 0, f"  {title}"[: cols - 1], curses.A_BOLD)
         stdscr.addstr(1, 0, "=" * min(80, cols - 1))
+
+        # Wrap long lines to the available width (recomputed each frame so
+        # a terminal resize re-wraps automatically).
+        wrapped = wrap_text(lines, max(1, cols - 1))
+        total = len(wrapped)
 
         # Content area: rows 2 .. rows-3 (bottom line is the help bar).
         body_rows = max(1, rows - 4)
@@ -130,7 +225,7 @@ def message_screen(stdscr: curses.window, title: str, lines: list[str]) -> None:
             if idx >= total:
                 break
             with contextlib.suppress(curses.error):
-                stdscr.addstr(2 + i, 0, lines[idx][: cols - 1])
+                stdscr.addstr(2 + i, 0, wrapped[idx])
 
         help_text = "  Up/Down: Scroll  PgUp/PgDn: Page  Enter/Esc: Exit"
         with contextlib.suppress(curses.error):
