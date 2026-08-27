@@ -24,6 +24,13 @@ avbpowertool = "avbpowertool.presentation.cli.parser:main"
 [tool.setuptools.packages.find]
 include = ["avbpowertool*"]
 
+[tool.setuptools.package-data]
+avbpowertool = [
+    "resources/*.json",
+    "locale/*/LC_MESSAGES/*.po",
+    "locale/*/LC_MESSAGES/*.mo",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
