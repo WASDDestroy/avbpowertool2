@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import curses
+import locale
 import logging
 from pathlib import Path
 
@@ -39,6 +41,10 @@ class App:
 
     def run(self) -> None:
         """Run the TUI application."""
+        # curses needs a real locale to count multibyte (CJK) columns
+        # correctly; without it ncurses falls back to per-byte accounting.
+        with contextlib.suppress(Exception):
+            locale.setlocale(locale.LC_ALL, "")
         curses.wrapper(self._main_loop)
 
     def _main_loop(self, stdscr: curses.window) -> None:

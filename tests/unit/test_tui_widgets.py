@@ -6,6 +6,7 @@ import curses
 
 import pytest
 
+from avbpowertool.presentation.tui import widgets
 from avbpowertool.presentation.tui.widgets import (
     SelectorWidget,
     message_screen,
@@ -94,20 +95,49 @@ class TestWrapText:
         wrapped = wrap_text(["  one two three four"], 10)
         assert wrapped == ["  one two", "  three", "  four"]
 
-    def test_cjk_wraps_by_display_width(self) -> None:
-        # Each CJK char is 2 columns wide, so only 4 fit in width 9.
-        wrapped = wrap_text(["一二三四五六"], 9)
-        assert wrapped == ["一二三四", "五六"]
+    def test_cjk_wraps_by_display_width_on_ncurses(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # ncurses counts 2 columns per CJK char, so 4 fit in width 9.
+        monkeypatch.setattr(widgets, "_IS_NCURSES", True)
+        assert widgets.wrap_text(["一二三四五六"], 9) == ["一二三四", "五六"]
 
-    def test_nothing_never_exceeds_width(self) -> None:
-        lines = [
-            "No keys found yet. You can still continue and register keys later via Key "
-            "Management; partitions referencing the keys will fail at sign time until then.",
-            "   [config.key_missing] A very long issue message that keeps going far past the "
-            "available columns and must be wrapped",
-        ]
-        for line in wrap_text(lines, 25):
-            assert len(line) <= 25
+    def test_cjk_wraps_by_byte_accounting_on_pdcurses(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # PDCurses counts one column per UTF-8 byte (with a 2-column
+        # allowance), so only 3 CJK chars fit in width 9 instead of 4.
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        assert widgets.wrap_text(["一二三四五六"], 9) == ["一二三", "四五六"]
+
+    def test_cjk_wrap_preserves_every_character(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        text = "中文消息很长很长需要被正确地折行并且不丢失任何字符abcdefg中文"
+        for is_ncurses in (True, False):
+            monkeypatch.setattr(widgets, "_IS_NCURSES", is_ncurses)
+            wrapped = widgets.wrap_text([text], 20)
+            assert "".join(wrapped) == text  # no character lost or reordered
+            for line in wrapped:
+                assert widgets._line_width(line) <= 20
+
+    def test_nothing_never_exceeds_width(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for is_ncurses in (True, False):
+            monkeypatch.setattr(widgets, "_IS_NCURSES", is_ncurses)
+            lines = [
+                "No keys found yet. You can still continue and register keys later via Key "
+                "Management; partitions referencing the keys will fail at sign time until then.",
+                "   [config.key_missing] A very long issue message that keeps going far past the "
+                "available columns and must be wrapped",
+                "这里有一段很长的中文提示信息需要按照终端列宽正确折行并且不丢失任何字符",
+            ]
+            for line in widgets.wrap_text(lines, 25):
+                assert widgets._line_width(line) <= 25
+
+    def test_truncate_to_width_never_splits_cjk(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)  # PDCurses byte accounting
+        text = "  AVBPowerTool 主页"
+        out = widgets._truncate_to_width(text, 17)
+        assert widgets._line_width(out) <= 17
+        assert out == "  AVBPowerTool 主"  # dropped only the trailing 页, never split it
+        # A wide enough window keeps the whole string.
+        assert widgets._truncate_to_width(text, 30) == text
 
 
 class TestMessageScreenWrapping:
@@ -139,6 +169,33 @@ class TestSelectorWrapping:
         # item renders as >1 rows and no rendered line exceeds the width
         assert len(body) > 1
         assert all(len(text) <= 23 for text in body)
+
+    def test_cjk_title_renders_fully_on_pdcurses(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # PDCurses byte accounting must not drop the trailing CJK characters
+        # of the title (regression: "AVBPowerTool 主页" lost "页").
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setattr(curses, "curs_set", lambda v: None)
+        win = FakeWindow(12, 30, [curses.KEY_ENTER])
+        SelectorWidget("AVBPowerTool 主页", ["ok"]).run(win)
+        title = "".join(text for (row, _x, text) in win.paints[0] if row == 0)
+        assert "主页" in title
+
+    def test_cjk_item_loses_no_characters_on_narrow_pdcurses(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Regression: "[V] 查看当前配置信息" used to render as "[V] 查看当前"
+        # on PDCurses because curses clipped the line at the right edge.
+        # Long items must now wrap across rows instead of losing characters.
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setattr(curses, "curs_set", lambda v: None)
+        item = "[V] 查看当前配置信息"
+        win = FakeWindow(12, 24, [curses.KEY_ENTER])
+        SelectorWidget("标题", [item]).run(win)
+        body = "".join(
+            text for (row, _x, text) in win.paints[0] if 2 <= row <= win._rows - 3 and text.strip()
+        )
+        assert "查看当前配置信息" in body.replace(" ", "")
+        assert all(len(text) <= 23 for (_row, _x, text) in win.paints[0])
 
 
 class TestMessageScreenScrolling:
