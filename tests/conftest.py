@@ -10,7 +10,6 @@ import pytest
 
 from avbpowertool.application.ports import AvbToolResult
 
-
 # ---------------------------------------------------------------------------
 # Fixture paths
 # ---------------------------------------------------------------------------

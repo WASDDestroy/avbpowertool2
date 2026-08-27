@@ -9,7 +9,7 @@ from avbpowertool.application.ports import AvbToolResult
 from avbpowertool.application.services.inspect_images import InspectImagesUseCase
 from avbpowertool.domain.models import DescriptorType
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
-from tests.conftest import FakeAvbTool, FIXTURES_DIR
+from tests.conftest import FIXTURES_DIR, FakeAvbTool
 
 SAMPLE_HASH = (FIXTURES_DIR / "avbtool_output" / "hash_descriptor.txt").read_text(
     encoding="utf-8"

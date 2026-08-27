@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from avbpowertool.domain.command_spec import (
-    ArgType,
     COMMANDS,
+    ArgType,
     CommandArg,
     spec_for,
 )

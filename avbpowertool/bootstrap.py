@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import logging
+from pathlib import Path
 
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.presentation.i18n import init_i18n

@@ -22,6 +22,7 @@ from avbpowertool.application.ports import (
     AvbToolResult,
     ProgressSink,
 )
+from avbpowertool.application.services.manage_keys import ensure_public_keys
 from avbpowertool.domain.models import (
     OperationIssue,
     SigningPlan,
@@ -32,7 +33,6 @@ from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.infrastructure.persistence.profile_repository import (
     ProfileRepository,
 )
-from avbpowertool.application.services.manage_keys import ensure_public_keys
 
 logger = logging.getLogger(__name__)
 

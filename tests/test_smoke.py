@@ -1,11 +1,7 @@
 """Smoke test — verify the package is importable and avbtool patch applied."""
 
 import importlib
-import subprocess
-import sys
 from pathlib import Path
-
-import pytest
 
 
 def test_package_importable():

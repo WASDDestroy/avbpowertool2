@@ -78,7 +78,7 @@ class AvbError(Exception):
     Exception.__init__(self, message)
 
 
-class Algorithm(object):
+class Algorithm:
   """Contains details about an algorithm.
 
   See the avb_vbmeta_image.h file for more details about algorithms.
@@ -207,9 +207,7 @@ ALGORITHMS = {
 def get_release_string():
   """Calculates the release string to use in the VBMeta struct."""
   # Keep in sync with libavb/avb_version.c:avb_version_string().
-  return 'avbtool {}.{}.{}'.format(AVB_VERSION_MAJOR,
-                                   AVB_VERSION_MINOR,
-                                   AVB_VERSION_SUB)
+  return f'avbtool {AVB_VERSION_MAJOR}.{AVB_VERSION_MINOR}.{AVB_VERSION_SUB}'
 
 
 def round_to_multiple(number, size):
@@ -347,7 +345,7 @@ def parse_number(string):
   return int(string, 0)
 
 
-class RSAPublicKey(object):
+class RSAPublicKey:
   """Data structure used for a RSA public key.
 
   Attributes:
@@ -393,7 +391,7 @@ class RSAPublicKey(object):
                            stderr=subprocess.PIPE)
       (pout, perr) = p.communicate()
       if p.wait() != 0:
-        raise AvbError('Error getting public key: {}'.format(perr))
+        raise AvbError(f'Error getting public key: {perr}')
 
     if not pout.lower().startswith(self.MODULUS_PREFIX):
       raise AvbError('Unexpected modulus output')
@@ -456,14 +454,13 @@ class RSAPublicKey(object):
     # Checks requested algorithm for validity.
     algorithm = ALGORITHMS.get(algorithm_name)
     if not algorithm:
-      raise AvbError('Algorithm with name {} is not supported.'
-                     .format(algorithm_name))
+      raise AvbError(f'Algorithm with name {algorithm_name} is not supported.'
+                     )
 
     if self.num_bits != (algorithm.signature_num_bytes * 8):
-      raise AvbError('Key size of key ({} bits) does not match key size '
-                     '({} bits) of given algorithm {}.'
-                     .format(self.num_bits, algorithm.signature_num_bytes * 8,
-                             algorithm_name))
+      raise AvbError(f'Key size of key ({self.num_bits} bits) does not match key size '
+                     f'({algorithm.signature_num_bytes * 8} bits) of given algorithm {algorithm_name}.'
+                     )
 
     # Hashes the data.
     hasher = hashlib.new(algorithm.hash_name)
@@ -500,7 +497,7 @@ class RSAPublicKey(object):
       (pout, perr) = p.communicate(padding_and_hash)
       retcode = p.wait()
       if retcode != 0:
-        raise AvbError('Error signing: {}'.format(perr))
+        raise AvbError(f'Error signing: {perr}')
       signature = pout
     if len(signature) != algorithm.signature_num_bytes:
       raise AvbError('Error signing: Invalid length of signature')
@@ -523,7 +520,7 @@ def lookup_algorithm_by_type(alg_type):
     alg_data = ALGORITHMS[alg_name]
     if alg_data.algorithm_type == alg_type:
       return (alg_name, alg_data)
-  raise AvbError('Unknown algorithm type {}'.format(alg_type))
+  raise AvbError(f'Unknown algorithm type {alg_type}')
 
 
 def lookup_hash_size_by_type(alg_type):
@@ -542,7 +539,7 @@ def lookup_hash_size_by_type(alg_type):
     alg_data = ALGORITHMS[alg_name]
     if alg_data.algorithm_type == alg_type:
       return alg_data.hash_num_bytes
-  raise AvbError('Unsupported algorithm type {}'.format(alg_type))
+  raise AvbError(f'Unsupported algorithm type {alg_type}')
 
 
 def verify_vbmeta_signature(vbmeta_header, vbmeta_blob):
@@ -648,7 +645,7 @@ def verify_vbmeta_signature(vbmeta_header, vbmeta_blob):
       (pout, perr) = p.communicate(sig_blob)
       retcode = p.wait()
       if retcode != 0:
-        raise AvbError('Error verifying data: {}'.format(perr))
+        raise AvbError(f'Error verifying data: {perr}')
       if pout != padding_and_digest:
         sys.stderr.write('Signature not correct\n')
         return False
@@ -664,7 +661,7 @@ def create_avb_hashtree_hasher(algorithm, salt):
   return hashlib.new(algorithm, salt)
 
 
-class ImageChunk(object):
+class ImageChunk:
   """Data structure used for representing chunks in Android sparse files.
 
   Attributes:
@@ -723,7 +720,7 @@ class ImageChunk(object):
       raise ValueError('Invalid chunk type')
 
 
-class ImageHandler(object):
+class ImageHandler:
   """Abstraction for image I/O with support for Android sparse images.
 
   This class provides an interface for working with image files that
@@ -799,15 +796,12 @@ class ImageHandler(object):
       # Not a sparse image, our job here is done.
       return
     if not (major_version == 1 and minor_version == 0):
-      raise ValueError('Encountered sparse image format version {}.{} but '
-                       'only 1.0 is supported'.format(major_version,
-                                                      minor_version))
+      raise ValueError(f'Encountered sparse image format version {major_version}.{minor_version} but '
+                       'only 1.0 is supported')
     if file_hdr_sz != struct.calcsize(self.HEADER_FORMAT):
-      raise ValueError('Unexpected file_hdr_sz value {}.'.
-                       format(file_hdr_sz))
+      raise ValueError(f'Unexpected file_hdr_sz value {file_hdr_sz}.')
     if chunk_hdr_sz != struct.calcsize(ImageChunk.FORMAT):
-      raise ValueError('Unexpected chunk_hdr_sz value {}.'.
-                       format(chunk_hdr_sz))
+      raise ValueError(f'Unexpected chunk_hdr_sz value {chunk_hdr_sz}.')
 
     self.block_size = block_size
 
@@ -829,9 +823,8 @@ class ImageHandler(object):
 
       if chunk_type == ImageChunk.TYPE_RAW:
         if data_sz != (chunk_sz * self.block_size):
-          raise ValueError('Raw chunk input size ({}) does not match output '
-                           'size ({})'.
-                           format(data_sz, chunk_sz*self.block_size))
+          raise ValueError(f'Raw chunk input size ({data_sz}) does not match output '
+                           f'size ({chunk_sz*self.block_size})')
         self._chunks.append(ImageChunk(ImageChunk.TYPE_RAW,
                                        chunk_offset,
                                        output_offset,
@@ -843,7 +836,7 @@ class ImageHandler(object):
       elif chunk_type == ImageChunk.TYPE_FILL:
         if data_sz != 4:
           raise ValueError('Fill chunk should have 4 bytes of fill, but this '
-                           'has {}'.format(data_sz))
+                           f'has {data_sz}')
         fill_data = self._image.read(4)
         self._chunks.append(ImageChunk(ImageChunk.TYPE_FILL,
                                        chunk_offset,
@@ -853,8 +846,7 @@ class ImageHandler(object):
                                        fill_data))
       elif chunk_type == ImageChunk.TYPE_DONT_CARE:
         if data_sz != 0:
-          raise ValueError('Don\'t care chunk input size is non-zero ({})'.
-                           format(data_sz))
+          raise ValueError(f'Don\'t care chunk input size is non-zero ({data_sz})')
         self._chunks.append(ImageChunk(ImageChunk.TYPE_DONT_CARE,
                                        chunk_offset,
                                        output_offset,
@@ -864,10 +856,10 @@ class ImageHandler(object):
       elif chunk_type == ImageChunk.TYPE_CRC32:
         if data_sz != 4:
           raise ValueError('CRC32 chunk should have 4 bytes of CRC, but '
-                           'this has {}'.format(data_sz))
+                           f'this has {data_sz}')
         self._image.read(4)
       else:
-        raise ValueError('Unknown chunk type {}'.format(chunk_type))
+        raise ValueError(f'Unknown chunk type {chunk_type}')
 
       offset += chunk_sz
       output_offset += chunk_sz*self.block_size
@@ -877,12 +869,12 @@ class ImageHandler(object):
 
     # Now that we've traversed all chunks, sanity check.
     if self._num_total_blocks != offset:
-      raise ValueError('The header said we should have {} output blocks, '
-                       'but we saw {}'.format(self._num_total_blocks, offset))
+      raise ValueError(f'The header said we should have {self._num_total_blocks} output blocks, '
+                       f'but we saw {offset}')
     junk_len = len(self._image.read())
     if junk_len > 0:
-      raise ValueError('There were {} bytes of extra data at the end of the '
-                       'file.'.format(junk_len))
+      raise ValueError(f'There were {junk_len} bytes of extra data at the end of the '
+                       'file.')
 
     # Assign |image_size|.
     self.image_size = output_offset
@@ -1030,7 +1022,7 @@ class ImageHandler(object):
       RuntimeError: If the given offset is negative.
     """
     if offset < 0:
-      raise RuntimeError('Seeking with negative offset: {}'.format(offset))
+      raise RuntimeError(f'Seeking with negative offset: {offset}')
     self._file_pos = offset
 
   def read(self, size):
@@ -1167,7 +1159,7 @@ class ImageHandler(object):
       self.append_dont_care(size - self.image_size)
 
 
-class AvbDescriptor(object):
+class AvbDescriptor:
   """Class for AVB descriptor.
 
   See the |AvbDescriptor| C struct for more information.
@@ -1206,12 +1198,11 @@ class AvbDescriptor(object):
       o: The object to write the output to.
     """
     o.write('    Unknown descriptor:\n')
-    o.write('      Tag:  {}\n'.format(self.tag))
+    o.write(f'      Tag:  {self.tag}\n')
     if len(self.data) < 256:
-      o.write('      Data: {} ({} bytes)\n'.format(
-          repr(str(self.data)), len(self.data)))
+      o.write(f'      Data: {repr(str(self.data))} ({len(self.data)} bytes)\n')
     else:
-      o.write('      Data: {} bytes\n'.format(len(self.data)))
+      o.write(f'      Data: {len(self.data)} bytes\n')
 
   def encode(self):
     """Serializes the descriptor.
@@ -1290,8 +1281,8 @@ class AvbPropertyDescriptor(AvbDescriptor):
       try:
         self.key = data[self.SIZE:(self.SIZE + key_size)].decode('utf-8')
       except UnicodeDecodeError as e:
-        raise LookupError('Key cannot be decoded as UTF-8: {}.'
-                          .format(e)) from e
+        raise LookupError(f'Key cannot be decoded as UTF-8: {e}.'
+                          ) from e
       self.value = data[(self.SIZE + key_size + 1):(self.SIZE + key_size + 1 +
                                                     value_size)]
     else:
@@ -1312,9 +1303,9 @@ class AvbPropertyDescriptor(AvbDescriptor):
       printable_value = printable_value[1:]
 
     if len(self.value) < 256:
-      o.write('    Prop: {} -> {}\n'.format(self.key, printable_value))
+      o.write(f'    Prop: {self.key} -> {printable_value}\n')
     else:
-      o.write('    Prop: {} -> ({} bytes)\n'.format(self.key, len(self.value)))
+      o.write(f'    Prop: {self.key} -> ({len(self.value)} bytes)\n')
 
   def encode(self):
     """Serializes the descriptor.
@@ -1430,8 +1421,8 @@ class AvbHashtreeDescriptor(AvbDescriptor):
             (self.SIZE + o):(self.SIZE + o + partition_name_len)
         ].decode('utf-8')
       except UnicodeDecodeError as e:
-        raise LookupError('Partition name cannot be decoded as UTF-8: {}.'
-                          .format(e)) from e
+        raise LookupError(f'Partition name cannot be decoded as UTF-8: {e}.'
+                          ) from e
       o += partition_name_len
       self.salt = data[(self.SIZE + o):(self.SIZE + o + salt_len)]
       o += salt_len
@@ -1467,22 +1458,20 @@ class AvbHashtreeDescriptor(AvbDescriptor):
       o: The object to write the output to.
     """
     o.write('    Hashtree descriptor:\n')
-    o.write('      Version of dm-verity:  {}\n'.format(self.dm_verity_version))
-    o.write('      Image Size:            {} bytes\n'.format(self.image_size))
-    o.write('      Tree Offset:           {}\n'.format(self.tree_offset))
-    o.write('      Tree Size:             {} bytes\n'.format(self.tree_size))
-    o.write('      Data Block Size:       {} bytes\n'.format(
-        self.data_block_size))
-    o.write('      Hash Block Size:       {} bytes\n'.format(
-        self.hash_block_size))
-    o.write('      FEC num roots:         {}\n'.format(self.fec_num_roots))
-    o.write('      FEC offset:            {}\n'.format(self.fec_offset))
-    o.write('      FEC size:              {} bytes\n'.format(self.fec_size))
-    o.write('      Hash Algorithm:        {}\n'.format(self.hash_algorithm))
-    o.write('      Partition Name:        {}\n'.format(self.partition_name))
-    o.write('      Salt:                  {}\n'.format(self.salt.hex()))
-    o.write('      Root Digest:           {}\n'.format(self.root_digest.hex()))
-    o.write('      Flags:                 {}\n'.format(self.flags))
+    o.write(f'      Version of dm-verity:  {self.dm_verity_version}\n')
+    o.write(f'      Image Size:            {self.image_size} bytes\n')
+    o.write(f'      Tree Offset:           {self.tree_offset}\n')
+    o.write(f'      Tree Size:             {self.tree_size} bytes\n')
+    o.write(f'      Data Block Size:       {self.data_block_size} bytes\n')
+    o.write(f'      Hash Block Size:       {self.hash_block_size} bytes\n')
+    o.write(f'      FEC num roots:         {self.fec_num_roots}\n')
+    o.write(f'      FEC offset:            {self.fec_offset}\n')
+    o.write(f'      FEC size:              {self.fec_size} bytes\n')
+    o.write(f'      Hash Algorithm:        {self.hash_algorithm}\n')
+    o.write(f'      Partition Name:        {self.partition_name}\n')
+    o.write(f'      Salt:                  {self.salt.hex()}\n')
+    o.write(f'      Root Digest:           {self.root_digest.hex()}\n')
+    o.write(f'      Flags:                 {self.flags}\n')
 
   def encode(self):
     """Serializes the descriptor.
@@ -1542,25 +1531,22 @@ class AvbHashtreeDescriptor(AvbDescriptor):
                                                 tree_size)
     # The root digest must match unless it is not embedded in the descriptor.
     if self.root_digest and root_digest != self.root_digest:
-      sys.stderr.write('hashtree of {} does not match descriptor\n'.
-                       format(image_filename))
+      sys.stderr.write(f'hashtree of {image_filename} does not match descriptor\n')
       return False
     # ... also check that the on-disk hashtree matches
     image.seek(self.tree_offset)
     hash_tree_ondisk = image.read(self.tree_size)
     is_zeroed = (self.tree_size == 0) or (hash_tree_ondisk[0:8] == b'ZeRoHaSH')
     if is_zeroed and accept_zeroed_hashtree:
-      print('{}: skipping verification since hashtree is zeroed and '
+      print(f'{self.partition_name}: skipping verification since hashtree is zeroed and '
             '--accept_zeroed_hashtree was given'
-            .format(self.partition_name))
+            )
     else:
       if hash_tree != hash_tree_ondisk:
-        sys.stderr.write('hashtree of {} contains invalid data\n'.
-                         format(image_filename))
+        sys.stderr.write(f'hashtree of {image_filename} contains invalid data\n')
         return False
-      print('{}: Successfully verified {} hashtree of {} for image of {} bytes'
-            .format(self.partition_name, self.hash_algorithm, image.filename,
-                    self.image_size))
+      print(f'{self.partition_name}: Successfully verified {self.hash_algorithm} hashtree of {image.filename} for image of {self.image_size} bytes'
+            )
     # TODO(zeuthen): we could also verify that the FEC stored in the image is
     # correct but this a) currently requires the 'fec' binary; and b) takes a
     # long time; and c) is not strictly needed for verification purposes as
@@ -1623,8 +1609,8 @@ class AvbHashDescriptor(AvbDescriptor):
             (self.SIZE + o):(self.SIZE + o + partition_name_len)
         ].decode('utf-8')
       except UnicodeDecodeError as e:
-        raise LookupError('Partition name cannot be decoded as UTF-8: {}.'
-                          .format(e)) from e
+        raise LookupError(f'Partition name cannot be decoded as UTF-8: {e}.'
+                          ) from e
       o += partition_name_len
       self.salt = data[(self.SIZE + o):(self.SIZE + o + salt_len)]
       o += salt_len
@@ -1648,12 +1634,12 @@ class AvbHashDescriptor(AvbDescriptor):
       o: The object to write the output to.
     """
     o.write('    Hash descriptor:\n')
-    o.write('      Image Size:            {} bytes\n'.format(self.image_size))
-    o.write('      Hash Algorithm:        {}\n'.format(self.hash_algorithm))
-    o.write('      Partition Name:        {}\n'.format(self.partition_name))
-    o.write('      Salt:                  {}\n'.format(self.salt.hex()))
-    o.write('      Digest:                {}\n'.format(self.digest.hex()))
-    o.write('      Flags:                 {}\n'.format(self.flags))
+    o.write(f'      Image Size:            {self.image_size} bytes\n')
+    o.write(f'      Hash Algorithm:        {self.hash_algorithm}\n')
+    o.write(f'      Partition Name:        {self.partition_name}\n')
+    o.write(f'      Salt:                  {self.salt.hex()}\n')
+    o.write(f'      Digest:                {self.digest.hex()}\n')
+    o.write(f'      Flags:                 {self.flags}\n')
 
   def encode(self):
     """Serializes the descriptor.
@@ -1704,12 +1690,10 @@ class AvbHashDescriptor(AvbDescriptor):
     digest = ha.digest()
     # The digest must match unless there is no digest in the descriptor.
     if self.digest and digest != self.digest:
-      sys.stderr.write('{} digest of {} does not match digest in descriptor\n'.
-                       format(self.hash_algorithm, image_filename))
+      sys.stderr.write(f'{self.hash_algorithm} digest of {image_filename} does not match digest in descriptor\n')
       return False
-    print('{}: Successfully verified {} hash of {} for image of {} bytes'
-          .format(self.partition_name, self.hash_algorithm, image.filename,
-                  self.image_size))
+    print(f'{self.partition_name}: Successfully verified {self.hash_algorithm} hash of {image.filename} for image of {self.image_size} bytes'
+          )
     return True
 
 
@@ -1757,8 +1741,8 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
         self.kernel_cmdline = data[
             self.SIZE:(self.SIZE + kernel_cmdline_length)].decode('utf-8')
       except UnicodeDecodeError as e:
-        raise LookupError('Kernel command-line cannot be decoded as UTF-8: {}.'
-                          .format(e)) from e
+        raise LookupError(f'Kernel command-line cannot be decoded as UTF-8: {e}.'
+                          ) from e
     else:
       self.flags = 0
       self.kernel_cmdline = ''
@@ -1770,8 +1754,8 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
       o: The object to write the output to.
     """
     o.write('    Kernel Cmdline descriptor:\n')
-    o.write('      Flags:                 {}\n'.format(self.flags))
-    o.write('      Kernel Cmdline:        \'{}\'\n'.format(self.kernel_cmdline))
+    o.write(f'      Flags:                 {self.flags}\n')
+    o.write(f'      Kernel Cmdline:        \'{self.kernel_cmdline}\'\n')
 
   def encode(self):
     """Serializes the descriptor.
@@ -1858,8 +1842,8 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
             (self.SIZE + o):(self.SIZE + o + partition_name_len)
         ].decode('utf-8')
       except UnicodeDecodeError as e:
-        raise LookupError('Partition name cannot be decoded as UTF-8: {}.'
-                          .format(e)) from e
+        raise LookupError(f'Partition name cannot be decoded as UTF-8: {e}.'
+                          ) from e
       o += partition_name_len
       self.public_key = data[(self.SIZE + o):(self.SIZE + o + public_key_len)]
 
@@ -1876,13 +1860,12 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
       o: The object to write the output to.
     """
     o.write('    Chain Partition descriptor:\n')
-    o.write('      Partition Name:          {}\n'.format(self.partition_name))
-    o.write('      Rollback Index Location: {}\n'.format(
-        self.rollback_index_location))
+    o.write(f'      Partition Name:          {self.partition_name}\n')
+    o.write(f'      Rollback Index Location: {self.rollback_index_location}\n')
     # Just show the SHA1 of the key, for size reasons.
     pubkey_digest = hashlib.sha1(self.public_key).hexdigest()
-    o.write('      Public key (sha1):       {}\n'.format(pubkey_digest))
-    o.write('      Flags:                   {}\n'.format(self.flags))
+    o.write(f'      Public key (sha1):       {pubkey_digest}\n')
+    o.write(f'      Flags:                   {self.flags}\n')
 
   def encode(self):
     """Serializes the descriptor.
@@ -1920,29 +1903,24 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
     """
     value = expected_chain_partitions_map.get(self.partition_name)
     if not value:
-      sys.stderr.write('No expected chain partition for partition {}. Use '
+      sys.stderr.write(f'No expected chain partition for partition {self.partition_name}. Use '
                        '--expected_chain_partition to specify expected '
-                       'contents or --follow_chain_partitions.\n'.
-                       format(self.partition_name))
+                       'contents or --follow_chain_partitions.\n')
       return False
     rollback_index_location, pk_blob = value
 
     if self.rollback_index_location != rollback_index_location:
-      sys.stderr.write('Expected rollback_index_location {} does not '
-                       'match {} in descriptor for partition {}\n'.
-                       format(rollback_index_location,
-                              self.rollback_index_location,
-                              self.partition_name))
+      sys.stderr.write(f'Expected rollback_index_location {rollback_index_location} does not '
+                       f'match {self.rollback_index_location} in descriptor for partition {self.partition_name}\n')
       return False
 
     if self.public_key != pk_blob:
       sys.stderr.write('Expected public key blob does not match public '
-                       'key blob in descriptor for partition {}\n'.
-                       format(self.partition_name))
+                       f'key blob in descriptor for partition {self.partition_name}\n')
       return False
 
-    print('{}: Successfully verified chain partition descriptor matches '
-          'expected data'.format(self.partition_name))
+    print(f'{self.partition_name}: Successfully verified chain partition descriptor matches '
+          'expected data')
 
     return True
 
@@ -1975,7 +1953,7 @@ def parse_descriptors(data):
   return ret
 
 
-class AvbFooter(object):
+class AvbFooter:
   """A class for parsing and writing footers.
 
   Footers are stored at the end of partitions and point to where the
@@ -2039,7 +2017,7 @@ class AvbFooter(object):
                        self.vbmeta_offset, self.vbmeta_size)
 
 
-class AvbVBMetaHeader(object):
+class AvbVBMetaHeader:
   """A class for parsing and writing AVB vbmeta images.
 
   The attributes correspond to the |AvbVBMetaImageHeader| struct defined in
@@ -2189,7 +2167,7 @@ class AvbVBMetaHeader(object):
                        self.rollback_index_location, release_string_encoded)
 
 
-class Avb(object):
+class Avb:
   """Business logic for avbtool command-line tool."""
 
   # Keep in sync with avb_ab_flow.h.
@@ -2356,9 +2334,8 @@ class Avb(object):
 
     image = ImageHandler(image_filename)
     if partition_size % image.block_size != 0:
-      raise AvbError('Partition size of {} is not a multiple of the image '
-                     'block size {}.'.format(partition_size,
-                                             image.block_size))
+      raise AvbError(f'Partition size of {partition_size} is not a multiple of the image '
+                     f'block size {image.block_size}.')
     (footer, _, _, _) = self._parse_image(image)
     if not footer:
       raise AvbError('Given image does not have a footer.')
@@ -2371,10 +2348,9 @@ class Avb(object):
                                                % image.block_size)
 
     if partition_size < vbmeta_end_offset + 1 * image.block_size:
-      raise AvbError('Requested size of {} is too small for an image '
-                     'of size {}.'
-                     .format(partition_size,
-                             vbmeta_end_offset + 1 * image.block_size))
+      raise AvbError(f'Requested size of {partition_size} is too small for an image '
+                     f'of size {vbmeta_end_offset + 1 * image.block_size}.'
+                     )
 
     # Cut at the end of the vbmeta blob and insert a DONT_CARE chunk
     # with enough bytes such that the final Footer block is at the end
@@ -2405,7 +2381,7 @@ class Avb(object):
     """
     tokens = slot_data.split(':')
     if len(tokens) != 6:
-      raise AvbError('Malformed slot data "{}".'.format(slot_data))
+      raise AvbError(f'Malformed slot data "{slot_data}".')
     a_priority = int(tokens[0])
     a_tries_remaining = int(tokens[1])
     a_success = int(tokens[2]) != 0
@@ -2445,13 +2421,11 @@ class Avb(object):
     key_blob = vbmeta_blob[key_offset:key_offset + header.public_key_size]
 
     if footer:
-      o.write('Footer version:           {}.{}\n'.format(footer.version_major,
-                                                         footer.version_minor))
-      o.write('Image size:               {} bytes\n'.format(image_size))
-      o.write('Original image size:      {} bytes\n'.format(
-          footer.original_image_size))
-      o.write('VBMeta offset:            {}\n'.format(footer.vbmeta_offset))
-      o.write('VBMeta size:              {} bytes\n'.format(footer.vbmeta_size))
+      o.write(f'Footer version:           {footer.version_major}.{footer.version_minor}\n')
+      o.write(f'Image size:               {image_size} bytes\n')
+      o.write(f'Original image size:      {footer.original_image_size} bytes\n')
+      o.write(f'VBMeta offset:            {footer.vbmeta_offset}\n')
+      o.write(f'VBMeta size:              {footer.vbmeta_size} bytes\n')
       o.write('--\n')
 
     (alg_name, _) = lookup_algorithm_by_type(header.algorithm_type)
@@ -2460,23 +2434,20 @@ class Avb(object):
         header.required_libavb_version_major,
         header.required_libavb_version_minor,
         ' (Sparse)' if image.is_sparse else ''))
-    o.write('Header Block:             {} bytes\n'.format(AvbVBMetaHeader.SIZE))
-    o.write('Authentication Block:     {} bytes\n'.format(
-        header.authentication_data_block_size))
-    o.write('Auxiliary Block:          {} bytes\n'.format(
-        header.auxiliary_data_block_size))
+    o.write(f'Header Block:             {AvbVBMetaHeader.SIZE} bytes\n')
+    o.write(f'Authentication Block:     {header.authentication_data_block_size} bytes\n')
+    o.write(f'Auxiliary Block:          {header.auxiliary_data_block_size} bytes\n')
     if key_blob:
       hexdig = hashlib.sha1(key_blob).hexdigest()
-      o.write('Public key (sha1):        {}\n'.format(hexdig))
+      o.write(f'Public key (sha1):        {hexdig}\n')
       if output_pubkey is not None:
         output_pubkey.write(key_blob)
 
-    o.write('Algorithm:                {}\n'.format(alg_name))
-    o.write('Rollback Index:           {}\n'.format(header.rollback_index))
-    o.write('Flags:                    {}\n'.format(header.flags))
-    o.write('Rollback Index Location:  {}\n'.format(
-        header.rollback_index_location))
-    o.write('Release String:           \'{}\'\n'.format(header.release_string))
+    o.write(f'Algorithm:                {alg_name}\n')
+    o.write(f'Rollback Index:           {header.rollback_index}\n')
+    o.write(f'Flags:                    {header.flags}\n')
+    o.write(f'Rollback Index Location:  {header.rollback_index_location}\n')
+    o.write(f'Release String:           \'{header.release_string}\'\n')
 
     # Print descriptors.
     num_printed = 0
@@ -2495,17 +2466,16 @@ class Avb(object):
       key_metadata_blob = vbmeta_blob[key_metadata_offset: key_metadata_offset
                                       + header.public_key_metadata_size]
       version, pik, psk = struct.unpack('<I1620s1620s', key_metadata_blob)
-      o.write('    Metadata version:        {}\n'.format(version))
+      o.write(f'    Metadata version:        {version}\n')
 
       def print_certificate(cert):
         version, public_key, subject, usage, key_version, _ = (
             struct.unpack('<I1032s32s32sQ512s', cert))
-        o.write('      Version:               {}\n'.format(version))
-        o.write('      Public key (sha1):     {}\n'.format(
-            hashlib.sha1(public_key).hexdigest()))
-        o.write('      Subject:               {}\n'.format(subject.hex()))
-        o.write('      Usage:                 {}\n'.format(usage.hex()))
-        o.write('      Key version:           {}\n'.format(key_version))
+        o.write(f'      Version:               {version}\n')
+        o.write(f'      Public key (sha1):     {hashlib.sha1(public_key).hexdigest()}\n')
+        o.write(f'      Subject:               {subject.hex()}\n')
+        o.write(f'      Usage:                 {usage.hex()}\n')
+        o.write(f'      Key version:           {key_version}\n')
 
       o.write('    Product Intermediate Key:\n')
       print_certificate(pik)
@@ -2535,7 +2505,7 @@ class Avb(object):
       for cp in expected_chain_partitions:
         cp_tokens = cp.split(':')
         if len(cp_tokens) != 3:
-          raise AvbError('Malformed chained partition "{}".'.format(cp))
+          raise AvbError(f'Malformed chained partition "{cp}".')
         partition_name = cp_tokens[0]
         rollback_index_location = int(cp_tokens[1])
         file_path = cp_tokens[2]
@@ -2549,12 +2519,10 @@ class Avb(object):
 
     key_blob = None
     if key_path:
-      print('Verifying image {} using key at {}'.format(image_filename,
-                                                        key_path))
+      print(f'Verifying image {image_filename} using key at {key_path}')
       key_blob = RSAPublicKey(key_path).encode()
     else:
-      print('Verifying image {} using embedded public key'.format(
-          image_filename))
+      print(f'Verifying image {image_filename} using embedded public key')
 
     image = ImageHandler(image_filename, read_only=True)
     (footer, header, descriptors, _) = self._parse_image(image)
@@ -2569,8 +2537,8 @@ class Avb(object):
 
     alg_name, _ = lookup_algorithm_by_type(header.algorithm_type)
     if not verify_vbmeta_signature(header, vbmeta_blob):
-      raise AvbError('Signature check failed for {} vbmeta struct {}'
-                     .format(alg_name, image_filename))
+      raise AvbError(f'Signature check failed for {alg_name} vbmeta struct {image_filename}'
+                     )
 
     if key_blob:
       # The embedded public key is in the auxiliary block at an offset.
@@ -2583,11 +2551,11 @@ class Avb(object):
         raise AvbError('Embedded public key does not match given key.')
 
     if footer:
-      print('vbmeta: Successfully verified footer and {} vbmeta struct in {}'
-            .format(alg_name, image.filename))
+      print(f'vbmeta: Successfully verified footer and {alg_name} vbmeta struct in {image.filename}'
+            )
     else:
-      print('vbmeta: Successfully verified {} vbmeta struct in {}'
-            .format(alg_name, image.filename))
+      print(f'vbmeta: Successfully verified {alg_name} vbmeta struct in {image.filename}'
+            )
 
     for desc in descriptors:
       if (isinstance(desc, AvbChainPartitionDescriptor)
@@ -2596,10 +2564,9 @@ class Avb(object):
         # In this case we're processing a chain descriptor but don't have a
         # --expect_chain_partition ... however --follow_chain_partitions was
         # specified so we shouldn't error out in desc.verify().
-        print('{}: Chained but ROLLBACK_SLOT (which is {}) '
-              'and KEY (which has sha1 {}) not specified'
-              .format(desc.partition_name, desc.rollback_index_location,
-                      hashlib.sha1(desc.public_key).hexdigest()))
+        print(f'{desc.partition_name}: Chained but ROLLBACK_SLOT (which is {desc.rollback_index_location}) '
+              f'and KEY (which has sha1 {hashlib.sha1(desc.public_key).hexdigest()}) not specified'
+              )
       elif not desc.verify(image_dir, image_ext, expected_chain_partitions_map,
                            image, accept_zeroed_hashtree):
         raise AvbError('Error verifying descriptor.')
@@ -2659,14 +2626,14 @@ class Avb(object):
           json_partitions.append({'name': desc.partition_name,
                                   'digest': digest})
         else:
-          output.write('{}: {}\n'.format(desc.partition_name, digest))
+          output.write(f'{desc.partition_name}: {digest}\n')
       elif isinstance(desc, AvbHashtreeDescriptor):
         digest = desc.root_digest.hex()
         if json_partitions is not None:
           json_partitions.append({'name': desc.partition_name,
                                   'digest': digest})
         else:
-          output.write('{}: {}\n'.format(desc.partition_name, digest))
+          output.write(f'{desc.partition_name}: {digest}\n')
       elif isinstance(desc, AvbChainPartitionDescriptor):
         chained_image_filename = os.path.join(image_dir,
                                               desc.partition_name + image_ext)
@@ -2715,7 +2682,7 @@ class Avb(object):
         hasher.update(ch_vbmeta_blob)
 
     digest = hasher.digest()
-    output.write('{}\n'.format(digest.hex()))
+    output.write(f'{digest.hex()}\n')
 
   def calculate_kernel_cmdline(self, image_filename, hashtree_disabled, output):
     """Implements the 'calculate_kernel_cmdline' command.
@@ -2850,17 +2817,17 @@ class Avb(object):
     """
     c = 'dm="1 vroot none ro 1,'
     c += '0'                                                # start
-    c += ' {}'.format((ht.image_size // 512))               # size (# sectors)
-    c += ' verity {}'.format(ht.dm_verity_version)          # type and version
+    c += f' {ht.image_size // 512}'               # size (# sectors)
+    c += f' verity {ht.dm_verity_version}'          # type and version
     c += ' PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'             # data_dev
     c += ' PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'             # hash_dev
-    c += ' {}'.format(ht.data_block_size)                   # data_block
-    c += ' {}'.format(ht.hash_block_size)                   # hash_block
-    c += ' {}'.format(ht.image_size // ht.data_block_size)  # #blocks
-    c += ' {}'.format(ht.image_size // ht.data_block_size)  # hash_offset
-    c += ' {}'.format(ht.hash_algorithm)                    # hash_alg
-    c += ' {}'.format(ht.root_digest.hex())                 # root_digest
-    c += ' {}'.format(ht.salt.hex())                        # salt
+    c += f' {ht.data_block_size}'                   # data_block
+    c += f' {ht.hash_block_size}'                   # hash_block
+    c += f' {ht.image_size // ht.data_block_size}'  # #blocks
+    c += f' {ht.image_size // ht.data_block_size}'  # hash_offset
+    c += f' {ht.hash_algorithm}'                    # hash_alg
+    c += f' {ht.root_digest.hex()}'                 # root_digest
+    c += f' {ht.salt.hex()}'                        # salt
     if ht.fec_num_roots > 0:
       if ht.flags & AvbHashtreeDescriptor.FLAGS_CHECK_AT_MOST_ONCE:
         c += ' 11'  # number of optional args
@@ -2870,12 +2837,12 @@ class Avb(object):
       c += ' $(ANDROID_VERITY_MODE)'
       c += ' ignore_zero_blocks'
       c += ' use_fec_from_device PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'
-      c += ' fec_roots {}'.format(ht.fec_num_roots)
+      c += f' fec_roots {ht.fec_num_roots}'
       # Note that fec_blocks is the size that FEC covers, *not* the
       # size of the FEC data. Since we use FEC for everything up until
       # the FEC data, it's the same as the offset.
-      c += ' fec_blocks {}'.format(ht.fec_offset // ht.data_block_size)
-      c += ' fec_start {}'.format(ht.fec_offset // ht.data_block_size)
+      c += f' fec_blocks {ht.fec_offset // ht.data_block_size}'
+      c += f' fec_start {ht.fec_offset // ht.data_block_size}'
     else:
       if ht.flags & AvbHashtreeDescriptor.FLAGS_CHECK_AT_MOST_ONCE:
         c += ' 3'  # number of optional args
@@ -2985,7 +2952,7 @@ class Avb(object):
             image_header.required_libavb_version_minor)
 
     if print_required_libavb_version:
-      print('1.{}'.format(tmp_header.required_libavb_version_minor))
+      print(f'1.{tmp_header.required_libavb_version_minor}')
       return
 
     if not output:
@@ -3069,8 +3036,8 @@ class Avb(object):
     try:
       alg = ALGORITHMS[algorithm_name]
     except KeyError as e:
-      raise AvbError('Unknown algorithm with name {}'
-                     .format(algorithm_name)) from e
+      raise AvbError(f'Unknown algorithm with name {algorithm_name}'
+                     ) from e
 
     if not descriptors:
       descriptors = []
@@ -3090,15 +3057,14 @@ class Avb(object):
       for cp in all_chain_partitions:
         cp_tokens = cp.split(':')
         if len(cp_tokens) != 3:
-          raise AvbError('Malformed chained partition "{}".'.format(cp))
+          raise AvbError(f'Malformed chained partition "{cp}".')
         partition_name = cp_tokens[0]
         chained_rollback_index_location = int(cp_tokens[1])
         file_path = cp_tokens[2]
         # Check that the same rollback location isn't being used by
         # multiple chained partitions.
         if used_locations.get(chained_rollback_index_location):
-          raise AvbError('Rollback Index Location {} is already in use.'.format(
-              chained_rollback_index_location))
+          raise AvbError(f'Rollback Index Location {chained_rollback_index_location} is already in use.')
         used_locations[chained_rollback_index_location] = True
         desc = AvbChainPartitionDescriptor()
         desc.partition_name = partition_name
@@ -3121,7 +3087,7 @@ class Avb(object):
       for prop in props:
         idx = prop.find(':')
         if idx == -1:
-          raise AvbError('Malformed property "{}".'.format(prop))
+          raise AvbError(f'Malformed property "{prop}".')
         # pylint: disable=redefined-variable-type
         desc = AvbPropertyDescriptor()
         desc.key = prop[0:idx]
@@ -3131,7 +3097,7 @@ class Avb(object):
       for prop in props_from_file:
         idx = prop.find(':')
         if idx == -1:
-          raise AvbError('Malformed property "{}".'.format(prop))
+          raise AvbError(f'Malformed property "{prop}".')
         desc = AvbPropertyDescriptor()
         desc.key = prop[0:idx]
         file_path = prop[(idx + 1):]
@@ -3196,12 +3162,10 @@ class Avb(object):
     encoded_key = b''
     if alg.public_key_num_bytes > 0:
       if not key_path:
-        raise AvbError('Key is required for algorithm {}'.format(
-            algorithm_name))
+        raise AvbError(f'Key is required for algorithm {algorithm_name}')
       encoded_key = RSAPublicKey(key_path).encode()
       if len(encoded_key) != alg.public_key_num_bytes:
-        raise AvbError('Key is wrong size for algorithm {}'.format(
-            algorithm_name))
+        raise AvbError(f'Key is wrong size for algorithm {algorithm_name}')
 
     # Override release string, if requested.
     if isinstance(release_string, str):
@@ -3314,9 +3278,8 @@ class Avb(object):
     image = ImageHandler(image_filename)
 
     if partition_size % image.block_size != 0:
-      raise AvbError('Partition size of {} is not a multiple of the image '
-                     'block size {}.'.format(partition_size,
-                                             image.block_size))
+      raise AvbError(f'Partition size of {partition_size} is not a multiple of the image '
+                     f'block size {image.block_size}.')
 
     # If there's already a footer, truncate the image to its original
     # size. This way 'avbtool append_vbmeta_image' is idempotent.
@@ -3379,7 +3342,7 @@ class Avb(object):
     except Exception as e:
       # Truncate back to original size, then re-raise.
       image.truncate(original_image_size)
-      raise AvbError('Appending VBMeta image failed: {}.'.format(e)) from e
+      raise AvbError(f'Appending VBMeta image failed: {e}.') from e
 
   def add_hash_footer(self, image_filename, partition_size,
                       dynamic_partition_size, partition_name,
@@ -3454,7 +3417,7 @@ class Avb(object):
 
     # If we're asked to calculate minimum required libavb version, we're done.
     if print_required_libavb_version:
-      print('1.{}'.format(required_libavb_version_minor))
+      print(f'1.{required_libavb_version_minor}')
       return
 
     # First, calculate the maximum image size such that an image
@@ -3462,13 +3425,12 @@ class Avb(object):
     # |partition_size|.
     max_metadata_size = self.MAX_VBMETA_SIZE + self.MAX_FOOTER_SIZE
     if not dynamic_partition_size and partition_size < max_metadata_size:
-      raise AvbError('Parition size of {} is too small. '
-                     'Needs to be at least {}'.format(
-                         partition_size, max_metadata_size))
+      raise AvbError(f'Parition size of {partition_size} is too small. '
+                     f'Needs to be at least {max_metadata_size}')
 
     # If we're asked to only calculate the maximum image size, we're done.
     if calc_max_image_size:
-      print('{}'.format(partition_size - max_metadata_size))
+      print(f'{partition_size - max_metadata_size}')
       return
 
     # If we aren't appending the vbmeta footer to the input image we can
@@ -3498,19 +3460,17 @@ class Avb(object):
 
     max_image_size = partition_size - max_metadata_size
     if partition_size % image.block_size != 0:
-      raise AvbError('Partition size of {} is not a multiple of the image '
-                     'block size {}.'.format(partition_size,
-                                             image.block_size))
+      raise AvbError(f'Partition size of {partition_size} is not a multiple of the image '
+                     f'block size {image.block_size}.')
 
     # If anything goes wrong from here-on, restore the image back to
     # its original size.
     try:
       # If image size exceeds the maximum image size, fail.
       if image.image_size > max_image_size:
-        raise AvbError('Image size of {} exceeds maximum image '
-                       'size of {} in order to fit in a partition '
-                       'size of {}.'.format(image.image_size, max_image_size,
-                                            partition_size))
+        raise AvbError(f'Image size of {image.image_size} exceeds maximum image '
+                       f'size of {max_image_size} in order to fit in a partition '
+                       f'size of {partition_size}.')
 
       digest_size = len(hashlib.new(hash_algorithm).digest())
       if salt:
@@ -3601,7 +3561,7 @@ class Avb(object):
     except Exception as e:
       # Truncate back to original size, then re-raise.
       image.truncate(original_image_size)
-      raise AvbError('Adding hash_footer failed: {}.'.format(e)) from e
+      raise AvbError(f'Adding hash_footer failed: {e}.') from e
 
   def add_hashtree_footer(self, image_filename, partition_size: int, partition_name,
                           generate_fec, fec_num_roots, hash_algorithm,
@@ -3682,7 +3642,7 @@ class Avb(object):
 
     # If we're asked to calculate minimum required libavb version, we're done.
     if print_required_libavb_version:
-      print('1.{}'.format(required_libavb_version_minor))
+      print(f'1.{required_libavb_version_minor}')
       return
 
     digest_size = len(create_avb_hashtree_hasher(hash_algorithm, b'')
@@ -3710,20 +3670,18 @@ class Avb(object):
 
     # If we're asked to only calculate the maximum image size, we're done.
     if calc_max_image_size:
-      print('{}'.format(max_image_size))
+      print(f'{max_image_size}')
       return
 
     image = ImageHandler(image_filename)
 
     if partition_size > 0:
       if partition_size % image.block_size != 0:
-        raise AvbError('Partition size of {} is not a multiple of the image '
-                       'block size {}.'.format(partition_size,
-                                               image.block_size))
+        raise AvbError(f'Partition size of {partition_size} is not a multiple of the image '
+                       f'block size {image.block_size}.')
     elif image.image_size % image.block_size != 0:
-      raise AvbError('File size of {} is not a multiple of the image '
-                     'block size {}.'.format(image.image_size,
-                                             image.block_size))
+      raise AvbError(f'File size of {image.image_size} is not a multiple of the image '
+                     f'block size {image.block_size}.')
 
     # If there's already a footer, truncate the image to its original
     # size. This way 'avbtool add_hashtree_footer' is idempotent
@@ -3757,10 +3715,9 @@ class Avb(object):
       # If image size exceeds the maximum image size, fail.
       if partition_size > 0:
         if image.image_size > max_image_size:
-          raise AvbError('Image size of {} exceeds maximum image '
-                         'size of {} in order to fit in a partition '
-                         'size of {}.'.format(image.image_size, max_image_size,
-                                              partition_size))
+          raise AvbError(f'Image size of {image.image_size} exceeds maximum image '
+                         f'size of {max_image_size} in order to fit in a partition '
+                         f'size of {partition_size}.')
 
       if salt:
         salt = binascii.unhexlify(salt)
@@ -3890,7 +3847,7 @@ class Avb(object):
     except Exception as e:
       # Truncate back to original size, then re-raise.
       image.truncate(original_image_size)
-      raise AvbError('Adding hashtree_footer failed: {}.'.format(e)) from e
+      raise AvbError(f'Adding hashtree_footer failed: {e}.') from e
 
   def make_certificate(self, output, authority_key_path, subject_key_path,
                        subject_key_version, subject, usage,
@@ -4109,7 +4066,7 @@ def calc_fec_data_size(image_size, num_roots):
   (pout, perr) = p.communicate()
   retcode = p.wait()
   if retcode != 0:
-    raise ValueError('Error invoking fec: {}'.format(perr))
+    raise ValueError(f'Error invoking fec: {perr}')
   return int(pout)
 
 
@@ -4133,8 +4090,8 @@ def generate_fec_data(image_filename, num_roots):
            fec_tmpfile.name],
           stderr=open(os.devnull, 'wb'))
     except subprocess.CalledProcessError as e:
-      raise ValueError('Execution of \'fec\' tool failed: {}.'
-                       .format(e)) from e
+      raise ValueError(f'Execution of \'fec\' tool failed: {e}.'
+                       ) from e
     fec_data = fec_tmpfile.read()
 
   footer_size = struct.calcsize(FEC_FOOTER_FORMAT)
@@ -4217,7 +4174,7 @@ def generate_hash_tree(image, image_size, block_size, hash_alg_name, salt,
   return hasher.digest(), bytes(hash_ret)
 
 
-class AvbTool(object):
+class AvbTool:
   """Object for avbtool command-line tool."""
 
   def __init__(self):
@@ -4839,7 +4796,7 @@ class AvbTool(object):
       print('avbtool: error: too few arguments')
       sys.exit(2)
     except AvbError as e:
-      sys.stderr.write('{}: {}\n'.format(argv[0], str(e)))
+      sys.stderr.write(f'{argv[0]}: {str(e)}\n')
       sys.exit(1)
 
   def version(self, _):
