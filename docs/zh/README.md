@@ -46,10 +46,34 @@ uv sync
 
 # 或安装开发工具（测试、Lint、类型检查）
 uv sync --all-extras
-
-# 或使用 pip 安装
-pip install -e .
 ```
+
+#### 使用 pip3 安装（无需 uv）
+
+`uv` 并非必需——本包完全可以使用标准 Python 工具链（`python3` + `pip3`）
+安装和运行。加密、FEC 以及（Windows 上）TUI 所需的依赖都是核心依赖，
+`pip3` 会自动安装。
+
+```shell
+# 1) 创建并激活虚拟环境（推荐）
+python3 -m venv .venv
+source .venv/bin/activate            # Linux / macOS
+# .venv\Scripts\Activate.ps1         # Windows (PowerShell)
+# .venv\Scripts\activate.bat         # Windows (cmd)
+
+# 2) 升级 pip 并安装本包（从源码目录进行可编辑安装）
+python -m pip install --upgrade pip
+python -m pip install -e .
+# 或安装普通副本到 site-packages：
+# python -m pip install .
+
+# 3) 验证安装
+python -m avbpowertool about
+```
+
+> **PATH 未配置？** `pip3` 会把 `avbpowertool` 可执行文件放到 Python 环境的
+> `bin`/`Scripts` 目录。如果该目录不在 `PATH` 中，可以用
+> `python -m avbpowertool` 替代——行为完全一致，且不依赖 `PATH`。
 
 ### CLI 用法
 
@@ -78,12 +102,51 @@ avbpowertool about
 
 所有命令支持 `--json` 以获得机器可读的输出。
 
+> 未使用 `uv`，或控制台脚本不在 `PATH` 中时，请在命令前加 `python -m`：
+>
+> ```shell
+> python -m avbpowertool image inspect boot vbmeta
+> python -m avbpowertool config list
+> ```
+
 ### TUI 用法
 
 ```shell
 # 启动交互模式（不带命令时默认行为）
 avbpowertool
+# 或未配置控制台脚本的 PATH 时：
+python -m avbpowertool
 ```
+
+### 后端 API（在 Python 中调用）
+
+安装完成后，可直接在 Python 代码中导入并调用本包，无需任何控制台入口。
+请在项目根目录运行（当前目录即工作区根目录，包含 `avbtool.py`、
+`Images/`、`profiles/`）：
+
+```python
+# inspect.py — 使用 python inspect.py 运行
+from avbpowertool.bootstrap import bootstrap
+from avbpowertool.infrastructure.avbtool.runner import SubprocessAvbTool
+from avbpowertool.application.commands import InspectImagesRequest
+from avbpowertool.application.services.inspect_images import InspectImagesUseCase
+
+ws = bootstrap()  # 工作区根目录 = 当前目录
+avb = SubprocessAvbTool(ws.avbtool_script)
+result = InspectImagesUseCase(ws, avb).execute(
+    InspectImagesRequest(image_names=("boot", "vbmeta"))
+)
+for img in result.images:
+    print(f"{img.image_name}: {img.descriptor}, {img.algorithm}")
+```
+
+也可以直接在 shell 中执行单行命令：
+
+```shell
+python -c "from avbpowertool.bootstrap import bootstrap; print(bootstrap().root)"
+```
+
+完整参考见 [后端 API 参考](BACKEND_API.md)。
 
 ## 项目结构
 

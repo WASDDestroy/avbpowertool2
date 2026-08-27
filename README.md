@@ -33,7 +33,7 @@ to force the fallback path.
 
 All local patches carried by the vendored `avbtool.py` (crypto backend,
 pure-Python FEC) are recorded in
-[VENDORED_AVBTOOL_PATCHES.md](VENDORED_AVBTOOL_PATCHES.md); use it to
+[VENDORED_AVBTOOL_PATCHES.md](docs/en/VENDORED_AVBTOOL_PATCHES.md); use it to
 re-apply patches when upgrading upstream avbtool.
 
 ### Install
@@ -48,10 +48,35 @@ uv sync
 
 # Install dev tools (tests, linting, type checking)
 uv sync --all-extras
-
-# Or install with pip
-pip install -e .
 ```
+
+#### Install with pip3 (no uv required)
+
+`uv` is optional — the package installs and runs with the standard Python
+toolchain (`python3` + `pip3`). The crypto, FEC, and (on Windows) TUI
+dependencies are core dependencies, so `pip3` pulls them in automatically.
+
+```shell
+# 1) Create and activate a virtual environment (recommended)
+python3 -m venv .venv
+source .venv/bin/activate            # Linux / macOS
+# .venv\Scripts\Activate.ps1         # Windows (PowerShell)
+# .venv\Scripts\activate.bat         # Windows (cmd)
+
+# 2) Upgrade pip and install the package (editable install from the checkout)
+python -m pip install --upgrade pip
+python -m pip install -e .
+# or, to install a regular copy into site-packages:
+# python -m pip install .
+
+# 3) Verify
+python -m avbpowertool about
+```
+
+> **PATH not set up?** `pip3` puts the `avbpowertool` executable in your
+> Python environment's `bin`/`Scripts` directory. If that directory is not
+> on your `PATH`, run everything with `python -m avbpowertool` instead — it
+> behaves identically and never depends on `PATH`.
 
 ### CLI Usage
 
@@ -80,12 +105,53 @@ avbpowertool about
 
 All commands support `--json` for machine-readable output.
 
+> Without `uv`, or when the console script is not on `PATH`, prefix any
+> command with `python -m`:
+>
+> ```shell
+> python -m avbpowertool image inspect boot vbmeta
+> python -m avbpowertool config list
+> ```
+
 ### TUI Usage
 
 ```shell
 # Launch interactive mode (default when no command given)
 avbpowertool
+# or, without a PATH entry for the console script:
+python -m avbpowertool
 ```
+
+### Backend API (call from Python)
+
+The package can also be imported and driven directly from Python code — no
+console entry point involved. After the pip3 install above, run from the
+project root (the current directory becomes the workspace root, where
+`avbtool.py`, `Images/`, and `profiles/` live):
+
+```python
+# inspect.py — run with: python inspect.py
+from avbpowertool.bootstrap import bootstrap
+from avbpowertool.infrastructure.avbtool.runner import SubprocessAvbTool
+from avbpowertool.application.commands import InspectImagesRequest
+from avbpowertool.application.services.inspect_images import InspectImagesUseCase
+
+ws = bootstrap()  # workspace root = current directory
+avb = SubprocessAvbTool(ws.avbtool_script)
+result = InspectImagesUseCase(ws, avb).execute(
+    InspectImagesRequest(image_names=("boot", "vbmeta"))
+)
+for img in result.images:
+    print(f"{img.image_name}: {img.descriptor}, {img.algorithm}")
+```
+
+Or as a one-liner from the shell:
+
+```shell
+python -c "from avbpowertool.bootstrap import bootstrap; print(bootstrap().root)"
+```
+
+See the [Backend API Reference](docs/en/BACKEND_API.md) for the full reference.
 
 ## Project Structure
 
@@ -163,15 +229,15 @@ profiles/
 
 ## Development
 
-See [AGENTS.md](../AGENTS.md) for development guidelines.
+See [AGENTS.md](AGENTS.md) for development guidelines.
 
 ## Documentation
 
-- [Implementation Plan](IMPLEMENTATION_PLAN.md) — architecture and phase breakdown
-- [Backend API Reference](BACKEND_API.md) — use the backend from Python
-- [Adding Navigation](FRONTEND_NAVIGATION.md) — add entries to the TUI navigation tree
-- [Editing Pages](FRONTEND_PAGES.md) — create or modify TUI views
-- [Legacy Config Import](LEGACY_CONFIG_IMPORT.md) — v1 → v2 conversion design and implementation
+- [Implementation Plan](docs/en/IMPLEMENTATION_PLAN.md) — architecture and phase breakdown
+- [Backend API Reference](docs/en/BACKEND_API.md) — use the backend from Python
+- [Adding Navigation](docs/en/FRONTEND_NAVIGATION.md) — add entries to the TUI navigation tree
+- [Editing Pages](docs/en/FRONTEND_PAGES.md) — create or modify TUI views
+- [Legacy Config Import](docs/en/LEGACY_CONFIG_IMPORT.md) — v1 → v2 conversion design and implementation
 
 ## License
 
