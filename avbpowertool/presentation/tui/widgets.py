@@ -7,16 +7,35 @@ from __future__ import annotations
 
 import contextlib
 import curses
+import locale
 import unicodedata
 from collections.abc import Sequence
 
 # PDCurses (windows-curses on Windows) accounts a line's width as one column
-# per UTF-8 byte, minus a 2-column allowance for the trailing multibyte
-# character.  It therefore silently drops trailing CJK characters once a line
-# gets close to the right edge.  ncurses (Linux/macOS) counts real terminal
-# columns.  We detect the build once and wrap/truncate against the width the
-# active build actually enforces, so a drawn line is never clipped by curses.
+# per UTF-8 byte (with a 2-column allowance for the trailing multibyte
+# character), so it silently drops trailing CJK characters once a line gets
+# close to the right edge.  ncurses (Linux/macOS) does the same when the
+# active locale is not UTF-8, and counts real terminal columns only with a
+# UTF-8 locale.  We therefore fit lines to the width the active build really
+# enforces so a drawn line is never clipped by curses.
 _IS_NCURSES = hasattr(curses, "ncurses_version")
+
+
+def _utf8_locale_active() -> bool:
+    """True when the active CTYPE locale is UTF-8 (wide chars count 2 columns)."""
+    try:
+        _code, encoding = locale.getlocale(locale.LC_CTYPE)
+    except Exception:
+        return False
+    if not encoding:
+        return False
+    encoding = encoding.upper()
+    return "UTF" in encoding or "65001" in encoding
+
+
+def _counts_real_columns() -> bool:
+    """True when the active curses build counts CJK as 2 real terminal columns."""
+    return _IS_NCURSES and _utf8_locale_active()
 
 
 def _char_width(ch: str) -> int:
@@ -35,13 +54,14 @@ def _line_width(text: str) -> int:
     """Width the active curses build enforces when clipping a line.
 
     Lines wrapped/truncated to fit within this width are never clipped by
-    ``addstr``, so trailing CJK characters are never dropped.
+    ``addstr``, so trailing CJK characters are never dropped.  When real
+    columns are not counted (PDCurses, or ncurses without a UTF-8 locale),
+    the enforced width is the UTF-8 byte count minus the 2-column allowance
+    PDCurses reserves for the final multibyte character.
     """
-    if _IS_NCURSES:
+    if _counts_real_columns():
         return _display_width(text)
     if any(ord(ch) > 127 for ch in text):
-        # PDCurses counts one column per UTF-8 byte with a 2-column
-        # allowance for the final multibyte character.
         return max(0, len(text.encode("utf-8")) - 2)
     return len(text)
 
@@ -63,6 +83,28 @@ def _truncate_to_width(text: str, width: int) -> str:
         else:
             break
     return result
+
+
+def _pad_cjk_line(text: str, cols: int) -> str:
+    """Pad a CJK line with trailing spaces for PDCurses' row write.
+
+    PDCurses on Windows writes an *attributed* row (A_BOLD/A_REVERSE/color
+    pairs) to the console using the string's character count — counting
+    each CJK character as 1 column — as the row width.  CJK renders as 2
+    columns, so the trailing characters get dropped unless the character
+    count reaches the real column width.  Appending one trailing space per
+    CJK character makes ``len(text) == real column width``, so the whole
+    line is written.  No-op on ncurses (which counts real columns) and for
+    ASCII-only lines; the padding is capped so the line never exceeds the
+    available width.
+    """
+    if _counts_real_columns():
+        return text
+    cjk = sum(1 for ch in text if ord(ch) > 127)
+    if cjk == 0:
+        return text
+    pad = min(cjk, max(0, (cols - 1) - len(text)))
+    return text + " " * pad if pad > 0 else text
 
 
 def _split_token(token: str, width: int) -> list[str]:
@@ -158,7 +200,12 @@ class SelectorWidget:
             rows, cols = stdscr.getmaxyx()
 
             # Title
-            stdscr.addstr(0, 0, _truncate_to_width(f"  {self.title}", cols - 1), curses.A_BOLD)
+            stdscr.addstr(
+                0,
+                0,
+                _pad_cjk_line(_truncate_to_width(f"  {self.title}", cols - 1), cols),
+                curses.A_BOLD,
+            )
             stdscr.addstr(1, 0, "=" * min(80, cols - 1))
 
             # Items — long items are wrapped instead of truncated.
@@ -178,7 +225,12 @@ class SelectorWidget:
                 with contextlib.suppress(curses.error):
                     for j, item_line in enumerate(item_lines):
                         pad = prefix if j == 0 else " " * prefix_width
-                        stdscr.addstr(row + j, 0, pad + item_line, attr)
+                        drawn = pad + item_line
+                        if attr:
+                            # Attributed rows lose trailing CJK on PDCurses;
+                            # pad so the whole line is written.
+                            drawn = _pad_cjk_line(drawn, cols)
+                        stdscr.addstr(row + j, 0, drawn, attr)
                 row += len(item_lines)
 
             # Status bar
@@ -192,7 +244,12 @@ class SelectorWidget:
             else:
                 help_text = "  Up/Down: Navigate  Enter: Select  Esc: Back"
             with contextlib.suppress(curses.error):
-                stdscr.addstr(rows - 1, 0, _truncate_to_width(help_text, cols - 1), curses.A_DIM)
+                stdscr.addstr(
+                    rows - 1,
+                    0,
+                    _pad_cjk_line(_truncate_to_width(help_text, cols - 1), cols),
+                    curses.A_DIM,
+                )
 
             stdscr.refresh()
 
@@ -246,7 +303,9 @@ def message_screen(stdscr: curses.window, title: str, lines: list[str]) -> None:
         stdscr.clear()
         rows, cols = stdscr.getmaxyx()
 
-        stdscr.addstr(0, 0, _truncate_to_width(f"  {title}", cols - 1), curses.A_BOLD)
+        stdscr.addstr(
+            0, 0, _pad_cjk_line(_truncate_to_width(f"  {title}", cols - 1), cols), curses.A_BOLD
+        )
         stdscr.addstr(1, 0, "=" * min(80, cols - 1))
 
         # Wrap long lines to the available width (recomputed each frame so
@@ -268,7 +327,12 @@ def message_screen(stdscr: curses.window, title: str, lines: list[str]) -> None:
 
         help_text = "  Up/Down: Scroll  PgUp/PgDn: Page  Enter/Esc: Exit"
         with contextlib.suppress(curses.error):
-            stdscr.addstr(rows - 1, 0, _truncate_to_width(help_text, cols - 1), curses.A_DIM)
+            stdscr.addstr(
+                rows - 1,
+                0,
+                _pad_cjk_line(_truncate_to_width(help_text, cols - 1), cols),
+                curses.A_DIM,
+            )
 
         if total > body_rows:
             # Right-aligned scroll position indicator.

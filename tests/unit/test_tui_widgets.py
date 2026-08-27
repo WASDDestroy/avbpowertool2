@@ -96,30 +96,34 @@ class TestWrapText:
         assert wrapped == ["  one two", "  three", "  four"]
 
     def test_cjk_wraps_by_display_width_on_ncurses(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # ncurses counts 2 columns per CJK char, so 4 fit in width 9.
+        # ncurses + UTF-8 locale counts 2 columns per CJK char, so 4 fit in width 9.
         monkeypatch.setattr(widgets, "_IS_NCURSES", True)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: True)
         assert widgets.wrap_text(["一二三四五六"], 9) == ["一二三四", "五六"]
 
     def test_cjk_wraps_by_byte_accounting_on_pdcurses(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # PDCurses counts one column per UTF-8 byte (with a 2-column
-        # allowance), so only 3 CJK chars fit in width 9 instead of 4.
+        # PDCurses (and ncurses without a UTF-8 locale) count one column per
+        # UTF-8 byte, so only 3 CJK chars fit in width 9 instead of 4.
         monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: False)
         assert widgets.wrap_text(["一二三四五六"], 9) == ["一二三", "四五六"]
 
     def test_cjk_wrap_preserves_every_character(self, monkeypatch: pytest.MonkeyPatch) -> None:
         text = "中文消息很长很长需要被正确地折行并且不丢失任何字符abcdefg中文"
-        for is_ncurses in (True, False):
+        for is_ncurses, is_utf8 in ((True, True), (False, False)):
             monkeypatch.setattr(widgets, "_IS_NCURSES", is_ncurses)
+            monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: is_utf8)
             wrapped = widgets.wrap_text([text], 20)
             assert "".join(wrapped) == text  # no character lost or reordered
             for line in wrapped:
                 assert widgets._line_width(line) <= 20
 
     def test_nothing_never_exceeds_width(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        for is_ncurses in (True, False):
+        for is_ncurses, is_utf8 in ((True, True), (False, False)):
             monkeypatch.setattr(widgets, "_IS_NCURSES", is_ncurses)
+            monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: is_utf8)
             lines = [
                 "No keys found yet. You can still continue and register keys later via Key "
                 "Management; partitions referencing the keys will fail at sign time until then.",
@@ -131,13 +135,49 @@ class TestWrapText:
                 assert widgets._line_width(line) <= 25
 
     def test_truncate_to_width_never_splits_cjk(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(widgets, "_IS_NCURSES", False)  # PDCurses byte accounting
+        # PDCurses byte accounting: one column per UTF-8 byte.
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: False)
         text = "  AVBPowerTool 主页"
-        out = widgets._truncate_to_width(text, 17)
-        assert widgets._line_width(out) <= 17
+        out = widgets._truncate_to_width(text, 18)
+        assert widgets._line_width(out) <= 18
         assert out == "  AVBPowerTool 主"  # dropped only the trailing 页, never split it
         # A wide enough window keeps the whole string.
         assert widgets._truncate_to_width(text, 30) == text
+
+
+class TestPadCjkLine:
+    def test_pads_cjk_line_on_pdcurses(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # PDCurses writes attributed rows using the string's character count
+        # (1 column per CJK char), so the line must be padded with one
+        # trailing space per CJK char to reach the real column width.
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: False)
+        text = "  AVBPowerTool 主页"  # 2 CJK chars -> 2 trailing spaces
+        real_cells = sum(2 if ord(ch) > 127 else 1 for ch in text)
+        out = widgets._pad_cjk_line(text, 64)
+        assert out == text + "  "
+        # char count now reaches the real column width of the content
+        assert len(out) == real_cells
+
+    def test_no_pad_without_cjk(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: False)
+        assert widgets._pad_cjk_line("hello world", 64) == "hello world"
+
+    def test_no_pad_on_ncurses(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(widgets, "_IS_NCURSES", True)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: True)
+        assert widgets._pad_cjk_line("  AVBPowerTool 主页", 64) == "  AVBPowerTool 主页"
+
+    def test_pad_capped_at_width(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: False)
+        text = "  AVBPowerTool 主页"
+        # No room for padding: line must never exceed cols - 1.
+        assert widgets._pad_cjk_line(text, 18) == text
+        # One column of room -> one trailing space only.
+        assert widgets._pad_cjk_line(text, 19) == text + " "
 
 
 class TestMessageScreenWrapping:
@@ -174,11 +214,15 @@ class TestSelectorWrapping:
         # PDCurses byte accounting must not drop the trailing CJK characters
         # of the title (regression: "AVBPowerTool 主页" lost "页").
         monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: False)
         monkeypatch.setattr(curses, "curs_set", lambda v: None)
         win = FakeWindow(12, 30, [curses.KEY_ENTER])
         SelectorWidget("AVBPowerTool 主页", ["ok"]).run(win)
         title = "".join(text for (row, _x, text) in win.paints[0] if row == 0)
         assert "主页" in title
+        # A_BOLD rows are written by PDCurses using char count, so the CJK
+        # title must be padded with trailing spaces to survive the console.
+        assert title.endswith("  ")
 
     def test_cjk_item_loses_no_characters_on_narrow_pdcurses(
         self, monkeypatch: pytest.MonkeyPatch
@@ -187,6 +231,7 @@ class TestSelectorWrapping:
         # on PDCurses because curses clipped the line at the right edge.
         # Long items must now wrap across rows instead of losing characters.
         monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: False)
         monkeypatch.setattr(curses, "curs_set", lambda v: None)
         item = "[V] 查看当前配置信息"
         win = FakeWindow(12, 24, [curses.KEY_ENTER])
@@ -196,6 +241,18 @@ class TestSelectorWrapping:
         )
         assert "查看当前配置信息" in body.replace(" ", "")
         assert all(len(text) <= 23 for (_row, _x, text) in win.paints[0])
+
+    def test_current_item_padded_on_pdcurses(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The highlighted (A_REVERSE) item is drawn with the ConPTY padding
+        # workaround so its trailing CJK survives the console write.
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: False)
+        monkeypatch.setattr(curses, "curs_set", lambda v: None)
+        win = FakeWindow(12, 40, [curses.KEY_ENTER])
+        SelectorWidget("标题", ["[V] 查看当前配置信息"]).run(win)
+        row2 = "".join(text for (row, _x, text) in win.paints[0] if row == 2)
+        assert "查看当前配置信息" in row2
+        assert row2.endswith("        ")  # 8 CJK chars -> 8 trailing spaces
 
 
 class TestMessageScreenScrolling:
