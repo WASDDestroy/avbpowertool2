@@ -25,14 +25,10 @@ def _setup_profile(profiles: Path, profile_id: str) -> None:
         "key_store_path": "keys",
         "partitions": {},
     }
-    (profile_dir / "profile.json").write_text(
-        json.dumps(profile, indent=2), encoding="utf-8"
-    )
+    (profile_dir / "profile.json").write_text(json.dumps(profile, indent=2), encoding="utf-8")
     (key_dir / "test.pem").write_text("fake key", encoding="utf-8")
     manifest = {"testkey": {"private_key": "test.pem"}}
-    (key_dir / "manifest.json").write_text(
-        json.dumps(manifest, indent=2), encoding="utf-8"
-    )
+    (key_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
 class TestArchiveRepositoryExport:
@@ -100,6 +96,7 @@ class TestArchiveRepositoryImport:
 
         # Delete original and re-import
         import shutil
+
         shutil.rmtree(profiles / "original")
 
         profile_id = repo.import_profile(archive)

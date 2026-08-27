@@ -30,9 +30,7 @@ def _write_profile(ws: WorkspacePaths, profile: AvbProfile) -> None:
     profile_dir.mkdir(parents=True, exist_ok=True)
     (profile_dir / "keys").mkdir(exist_ok=True)
     data = encode_profile(profile)
-    (profile_dir / "profile.json").write_text(
-        json.dumps(data, indent=2), encoding="utf-8"
-    )
+    (profile_dir / "profile.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 class TestProfileRepositoryLoad:

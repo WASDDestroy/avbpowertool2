@@ -22,15 +22,12 @@ from avbpowertool.infrastructure.persistence.profile_repository import ProfileRe
 def _setup_profiles(tmp_path: Path) -> WorkspacePaths:
     ws = WorkspacePaths.discover(tmp_path)
     ws.ensure_dirs()
-    repo = ProfileRepository(ws)
     for pid, name in [("alpha", "Alpha"), ("beta", "Beta")]:
         profile_dir = ws.resolve_profile_dir(pid)
         profile_dir.mkdir(parents=True, exist_ok=True)
         (profile_dir / "keys").mkdir()
         data = encode_profile(AvbProfile(id=pid, name=name))
-        (profile_dir / "profile.json").write_text(
-            json.dumps(data, indent=2), encoding="utf-8"
-        )
+        (profile_dir / "profile.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
     return ws
 
 

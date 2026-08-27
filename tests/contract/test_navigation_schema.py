@@ -12,7 +12,9 @@ class TestNavigationSchema:
     """Validate the production navigation.json."""
 
     def _get_nav_file(self) -> Path:
-        return Path(__file__).parent.parent.parent / "avbpowertool" / "resources" / "navigation.json"
+        return (
+            Path(__file__).parent.parent.parent / "avbpowertool" / "resources" / "navigation.json"
+        )
 
     def test_navigation_loads(self) -> None:
         router = Router(self._get_nav_file())

@@ -11,18 +11,16 @@ from avbpowertool.domain.models import DescriptorType
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from tests.conftest import FIXTURES_DIR, FakeAvbTool
 
-SAMPLE_HASH = (FIXTURES_DIR / "avbtool_output" / "hash_descriptor.txt").read_text(
-    encoding="utf-8"
-)
+SAMPLE_HASH = (FIXTURES_DIR / "avbtool_output" / "hash_descriptor.txt").read_text(encoding="utf-8")
 SAMPLE_VBMETA = (FIXTURES_DIR / "avbtool_output" / "vbmeta_no_descriptors.txt").read_text(
     encoding="utf-8"
 )
 SAMPLE_VBMETA_WITH_DESCS = (
     FIXTURES_DIR / "avbtool_output" / "vbmeta_with_descriptors.txt"
 ).read_text(encoding="utf-8")
-SAMPLE_VBMETA_WITH_CHAIN = (
-    FIXTURES_DIR / "avbtool_output" / "vbmeta_with_chain.txt"
-).read_text(encoding="utf-8")
+SAMPLE_VBMETA_WITH_CHAIN = (FIXTURES_DIR / "avbtool_output" / "vbmeta_with_chain.txt").read_text(
+    encoding="utf-8"
+)
 SAMPLE_NO_FOOTER = (
     "usage: avbtool info_image ...\n"
     "avbtool.py: error: Given image does not look like a vbmeta image.\n"
@@ -47,9 +45,7 @@ class TestInspectImagesUseCase:
         ws = _make_workspace(tmp_path)
         (ws.images / "boot.img").write_bytes(b"fake boot image")
 
-        fake_avb = FakeAvbTool(
-            {"inspect_image": AvbToolResult(0, SAMPLE_HASH, "", "info_image")}
-        )
+        fake_avb = FakeAvbTool({"inspect_image": AvbToolResult(0, SAMPLE_HASH, "", "info_image")})
         uc = InspectImagesUseCase(ws, fake_avb)
         result = uc.execute(InspectImagesRequest(image_names=("boot",)))
 
@@ -72,9 +68,7 @@ class TestInspectImagesUseCase:
         ws = _make_workspace(tmp_path)
         (ws.images / "vbmeta.img").write_bytes(b"fake vbmeta")
 
-        fake_avb = FakeAvbTool(
-            {"inspect_image": AvbToolResult(0, SAMPLE_VBMETA, "", "info_image")}
-        )
+        fake_avb = FakeAvbTool({"inspect_image": AvbToolResult(0, SAMPLE_VBMETA, "", "info_image")})
         uc = InspectImagesUseCase(ws, fake_avb)
         result = uc.execute(InspectImagesRequest(image_names=("vbmeta",)))
 
@@ -89,11 +83,7 @@ class TestInspectImagesUseCase:
         (ws.images / "vbmeta.img").write_bytes(b"fake vbmeta")
 
         fake_avb = FakeAvbTool(
-            {
-                "inspect_image": AvbToolResult(
-                    0, SAMPLE_VBMETA_WITH_DESCS, "", "info_image"
-                )
-            }
+            {"inspect_image": AvbToolResult(0, SAMPLE_VBMETA_WITH_DESCS, "", "info_image")}
         )
         uc = InspectImagesUseCase(ws, fake_avb)
         result = uc.execute(InspectImagesRequest(image_names=("vbmeta",)))
@@ -106,9 +96,7 @@ class TestInspectImagesUseCase:
         assert img.included_partitions == ("dtbo", "init_boot")
         assert img.algorithm == "SHA256_RSA4096"
         assert img.flags == "2"
-        assert any(
-            k == "com.android.build.dtbo.fingerprint" for k, _v in img.props
-        )
+        assert any(k == "com.android.build.dtbo.fingerprint" for k, _v in img.props)
 
     def test_inspect_vbmeta_chain_partitions_separated(self, tmp_path: Path) -> None:
         """Chain-partition descriptors must not leak into included_partitions."""
@@ -116,11 +104,7 @@ class TestInspectImagesUseCase:
         (ws.images / "vbmeta.img").write_bytes(b"fake vbmeta")
 
         fake_avb = FakeAvbTool(
-            {
-                "inspect_image": AvbToolResult(
-                    0, SAMPLE_VBMETA_WITH_CHAIN, "", "info_image"
-                )
-            }
+            {"inspect_image": AvbToolResult(0, SAMPLE_VBMETA_WITH_CHAIN, "", "info_image")}
         )
         uc = InspectImagesUseCase(ws, fake_avb)
         result = uc.execute(InspectImagesRequest(image_names=("vbmeta",)))
@@ -166,9 +150,7 @@ class TestInspectImagesUseCase:
         ws = _make_workspace(tmp_path)
         (ws.images / "boot.img").write_bytes(b"fake boot image")
 
-        fake_avb = FakeAvbTool(
-            {"inspect_image": AvbToolResult(0, SAMPLE_HASH, "", "info_image")}
-        )
+        fake_avb = FakeAvbTool({"inspect_image": AvbToolResult(0, SAMPLE_HASH, "", "info_image")})
         uc = InspectImagesUseCase(ws, fake_avb)
         uc.execute(InspectImagesRequest(image_names=("boot",), with_cert=True))
 
@@ -182,9 +164,7 @@ class TestInspectImagesUseCase:
         (ws.images / "boot.img").write_bytes(b"fake boot")
         (ws.images / "vbmeta.img").write_bytes(b"fake vbmeta")
 
-        fake_avb = FakeAvbTool(
-            {"inspect_image": AvbToolResult(0, SAMPLE_HASH, "", "info_image")}
-        )
+        fake_avb = FakeAvbTool({"inspect_image": AvbToolResult(0, SAMPLE_HASH, "", "info_image")})
         uc = InspectImagesUseCase(ws, fake_avb)
         result = uc.execute(InspectImagesRequest(image_names=("boot", "vbmeta")))
 

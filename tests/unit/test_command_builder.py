@@ -228,9 +228,7 @@ class TestBuildVbmetaCommand:
         assert "vbmeta_system:1:sys_key.pem" in cmd
 
     def test_none_omits_algorithm_and_key(self) -> None:
-        config = self._make_vbmeta_config(
-            algorithm=SigningAlgorithm.NONE, key_id=""
-        )
+        config = self._make_vbmeta_config(algorithm=SigningAlgorithm.NONE, key_id="")
         cmd = build_vbmeta_command(_p("/staging/vbmeta.img"), config)
         assert "--algorithm" not in cmd
         assert "--key" not in cmd

@@ -72,9 +72,7 @@ class TestBuildAutoPartition:
         assert config.partition_size == 8192
 
     def test_signed_algorithm_mapped(self, tmp_path: Path) -> None:
-        config = _build_auto_partition(
-            _inspection(algorithm="SHA256_RSA4096"), tmp_path
-        )
+        config = _build_auto_partition(_inspection(algorithm="SHA256_RSA4096"), tmp_path)
         assert config is not None
         assert config.algorithm == SigningAlgorithm.SHA256_RSA4096
 
@@ -95,16 +93,12 @@ class TestBuildAutoPartition:
         assert config.set_verification_disabled_flag is True
 
     def test_hash_algorithm_clamped(self, tmp_path: Path) -> None:
-        config = _build_auto_partition(
-            _inspection(hash_algorithm="foobar"), tmp_path
-        )
+        config = _build_auto_partition(_inspection(hash_algorithm="foobar"), tmp_path)
         assert config is not None
         assert config.hash_algorithm == "sha256"
 
     def test_hash_algorithm_missing_defaults(self, tmp_path: Path) -> None:
-        config = _build_auto_partition(
-            _inspection(hash_algorithm=None), tmp_path
-        )
+        config = _build_auto_partition(_inspection(hash_algorithm=None), tmp_path)
         assert config is not None
         assert config.hash_algorithm == "sha256"
 
@@ -208,9 +202,7 @@ class TestFinalizeVbmetaIncludes:
         partitions = _finalize_vbmeta_includes(by_image, {})
         vbmeta = next(p for p in partitions if p.partition_name == "vbmeta")
         assert vbmeta.included_partitions == ("boot",)
-        vbmeta_system = next(
-            p for p in partitions if p.partition_name == "vbmeta_system"
-        )
+        vbmeta_system = next(p for p in partitions if p.partition_name == "vbmeta_system")
         assert vbmeta_system.included_partitions == ("boot",)
 
     def test_no_image_entries_are_lost(self) -> None:
@@ -284,9 +276,7 @@ class TestCollectPartitionsAutoEmptyInput:
             return ""  # user pressed Enter without typing anything
 
         monkeypatch.setattr(create_config_view, "input_prompt", fake_input)
-        monkeypatch.setattr(
-            create_config_view, "message_screen", lambda *a, **k: None
-        )
+        monkeypatch.setattr(create_config_view, "message_screen", lambda *a, **k: None)
         fake_avb = FakeAvbTool(
             {"inspect_image": AvbToolResult(0, sample_hash_output, "", "info_image")}
         )
@@ -317,12 +307,8 @@ class TestCollectPartitionsAutoEmptyInput:
         (custom / "dtbo.img").write_bytes(b"x" * 4096)
         (ws.images / "boot.img").write_bytes(b"workspace image")
 
-        monkeypatch.setattr(
-            create_config_view, "input_prompt", lambda _s, _p: str(custom)
-        )
-        monkeypatch.setattr(
-            create_config_view, "message_screen", lambda *a, **k: None
-        )
+        monkeypatch.setattr(create_config_view, "input_prompt", lambda _s, _p: str(custom))
+        monkeypatch.setattr(create_config_view, "message_screen", lambda *a, **k: None)
         # Any inspection fails (image resolves to workspace Images/, which
         # has no dtbo.img) — but the flow must still scan the typed dir and
         # return a list, never abort with None.
@@ -362,9 +348,7 @@ class TestApplyChainResolutions:
         by_image = {
             "vbmeta.img": _config("vbmeta.img", "vbmeta", DescriptorType.VBMETA),
         }
-        chains = {
-            "vbmeta.img": (ChainDescriptor("vbmeta_system", "1", "a" * 40),)
-        }
+        chains = {"vbmeta.img": (ChainDescriptor("vbmeta_system", "1", "a" * 40),)}
         resolutions = (ChainKeyResolution(entry=""),)
         result = _apply_chain_resolutions(by_image, chains, resolutions)
         assert result["vbmeta.img"].chain_partitions == ()

@@ -110,7 +110,9 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     message_screen(stdscr_c, _("config.wizard.result_title"), lines)
 
 
-def _prepare_keys(stdscr: curses.window, ws: WorkspacePaths, avb: AvbToolPort, profile_id: str) -> list[str]:
+def _prepare_keys(
+    stdscr: curses.window, ws: WorkspacePaths, avb: AvbToolPort, profile_id: str
+) -> list[str]:
     """Ensure the key store exists and run key discovery.
 
     Runs BEFORE any image is scanned or any partition is collected, so
@@ -140,6 +142,7 @@ def _prepare_keys(stdscr: curses.window, ws: WorkspacePaths, avb: AvbToolPort, p
 
     result = KeyDiscoveryUseCase(ws).execute(KeyDiscoveryRequest(profile_id=profile_id))
     from avbpowertool.application.services.manage_keys import ensure_public_keys
+
     public_key_issues = ensure_public_keys(ws, avb, profile_id)
 
     lines = [_("config.wizard.key_discovered", count=result.discovered_count)]
@@ -336,6 +339,7 @@ def _collect_partitions_auto(
 
 
 _VALID_HASH_ALGORITHMS = ("sha1", "sha256", "sha512")
+
 
 def _key_for_algorithm(algorithm: str | None, available: list[str], default: str) -> str:
     """Select an RSA key matching the inspected image algorithm size."""

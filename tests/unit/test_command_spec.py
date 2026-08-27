@@ -32,9 +32,7 @@ class TestCommandRegistry:
         for command_id, spec in COMMANDS.items():
             for arg in list(spec.inputs) + list(spec.outputs) + list(spec.args):
                 if arg.config_field and arg.config_field not in allowed:
-                    raise AssertionError(
-                        f"{command_id}: unknown config field {arg.config_field!r}"
-                    )
+                    raise AssertionError(f"{command_id}: unknown config field {arg.config_field!r}")
 
 
 class TestAddHashFooterSpec:

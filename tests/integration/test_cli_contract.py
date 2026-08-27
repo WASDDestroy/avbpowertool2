@@ -107,6 +107,7 @@ class TestJsonOutput:
             code = main(["config", "list", "--json"], out=out)
             output = out.getvalue()
             data = json.loads(output)
+            assert code == 0
             assert "profiles" in data
             assert isinstance(data["profiles"], list)
         finally:

@@ -28,7 +28,11 @@ def bootstrap(root: Path | None = None, language: str = "en") -> WorkspacePaths:
 
     log_path = ws.logs / "avbpowertool.log"
     root_logger = logging.getLogger()
-    if not any(isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", "") == str(log_path.resolve()) for h in root_logger.handlers):
+    if not any(
+        isinstance(h, logging.FileHandler)
+        and getattr(h, "baseFilename", "") == str(log_path.resolve())
+        for h in root_logger.handlers
+    ):
         handler = logging.FileHandler(log_path, encoding="utf-8")
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
         root_logger.addHandler(handler)

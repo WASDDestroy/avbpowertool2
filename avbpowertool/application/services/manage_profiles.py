@@ -118,7 +118,11 @@ class ProfileDeleteUseCase:
         if repo.get_active_profile_id() == request.profile_id:
             return ProfileDeleteResult(
                 request.profile_id,
-                (OperationIssue("config.active_delete_forbidden", "Cannot delete the active profile"),),
+                (
+                    OperationIssue(
+                        "config.active_delete_forbidden", "Cannot delete the active profile"
+                    ),
+                ),
             )
         try:
             repo.delete(request.profile_id)

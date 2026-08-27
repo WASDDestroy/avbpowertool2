@@ -25,7 +25,9 @@ class TestDescriptorType:
         assert DescriptorType.from_avbtool_label("Hashtree descriptor") == DescriptorType.HASHTREE
 
     def test_from_avbtool_label_chain_partition(self) -> None:
-        assert DescriptorType.from_avbtool_label("Chain Partition descriptor") == DescriptorType.VBMETA
+        assert (
+            DescriptorType.from_avbtool_label("Chain Partition descriptor") == DescriptorType.VBMETA
+        )
 
     def test_from_avbtool_label_unknown_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown descriptor label"):

@@ -115,9 +115,7 @@ class TestRouter:
 
     def test_validate_catches_missing_route(self, tmp_path: Path) -> None:
         nav = _make_nav()
-        nav["routes"]["route:home"]["items"].append(
-            {"route": "route:nonexistent", "shortcut": "X"}
-        )
+        nav["routes"]["route:home"]["items"].append({"route": "route:nonexistent", "shortcut": "X"})
         nav_file = _write_nav(tmp_path, nav)
         router = Router(nav_file)
         errors = router.validate()

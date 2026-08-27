@@ -17,7 +17,6 @@ from avbpowertool.domain.models import AvbProfile, DescriptorType, PartitionConf
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.infrastructure.persistence.profile_codec import encode_profile
 from avbpowertool.infrastructure.persistence.profile_repository import ProfileRepository
-from tests.conftest import sample_profile_v2  # noqa: F401
 
 
 def _setup_workspace(tmp_path: Path) -> WorkspacePaths:
@@ -30,9 +29,7 @@ def _write_profile_json(ws: WorkspacePaths, profile_id: str, data: dict) -> None
     profile_dir = ws.resolve_profile_dir(profile_id)
     profile_dir.mkdir(parents=True, exist_ok=True)
     (profile_dir / "keys").mkdir(exist_ok=True)
-    (profile_dir / "profile.json").write_text(
-        json.dumps(data, indent=2), encoding="utf-8"
-    )
+    (profile_dir / "profile.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 class TestConfigMigrateUseCase:
@@ -70,9 +67,7 @@ class TestConfigMigrateUseCase:
         result = uc.execute(ConfigMigrateRequest(profile_id="legacy"))
 
         assert result.migrated is True
-        assert any(
-            i.error_code == "migrate.v2_to_v3.block_size_conflict" for i in result.issues
-        )
+        assert any(i.error_code == "migrate.v2_to_v3.block_size_conflict" for i in result.issues)
 
     def test_v3_profile_is_not_rewritten(self, tmp_path: Path) -> None:
         ws = _setup_workspace(tmp_path)
@@ -174,9 +169,7 @@ class TestConfigEditUseCase:
         self._save(ws, self._profile_with_partitions())
 
         uc = ConfigEditUseCase(ws)
-        result = uc.execute(
-            ConfigEditRequest(partition_name="boot", updates={"nonexistent": "1"})
-        )
+        result = uc.execute(ConfigEditRequest(partition_name="boot", updates={"nonexistent": "1"}))
         assert any(i.error_code == "config.invalid_field" for i in result.issues)
 
     def test_missing_partition(self, tmp_path: Path) -> None:
@@ -184,9 +177,7 @@ class TestConfigEditUseCase:
         self._save(ws, self._profile_with_partitions())
 
         uc = ConfigEditUseCase(ws)
-        result = uc.execute(
-            ConfigEditRequest(partition_name="vendor", updates={"flags": "0"})
-        )
+        result = uc.execute(ConfigEditRequest(partition_name="vendor", updates={"flags": "0"}))
         assert any(i.error_code == "config.partition_missing" for i in result.issues)
 
     def test_bad_int_value_rejected(self, tmp_path: Path) -> None:

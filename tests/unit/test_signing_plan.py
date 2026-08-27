@@ -450,7 +450,15 @@ class TestSigningPlanBuilder:
         chain_idx = cmd.index("--chain_partition")
         chain_entry = cmd[chain_idx + 1]
         # The public-key segment must be resolved against the key store dir
-        assert chain_entry == (f"vbmeta_system:1:{key_dir / 'testkey_rsa4096_pub.bin'}")
+        # and expressed as a workspace-relative POSIX path (portable on Windows,
+        # where the absolute path would contain a drive-letter ':').
+        expected_key = (
+            (key_dir / "testkey_rsa4096_pub.bin")
+            .resolve()
+            .relative_to(key_dir.parents[2].resolve())
+            .as_posix()
+        )
+        assert chain_entry == f"vbmeta_system:1:{expected_key}"
 
     def test_chain_absolute_key_kept(self, tmp_path: Path) -> None:
         _setup_workspace(tmp_path)
@@ -480,7 +488,10 @@ class TestSigningPlanBuilder:
         assert len(plan.steps) == 1
         cmd = plan.steps[0].command
         chain_idx = cmd.index("--chain_partition")
-        assert cmd[chain_idx + 1] == f"vbmeta_system:1:{abs_key}"
+        # Absolute keys are normalized to a workspace-relative POSIX path so the
+        # avbtool triple stays colon-free on Windows (no drive-letter ':').
+        expected_key = abs_key.resolve().relative_to(key_dir.parents[2].resolve()).as_posix()
+        assert cmd[chain_idx + 1] == f"vbmeta_system:1:{expected_key}"
 
     def test_vbmeta_props_emitted_when_requested(self, tmp_path: Path) -> None:
         _setup_workspace(tmp_path)

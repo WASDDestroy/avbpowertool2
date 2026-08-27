@@ -82,7 +82,9 @@ class TestResolveChainKeys:
         assert result.issues == ()
         assert len(result.resolutions) == 1
         res = result.resolutions[0]
-        assert res.entry == "vbmeta_system:1:key.pem"
+        # The manifest has no public_key field, so the derived public-key
+        # basename (private name + ".bin") is used in the chain entry.
+        assert res.entry == "vbmeta_system:1:key.pem.bin"
         assert res.key_id == "default"
 
     def test_unmatched_key_reports_issue_and_empty_entry(self, tmp_path: Path) -> None:
@@ -117,8 +119,8 @@ class TestResolveChainKeys:
         )
 
         assert [r.entry for r in result.resolutions] == [
-            "vbmeta_system:1:key.pem",
-            "vbmeta_vendor:2:key.pem",
+            "vbmeta_system:1:key.pem.bin",
+            "vbmeta_vendor:2:key.pem.bin",
         ]
 
     def test_no_chains_returns_empty(self, tmp_path: Path) -> None:
@@ -148,9 +150,7 @@ class TestResolveChainKeys:
         assert result.resolutions[0].entry == ""
         assert any(i.error_code == "chain.key_not_found" for i in result.issues)
 
-    def test_discovered_keys_resolve_after_wizard_prepares_store(
-        self, tmp_path: Path
-    ) -> None:
+    def test_discovered_keys_resolve_after_wizard_prepares_store(self, tmp_path: Path) -> None:
         """The wizard runs key discovery before scanning images; chains must
         then resolve against the manifest discovery just wrote."""
         ws = WorkspacePaths(
@@ -167,9 +167,7 @@ class TestResolveChainKeys:
         key_dir.mkdir(parents=True, exist_ok=True)
         (key_dir / "release.pem").write_text("fake key", encoding="utf-8")
 
-        discovery = KeyDiscoveryUseCase(ws).execute(
-            KeyDiscoveryRequest(profile_id="my_device")
-        )
+        discovery = KeyDiscoveryUseCase(ws).execute(KeyDiscoveryRequest(profile_id="my_device"))
         assert discovery.discovered_count == 1
         assert discovery.manifest_entries == (("release", "release.pem"),)
 
@@ -180,4 +178,4 @@ class TestResolveChainKeys:
             )
         )
         assert resolution.issues == ()
-        assert resolution.resolutions[0].entry == "vbmeta_system:1:release.pem"
+        assert resolution.resolutions[0].entry == "vbmeta_system:1:release.pem.bin"

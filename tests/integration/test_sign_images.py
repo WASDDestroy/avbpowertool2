@@ -62,14 +62,10 @@ def _setup_profile(tmp_path: Path) -> WorkspacePaths:
 class TestSignImagesUseCase:
     def test_dry_run_produces_plan(self, tmp_path: Path) -> None:
         ws = _setup_profile(tmp_path)
-        fake_avb = FakeAvbTool(
-            {"add_hash_footer": AvbToolResult(0, "", "", "add_hash_footer")}
-        )
+        fake_avb = FakeAvbTool({"add_hash_footer": AvbToolResult(0, "", "", "add_hash_footer")})
         uc = SignImagesUseCase(ws, fake_avb)
         result = uc.execute(
-            SignImagesRequest(
-                image_names=("boot",), profile_id="current", dry_run=True
-            )
+            SignImagesRequest(image_names=("boot",), profile_id="current", dry_run=True)
         )
 
         assert not result.executed
@@ -78,14 +74,10 @@ class TestSignImagesUseCase:
 
     def test_real_signing_executes(self, tmp_path: Path) -> None:
         ws = _setup_profile(tmp_path)
-        fake_avb = FakeAvbTool(
-            {"add_hash_footer": AvbToolResult(0, "", "", "add_hash_footer")}
-        )
+        fake_avb = FakeAvbTool({"add_hash_footer": AvbToolResult(0, "", "", "add_hash_footer")})
         uc = SignImagesUseCase(ws, fake_avb)
         result = uc.execute(
-            SignImagesRequest(
-                image_names=("boot",), profile_id="current", dry_run=False
-            )
+            SignImagesRequest(image_names=("boot",), profile_id="current", dry_run=False)
         )
 
         assert result.executed
@@ -99,9 +91,7 @@ class TestSignImagesUseCase:
         )
         uc = SignImagesUseCase(ws, fake_avb)
         result = uc.execute(
-            SignImagesRequest(
-                image_names=("boot",), profile_id="current", dry_run=False
-            )
+            SignImagesRequest(image_names=("boot",), profile_id="current", dry_run=False)
         )
 
         assert result.executed
@@ -113,9 +103,7 @@ class TestSignImagesUseCase:
         ws = _setup_profile(tmp_path)
         fake_avb = FakeAvbTool()
         uc = SignImagesUseCase(ws, fake_avb)
-        result = uc.execute(
-            SignImagesRequest(image_names=("boot",), profile_id="nonexistent")
-        )
+        result = uc.execute(SignImagesRequest(image_names=("boot",), profile_id="nonexistent"))
 
         assert not result.executed
         assert any(i.error_code == "config.not_found" for i in result.issues)
@@ -125,9 +113,7 @@ class TestSignImagesUseCase:
         fake_avb = FakeAvbTool()
         uc = SignImagesUseCase(ws, fake_avb)
         result = uc.execute(
-            SignImagesRequest(
-                image_names=("nonexistent",), profile_id="current", dry_run=True
-            )
+            SignImagesRequest(image_names=("nonexistent",), profile_id="current", dry_run=True)
         )
 
         assert not result.executed

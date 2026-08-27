@@ -49,7 +49,11 @@ class ResolveChainKeysUseCase:
             key_path = key_dir / filename
             if not key_path.exists():
                 continue
-            public_key = Path(entry.get("public_key", "")) if entry.get("public_key") else key_path.with_name(key_path.name + ".bin")
+            public_key = (
+                Path(entry.get("public_key", ""))
+                if entry.get("public_key")
+                else key_path.with_name(key_path.name + ".bin")
+            )
             if not public_key.is_absolute():
                 public_key = key_dir / public_key
             digest = self._public_key_sha1(key_path, public_key)

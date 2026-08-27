@@ -118,9 +118,7 @@ def tmp_workspace(tmp_path: Path) -> Path:
             },
         },
     }
-    (profile_dir / "profile.json").write_text(
-        json.dumps(profile, indent=2), encoding="utf-8"
-    )
+    (profile_dir / "profile.json").write_text(json.dumps(profile, indent=2), encoding="utf-8")
 
     manifest = {
         "testkey_rsa4096": {
@@ -129,9 +127,7 @@ def tmp_workspace(tmp_path: Path) -> Path:
             "public_key_sha1": "cd2c1e5e3c4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b",
         }
     }
-    (key_dir / "manifest.json").write_text(
-        json.dumps(manifest, indent=2), encoding="utf-8"
-    )
+    (key_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     return ws
 
