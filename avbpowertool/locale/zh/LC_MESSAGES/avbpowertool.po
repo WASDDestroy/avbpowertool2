@@ -404,3 +404,6 @@ msgstr "退出"
 
 msgid "Back"
 msgstr "返回"
+
+msgid "input.help"
+msgstr "左右方向键/Home/End: 移动光标  退格/Delete: 删除  Ctrl+U: 清空  Enter: 确认  Esc: 取消"

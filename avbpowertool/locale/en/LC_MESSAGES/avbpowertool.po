@@ -404,3 +404,6 @@ msgstr "Exit"
 
 msgid "Back"
 msgstr "Back"
+
+msgid "input.help"
+msgstr "Left/Right/Home/End: Move cursor  Backspace/Delete: Erase  Ctrl+U: Clear  Enter: Confirm  Esc: Cancel"

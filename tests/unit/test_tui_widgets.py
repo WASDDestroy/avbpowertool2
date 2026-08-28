@@ -1,4 +1,4 @@
-"""Tests for the TUI widgets — scrollable message screen."""
+"""Tests for the TUI widgets - message screen, selector and input prompt."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import pytest
 from avbpowertool.presentation.tui import widgets
 from avbpowertool.presentation.tui.widgets import (
     SelectorWidget,
+    input_prompt,
     message_screen,
     wrap_text,
 )
@@ -44,6 +45,15 @@ class FakeWindow:
         if not self._keys:
             return 27  # Esc
         return self._keys.pop(0)
+
+    def get_wch(self) -> int | str:
+        # Mirror get_wch semantics: characters (including CJK codepoints)
+        # and control keys arrive as str; curses KEY_* codes (0x100..0x1FF)
+        # stay int.
+        key = self.getch()
+        if 0x100 <= key < 0x200:
+            return key
+        return chr(key)
 
 
 def _run_message_screen(
@@ -114,7 +124,7 @@ class TestWrapText:
         text = "中文消息很长很长需要被正确地折行并且不丢失任何字符abcdefg中文"
         for is_ncurses, is_utf8 in ((True, True), (False, False)):
             monkeypatch.setattr(widgets, "_IS_NCURSES", is_ncurses)
-            monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: is_utf8)
+            monkeypatch.setattr(widgets, "_utf8_locale_active", lambda is_utf8=is_utf8: is_utf8)
             wrapped = widgets.wrap_text([text], 20)
             assert "".join(wrapped) == text  # no character lost or reordered
             for line in wrapped:
@@ -123,7 +133,7 @@ class TestWrapText:
     def test_nothing_never_exceeds_width(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for is_ncurses, is_utf8 in ((True, True), (False, False)):
             monkeypatch.setattr(widgets, "_IS_NCURSES", is_ncurses)
-            monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: is_utf8)
+            monkeypatch.setattr(widgets, "_utf8_locale_active", lambda is_utf8=is_utf8: is_utf8)
             lines = [
                 "No keys found yet. You can still continue and register keys later via Key "
                 "Management; partitions referencing the keys will fail at sign time until then.",
@@ -345,3 +355,169 @@ class TestMessageScreenScrolling:
         lines = [f"line {i}" for i in range(20)]
         win = _run_message_screen(monkeypatch, lines, keys=[27])
         assert len(win.paints) == 1
+
+
+class _NarrowWindow(FakeWindow):
+    """Window without get_wch: models narrow ncurses (byte-wise getch)."""
+
+    get_wch = None  # type: ignore[assignment]
+
+
+def _run_input(
+    monkeypatch: pytest.MonkeyPatch,
+    keys: list[int],
+    cols: int = 40,
+    rows: int = 6,
+    prompt: str = "Enter value:",
+) -> tuple[FakeWindow, str]:
+    monkeypatch.setattr(curses, "curs_set", lambda v: None)
+    win = FakeWindow(rows, cols, keys)
+    text = input_prompt(win, prompt)  # type: ignore[arg-type]
+    return win, text
+
+
+class TestInputPrompt:
+    """Editing behaviour of the rewritten input_prompt."""
+
+    def test_plain_typing_and_enter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        win, text = _run_input(monkeypatch, [ord("a"), ord("b"), ord("c"), 10])
+        assert text == "abc"
+        assert len(win.paints) == 4  # initial frame + one per character
+
+    def test_enter_key_code_confirms(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _win, text = _run_input(monkeypatch, [ord("x"), curses.KEY_ENTER])
+        assert text == "x"
+
+    def test_esc_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _win, text = _run_input(monkeypatch, [ord("a"), 27])
+        assert text == ""
+
+    def test_backspace_erases(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _win, text = _run_input(monkeypatch, [ord("a"), ord("b"), curses.KEY_BACKSPACE, 10])
+        assert text == "a"
+
+    def test_backspace_control_code_erases(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # get_wch delivers Backspace as the control string -> normalized to 8
+        _win, text = _run_input(monkeypatch, [ord("a"), ord("b"), 8, 10])
+        assert text == "a"
+
+    def test_delete_erases_forward(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _win, text = _run_input(
+            monkeypatch, [ord("a"), ord("b"), curses.KEY_LEFT, curses.KEY_DC, 10]
+        )
+        assert text == "a"
+
+    def test_arrow_keys_move_cursor(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _win, text = _run_input(monkeypatch, [ord("a"), ord("b"), curses.KEY_LEFT, ord("X"), 10])
+        assert text == "aXb"
+
+    def test_home_and_end_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _win, text = _run_input(monkeypatch, [ord("a"), ord("b"), curses.KEY_HOME, ord("X"), 10])
+        assert text == "Xab"
+
+    def test_home_end_control_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Ctrl+A (1) = home, Ctrl+E (5) = end: ab -> Xab -> XabY
+        _win, text = _run_input(monkeypatch, [ord("a"), ord("b"), 1, ord("X"), 5, ord("Y"), 10])
+        assert text == "XabY"
+
+    def test_ctrl_u_clears_line(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # get_wch delivers Ctrl+U as a control string -> normalized to 21
+        _win, text = _run_input(monkeypatch, [ord("a"), ord("b"), 21, ord("c"), 10])
+        assert text == "c"
+
+    def test_left_at_start_is_noop(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _win, text = _run_input(monkeypatch, [curses.KEY_LEFT, ord("a"), 10])
+        assert text == "a"
+
+    def test_right_at_end_is_noop(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _win, text = _run_input(monkeypatch, [ord("a"), curses.KEY_RIGHT, 10])
+        assert text == "a"
+
+    def test_result_is_stripped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _win, text = _run_input(monkeypatch, [ord(" "), ord("a"), ord(" "), 10])
+        assert text == "a"
+
+    def test_inline_cursor_cell_drawn(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # "ab" then Left: the caret sits on "b" at column 1 and is drawn
+        # in place (the FakeWindow records the reverse-video cell as a
+        # single-char addstr at the caret column).
+        win, _text = _run_input(monkeypatch, [ord("a"), ord("b"), curses.KEY_LEFT])
+        calls = [(x, t) for (y, x, t) in win.paints[-1] if y == 1]
+        assert (1, "b") in calls
+
+    def test_empty_text_cursor_at_start(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        win, _text = _run_input(monkeypatch, [10])
+        calls = [(x, t) for (y, x, t) in win.paints[0] if y == 1]
+        assert (0, " ") in calls
+
+    def test_long_text_scrolls_and_keeps_tail_visible(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        word = "abcdefghij"
+        keys = [ord(c) for _ in range(5) for c in word] + [10]
+        win, text = _run_input(monkeypatch, keys, cols=21)  # avail = 20
+        assert text == word * 5
+        edit_line = "".join(t for (y, _x, t) in win.paints[-1] if y == 1)
+        assert edit_line.startswith("<")
+        assert "j" in edit_line  # tail of the text stays visible
+
+    def test_scrolled_caret_moves_with_arrow_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        word = "abcdefghij"
+        keys = [ord(c) for _ in range(5) for c in word]
+        keys += [curses.KEY_LEFT] * 15 + [10]
+        win, text = _run_input(monkeypatch, keys, cols=21)
+        assert text == word * 5
+        edit_line = "".join(t for (y, _x, t) in win.paints[-1] if y == 1)
+        assert edit_line.startswith("<")
+
+    def test_home_scrolls_back_to_start(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        word = "abcdefghij"
+        keys = [ord(c) for _ in range(5) for c in word] + [curses.KEY_HOME, 10]
+        win, _text = _run_input(monkeypatch, keys, cols=21)
+        edit_line = "".join(t for (y, _x, t) in win.paints[-1] if y == 1)
+        assert edit_line.startswith(word)
+
+    def test_cjk_input_via_get_wch(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _win, text = _run_input(monkeypatch, [ord("中"), ord("文"), 10])
+        assert text == "中文"
+
+    def test_cjk_caret_column_on_pdcurses(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # PDCurses counts one cell per character: a caret between two CJK
+        # characters sits at column 1.
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: False)
+        win, _text = _run_input(
+            monkeypatch, [ord("中"), ord("中"), curses.KEY_LEFT], prompt="输入："
+        )
+        calls = [(x, t) for (y, x, t) in win.paints[-1] if y == 1]
+        assert (1, "中") in calls
+
+    def test_cjk_caret_column_on_ncurses(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # ncurses with a UTF-8 locale counts 2 columns per CJK character:
+        # a caret between two CJK characters sits at column 2.
+        monkeypatch.setattr(widgets, "_IS_NCURSES", True)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: True)
+        win, _text = _run_input(
+            monkeypatch, [ord("中"), ord("中"), curses.KEY_LEFT], prompt="输入："
+        )
+        calls = [(x, t) for (y, x, t) in win.paints[-1] if y == 1]
+        assert (2, "中") in calls
+
+    def test_narrow_getch_assembles_utf8_bytes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Narrow ncurses getch delivers a UTF-8 sequence one byte at a time.
+        monkeypatch.setattr(curses, "curs_set", lambda v: None)
+        keys = list("中".encode()) + [10]
+        win = _NarrowWindow(6, 40, keys)
+        text = input_prompt(win, "输入：")  # type: ignore[arg-type]
+        assert text == "中"
+
+    def test_narrow_getch_printable_int_keys_are_inserted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Regression: narrow ncurses getch delivers printable ASCII as int
+        # key codes; the dispatch chain used to drop them silently.
+        monkeypatch.setattr(curses, "curs_set", lambda v: None)
+        keys = [ord(c) for c in "abc"] + [curses.KEY_LEFT, ord("X"), 10]
+        win = _NarrowWindow(6, 40, keys)
+        text = input_prompt(win, "Enter value:")  # type: ignore[arg-type]
+        assert text == "abXc"

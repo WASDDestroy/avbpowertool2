@@ -10,6 +10,9 @@ import curses
 import locale
 import unicodedata
 from collections.abc import Sequence
+from typing import NamedTuple
+
+from avbpowertool.presentation.i18n import _
 
 # PDCurses (windows-curses on Windows) accounts a line's width as one column
 # per UTF-8 byte (with a 2-column allowance for the trailing multibyte
@@ -31,6 +34,12 @@ def _utf8_locale_active() -> bool:
         return False
     encoding = encoding.upper()
     return "UTF" in encoding or "65001" in encoding
+
+
+def _curs_set(visible: bool) -> None:
+    """Show/hide the hardware cursor; some terminals reject it, so ignore errors."""
+    with contextlib.suppress(curses.error):
+        curses.curs_set(1 if visible else 0)
 
 
 def _counts_real_columns() -> bool:
@@ -379,24 +388,250 @@ def _scroll_from_mouse(top: int, body_rows: int) -> int:
     return top
 
 
-def input_prompt(stdscr: curses.window, prompt: str) -> str:
-    """Show an input prompt. Returns the entered string."""
-    curses.curs_set(1)
-    stdscr.keypad(True)
-    stdscr.clear()
+class _LineEditor:
+    """Line-edit state: a character buffer plus a caret index."""
 
-    _rows, cols = stdscr.getmaxyx()
+    def __init__(self) -> None:
+        self.chars: list[str] = []
+        self.pos = 0  # caret position: 0..len(chars)
+
+    def text(self) -> str:
+        return "".join(self.chars)
+
+    def left(self) -> None:
+        self.pos = max(0, self.pos - 1)
+
+    def right(self) -> None:
+        self.pos = min(len(self.chars), self.pos + 1)
+
+    def home(self) -> None:
+        self.pos = 0
+
+    def end(self) -> None:
+        self.pos = len(self.chars)
+
+    def backspace(self) -> None:
+        if self.pos > 0:
+            self.chars.pop(self.pos - 1)
+            self.pos -= 1
+
+    def delete(self) -> None:
+        if self.pos < len(self.chars):
+            self.chars.pop(self.pos)
+
+    def clear(self) -> None:
+        self.chars.clear()
+        self.pos = 0
+
+    def insert(self, text: str) -> None:
+        for ch in text:
+            self.chars.insert(self.pos, ch)
+            self.pos += 1
+
+
+def _read_key(stdscr: curses.window) -> int | str:
+    """Read one key event: an int key code or a single-character string.
+
+    ``get_wch`` (ncursesw and windows-curses builds) returns whole
+    multi-byte characters as strings and function keys as ints; control
+    characters also arrive as strings there, so they are normalized back
+    to their int codes.  The plain-``getch`` fallback covers narrow
+    ncurses builds that deliver UTF-8 bytes one at a time (function keys
+    are >= 0x100 there, so byte values never collide with them).
+    """
+    get_wch = getattr(stdscr, "get_wch", None)
+    if get_wch is not None:
+        try:
+            key = get_wch()
+        except curses.error:
+            return -1
+        if isinstance(key, str):
+            if len(key) == 1 and (ord(key) < 32 or ord(key) == 0x7F):
+                return ord(key)  # control keys arrive as str: normalize to int
+            return key
+        return int(key)
+
+    key = stdscr.getch()
+    if not 0x80 <= key <= 0xFF:
+        return key  # ASCII, function key code, or error
+
+    if not 0xC2 <= key <= 0xF4:
+        return chr(key)  # stray continuation byte or invalid lead: Latin-1 fallback
+
+    # Narrow ncurses delivers a UTF-8 sequence one byte per getch.
+    buf = bytearray([key])
+    expected = 1 if key < 0xE0 else 2 if key < 0xF0 else 3
+    for _i in range(expected):
+        nxt = stdscr.getch()
+        if not 0x80 <= nxt <= 0xBF:
+            return chr(key)  # malformed sequence: keep the buffer valid
+        buf.append(nxt)
+    try:
+        return buf.decode("utf-8")
+    except UnicodeDecodeError:
+        return chr(key)
+
+
+class _EditRender(NamedTuple):
+    """Render plan for one frame of the edit line."""
+
+    line: str  # overflow marks + visible text, drawn at column 0
+    cursor_col: int  # cell column of the cursor within the row
+    cursor_ch: str  # character drawn in the cursor cell (" " at end of text)
+
+
+def _fit_unit(ch: str) -> int:
+    """Columns one character consumes in the clip-safe fitting budget."""
+    if _counts_real_columns():
+        return _char_width(ch)
+    return len(ch.encode("utf-8"))
+
+
+def _fit_width(text: str) -> int:
+    return sum(_fit_unit(ch) for ch in text)
+
+
+def _cursor_units(text: str) -> int:
+    """Row cells ``text`` occupies in the active curses build.
+
+    Cell accounting differs per build: real columns (ncurses with a UTF-8
+    locale), one cell per character (PDCurses) or one cell per UTF-8 byte
+    (narrow ncurses).  A separately drawn cursor cell must be positioned
+    with the build's own accounting or it lands on the wrong character.
+    """
+    if _counts_real_columns():
+        return _display_width(text)
+    if not _IS_NCURSES:
+        return len(text)
+    return len(text.encode("utf-8"))
+
+
+def _fit_prefix(text: str, width: int) -> str:
+    """Longest prefix of ``text`` whose fit width stays within ``width``."""
+    out: list[str] = []
+    used = 0
+    for ch in text:
+        w = _fit_unit(ch)
+        if used + w > width:
+            break
+        used += w
+        out.append(ch)
+    return "".join(out)
+
+
+def _scroll_start(text: str, end: int, budget: int) -> int:
+    """Largest ``start <= end`` with the fit width of ``text[start:end]`` in budget."""
+    start = end
+    used = 0
+    while start > 0:
+        w = _fit_unit(text[start - 1])
+        if used + w > budget:
+            break
+        used += w
+        start -= 1
+    return start
+
+
+def _edit_line_render(text: str, pos: int, avail: int) -> _EditRender:
+    """Plan one frame of the edit line for ``text`` with the caret at ``pos``.
+
+    The whole text is shown when it fits ``avail`` columns; otherwise a
+    window around the caret is shown, with ``<``/``>`` marking hidden text
+    on either side.  The caret is always visible.
+    """
+    if _fit_width(text) <= avail:
+        return _EditRender(text, _cursor_units(text[:pos]), text[pos] if pos < len(text) else " ")
+
+    # Head-anchored window while the caret character is visible from column 0.
+    if pos < len(text) and _fit_width(text[: pos + 1]) <= avail:
+        drawn = _fit_prefix(text, avail - 1)
+        return _EditRender(
+            drawn + (">" if len(drawn) < len(text) else ""),
+            _cursor_units(text[:pos]),
+            text[pos],
+        )
+
+    # Scrolled window ending at the caret; column 0 holds the "<" mark.
+    budget = max(1, avail - 1)
+    start = _scroll_start(text, min(pos + 1, len(text)), budget)
+    drawn = _fit_prefix(text[start:], budget)
+    line = ("<" if start > 0 else "") + drawn + (">" if start + len(drawn) < len(text) else "")
+    return _EditRender(
+        line,
+        (1 if start > 0 else 0) + _cursor_units(text[start:pos]),
+        text[pos] if pos < len(text) else " ",
+    )
+
+
+def _draw_input_prompt(stdscr: curses.window, prompt: str, editor: _LineEditor) -> None:
+    """Draw the prompt, the edit line with an inline cursor, and a help bar."""
+    stdscr.clear()
+    rows, cols = stdscr.getmaxyx()
+    avail = max(3, cols - 1)
+
+    row = 0
+    for line in wrap_text([prompt], max(1, cols - 1)):
+        with contextlib.suppress(curses.error):
+            stdscr.addstr(row, 0, _pad_cjk_line(line, cols), curses.A_BOLD)
+        row += 1
+
+    render = _edit_line_render(editor.text(), editor.pos, avail)
     with contextlib.suppress(curses.error):
-        stdscr.addstr(0, 0, _truncate_to_width(prompt, cols - 1))
+        stdscr.addstr(row, 0, _pad_cjk_line(render.line, cols))
+    with contextlib.suppress(curses.error):
+        stdscr.addstr(row, render.cursor_col, render.cursor_ch, curses.A_REVERSE)
+
+    help_text = "  " + _("input.help")
+    with contextlib.suppress(curses.error):
+        stdscr.addstr(
+            min(row + 1, rows - 1),
+            0,
+            _pad_cjk_line(_truncate_to_width(help_text, cols - 1), cols),
+            curses.A_DIM,
+        )
+
     stdscr.refresh()
 
-    curses.echo()
-    try:
-        stdscr.move(1, 0)
-        text = stdscr.getstr(1, 0, cols - 1).decode("utf-8", errors="replace")
-    except curses.error:
-        text = ""
-    finally:
-        curses.noecho()
 
-    return text.strip()
+def input_prompt(stdscr: curses.window, prompt: str) -> str:
+    """Show an input prompt. Returns the entered string (stripped).
+
+    The caret is drawn inline as a reverse-video cell, so it stays visible
+    even on terminals where the hardware cursor is unreliable (PDCurses
+    under Windows Terminal/ConPTY).  Editing keys: Left/Right/Home/End
+    move the caret, Backspace/Delete erase, Ctrl+U clears the line, Enter
+    confirms and Esc cancels (empty string).
+    """
+    _curs_set(False)
+    stdscr.keypad(True)
+    editor = _LineEditor()
+
+    while True:
+        _draw_input_prompt(stdscr, prompt, editor)
+        key = _read_key(stdscr)
+
+        if isinstance(key, str):
+            editor.insert(key)
+            continue
+        if key in (curses.KEY_ENTER, 10, 13):
+            return editor.text().strip()
+        if key == 27:  # Esc
+            return ""
+        if key == curses.KEY_LEFT:
+            editor.left()
+        elif key == curses.KEY_RIGHT:
+            editor.right()
+        elif key in (curses.KEY_HOME, 1):  # Home / Ctrl+A
+            editor.home()
+        elif key in (curses.KEY_END, 5):  # End / Ctrl+E
+            editor.end()
+        elif key in (curses.KEY_BACKSPACE, 8, 127):
+            editor.backspace()
+        elif key in (curses.KEY_DC, 4):  # Delete / Ctrl+D
+            editor.delete()
+        elif key == 21:  # Ctrl+U
+            editor.clear()
+        elif 32 <= key < 0x100:
+            # Narrow ncurses getch delivers printable characters as int key
+            # codes; KEY_* codes are >= 0x100 and matched above.
+            editor.insert(chr(key))
