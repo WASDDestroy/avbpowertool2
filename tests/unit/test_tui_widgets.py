@@ -24,6 +24,8 @@ class FakeWindow:
         self._keys = list(keys)
         self.rendered: list[tuple[int, int, str]] = []
         self.paints: list[list[tuple[int, int, str]]] = []
+        self.cursor_parks: list[tuple[int, int]] = []
+        self.caret_highlights: list[tuple[int, int, int, int]] = []
 
     def getmaxyx(self) -> tuple[int, int]:
         return self._rows, self._cols
@@ -54,6 +56,14 @@ class FakeWindow:
         if 0x100 <= key < 0x200:
             return key
         return chr(key)
+
+    def move(self, y: int, x: int) -> None:
+        # Records where the hardware cursor is parked (IME anchor point).
+        self.cursor_parks.append((y, x))
+
+    def chgat(self, y: int, x: int, width: int, attr: int) -> None:
+        # Records the reverse-video caret highlight (y, x, width).
+        self.caret_highlights.append((y, x, width, attr))
 
 
 def _run_message_screen(
@@ -111,12 +121,12 @@ class TestWrapText:
         monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: True)
         assert widgets.wrap_text(["一二三四五六"], 9) == ["一二三四", "五六"]
 
-    def test_cjk_wraps_by_byte_accounting_on_pdcurses(
+    def test_cjk_wraps_by_byte_accounting_on_narrow_ncurses(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # PDCurses (and ncurses without a UTF-8 locale) count one column per
-        # UTF-8 byte, so only 3 CJK chars fit in width 9 instead of 4.
-        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        # Narrow ncurses without a UTF-8 locale counts one column per UTF-8
+        # byte, so only 3 CJK chars fit in width 9 instead of 4.
+        monkeypatch.setattr(widgets, "_IS_NCURSES", True)
         monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: False)
         assert widgets.wrap_text(["一二三四五六"], 9) == ["一二三", "四五六"]
 
@@ -438,17 +448,17 @@ class TestInputPrompt:
         assert text == "a"
 
     def test_inline_cursor_cell_drawn(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # "ab" then Left: the caret sits on "b" at column 1 and is drawn
-        # in place (the FakeWindow records the reverse-video cell as a
-        # single-char addstr at the caret column).
+        # "ab" then Left: the caret sits on "b" at column 1; the reverse
+        # highlight is applied via chgat over the already-drawn glyph
+        # (rewriting the cell with addstr would corrupt wide glyphs).
         win, _text = _run_input(monkeypatch, [ord("a"), ord("b"), curses.KEY_LEFT])
-        calls = [(x, t) for (y, x, t) in win.paints[-1] if y == 1]
-        assert (1, "b") in calls
+        assert win.caret_highlights[-1][:3] == (1, 1, 1)
+        edit_line = [t for (y, _x, t) in win.paints[-1] if y == 1]
+        assert edit_line == ["ab"]
 
     def test_empty_text_cursor_at_start(self, monkeypatch: pytest.MonkeyPatch) -> None:
         win, _text = _run_input(monkeypatch, [10])
-        calls = [(x, t) for (y, x, t) in win.paints[0] if y == 1]
-        assert (0, " ") in calls
+        assert win.caret_highlights[0][:3] == (1, 0, 1)
 
     def test_long_text_scrolls_and_keeps_tail_visible(
         self, monkeypatch: pytest.MonkeyPatch
@@ -482,15 +492,19 @@ class TestInputPrompt:
         assert text == "中文"
 
     def test_cjk_caret_column_on_pdcurses(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # PDCurses counts one cell per character: a caret between two CJK
-        # characters sits at column 1.
+        # PDCurses lays CJK out in real columns on the physical screen: a
+        # caret between two CJK characters highlights column 2 for 2
+        # cells (the width of the caret glyph), and the glyph under it
+        # stays intact because chgat only flips attributes.
         monkeypatch.setattr(widgets, "_IS_NCURSES", False)
         monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: False)
         win, _text = _run_input(
             monkeypatch, [ord("中"), ord("中"), curses.KEY_LEFT], prompt="输入："
         )
-        calls = [(x, t) for (y, x, t) in win.paints[-1] if y == 1]
-        assert (1, "中") in calls
+        y, x, width, _attr = win.caret_highlights[-1]
+        assert (y, x, width) == (1, 2, 2)  # on 2nd CJK char, 2 cells wide
+        edit_line = [t for (ty, _tx, t) in win.paints[-1] if ty == 1]
+        assert edit_line == ["中中  "]  # both glyphs still drawn
 
     def test_cjk_caret_column_on_ncurses(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # ncurses with a UTF-8 locale counts 2 columns per CJK character:
@@ -500,8 +514,23 @@ class TestInputPrompt:
         win, _text = _run_input(
             monkeypatch, [ord("中"), ord("中"), curses.KEY_LEFT], prompt="输入："
         )
-        calls = [(x, t) for (y, x, t) in win.paints[-1] if y == 1]
-        assert (2, "中") in calls
+        y, x, width, _attr = win.caret_highlights[-1]
+        assert (y, x, width) == (1, 2, 2)
+
+    def test_hardware_cursor_parked_on_drawn_caret(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The hidden hardware cursor must be parked on the drawn caret cell:
+        # the IME composition window anchors to it, so a stale position
+        # floats the candidate window onto the prompt row while composing.
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setattr(widgets, "_utf8_locale_active", lambda: False)
+        win, _text = _run_input(
+            monkeypatch, [ord("中"), ord("中"), curses.KEY_LEFT], prompt="输入："
+        )
+        assert win.cursor_parks[-1] == (1, 2)  # edit row, caret column
+
+    def test_hardware_cursor_parked_at_end_of_text(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        win, _text = _run_input(monkeypatch, [ord("a"), ord("b"), 10])
+        assert win.cursor_parks[-1] == (1, 2)  # after "ab"
 
     def test_narrow_getch_assembles_utf8_bytes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Narrow ncurses getch delivers a UTF-8 sequence one byte at a time.

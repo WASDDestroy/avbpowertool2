@@ -42,9 +42,19 @@ def _curs_set(visible: bool) -> None:
         curses.curs_set(1 if visible else 0)
 
 
-def _counts_real_columns() -> bool:
-    """True when the active curses build counts CJK as 2 real terminal columns."""
-    return _IS_NCURSES and _utf8_locale_active()
+def _real_columns() -> bool:
+    """True when the active curses build counts CJK as 2 real terminal columns.
+
+    ncurses counts real columns only with a UTF-8 locale; narrow builds
+    account one cell per byte.  PDCurses (windows-curses) lays CJK out in
+    real columns too - measured against its own cursor accounting
+    (``getyx`` after ``addstr('中')`` reports column 2); the per-character
+    model only matched its row-clip quirk, and the mismatch between the
+    two models corrupts wide glyphs and misplaces the inline cursor.
+    """
+    if _IS_NCURSES:
+        return _utf8_locale_active()
+    return True
 
 
 def _char_width(ch: str) -> int:
@@ -64,11 +74,12 @@ def _line_width(text: str) -> int:
 
     Lines wrapped/truncated to fit within this width are never clipped by
     ``addstr``, so trailing CJK characters are never dropped.  When real
-    columns are not counted (PDCurses, or ncurses without a UTF-8 locale),
-    the enforced width is the UTF-8 byte count minus the 2-column allowance
-    PDCurses reserves for the final multibyte character.
+    columns are not counted (narrow ncurses without a UTF-8 locale),
+    the enforced width is the UTF-8 byte count minus the 2-column
+    allowance PDCurses-style buffers reserve for the final multibyte
+    character.
     """
-    if _counts_real_columns():
+    if _real_columns():
         return _display_width(text)
     if any(ord(ch) > 127 for ch in text):
         return max(0, len(text.encode("utf-8")) - 2)
@@ -98,8 +109,8 @@ def _pad_cjk_line(text: str, cols: int) -> str:
     """Pad a CJK line with trailing spaces for PDCurses' row write.
 
     PDCurses on Windows writes an *attributed* row (A_BOLD/A_REVERSE/color
-    pairs) to the console using the string's character count — counting
-    each CJK character as 1 column — as the row width.  CJK renders as 2
+    pairs) to the console using the string's character count - counting
+    each CJK character as 1 column - as the row width.  CJK renders as 2
     columns, so the trailing characters get dropped unless the character
     count reaches the real column width.  Appending one trailing space per
     CJK character makes ``len(text) == real column width``, so the whole
@@ -107,7 +118,7 @@ def _pad_cjk_line(text: str, cols: int) -> str:
     ASCII-only lines; the padding is capped so the line never exceeds the
     available width.
     """
-    if _counts_real_columns():
+    if _IS_NCURSES:
         return text
     cjk = sum(1 for ch in text if ord(ch) > 127)
     if cjk == 0:
@@ -482,7 +493,7 @@ class _EditRender(NamedTuple):
 
 def _fit_unit(ch: str) -> int:
     """Columns one character consumes in the clip-safe fitting budget."""
-    if _counts_real_columns():
+    if _real_columns():
         return _char_width(ch)
     return len(ch.encode("utf-8"))
 
@@ -494,15 +505,13 @@ def _fit_width(text: str) -> int:
 def _cursor_units(text: str) -> int:
     """Row cells ``text`` occupies in the active curses build.
 
-    Cell accounting differs per build: real columns (ncurses with a UTF-8
-    locale), one cell per character (PDCurses) or one cell per UTF-8 byte
-    (narrow ncurses).  A separately drawn cursor cell must be positioned
-    with the build's own accounting or it lands on the wrong character.
+    Real columns (ncurses with a UTF-8 locale, and PDCurses - see
+    ``_real_columns``), or one cell per UTF-8 byte on narrow ncurses.
+    A separately drawn cursor cell must be positioned with the build's
+    own accounting or it lands on the wrong character.
     """
-    if _counts_real_columns():
+    if _real_columns():
         return _display_width(text)
-    if not _IS_NCURSES:
-        return len(text)
     return len(text.encode("utf-8"))
 
 
@@ -578,8 +587,23 @@ def _draw_input_prompt(stdscr: curses.window, prompt: str, editor: _LineEditor) 
     render = _edit_line_render(editor.text(), editor.pos, avail)
     with contextlib.suppress(curses.error):
         stdscr.addstr(row, 0, _pad_cjk_line(render.line, cols))
+
+    # Reverse-highlight the caret cell WITHOUT rewriting its character:
+    # addstr()ing a CJK caret char into a half-width slot corrupts the
+    # wide glyph on the physical screen (PDCurses lays CJK out in real
+    # columns while its virtual window counts one cell per character).
+    # chgat() only flips attributes, so the glyph stays intact.
+    cursor_ch = render.cursor_ch
+    caret_width = _char_width(cursor_ch) if _real_columns() and _char_width(cursor_ch) > 1 else 1
     with contextlib.suppress(curses.error):
-        stdscr.addstr(row, render.cursor_col, render.cursor_ch, curses.A_REVERSE)
+        stdscr.chgat(row, render.cursor_col, caret_width, curses.A_REVERSE)
+
+    # Park the (hidden) hardware cursor on the drawn caret cell.  The IME
+    # composition window anchors to the hardware cursor, so without this
+    # it floats to wherever the last addstr left it (e.g. the prompt row
+    # above the edit line) while composing CJK text.
+    with contextlib.suppress(curses.error):
+        stdscr.move(row, min(render.cursor_col, cols - 1))
 
     help_text = "  " + _("input.help")
     with contextlib.suppress(curses.error):
