@@ -79,8 +79,18 @@ msgstr "查看当前设置"
 msgid "settings.action.check_l10n"
 msgstr "检查缺失的翻译"
 
-msgid "settings.action.import_legacy"
+# 其他功能节点
+msgid "node.misc.name"
+msgstr "其他功能"
+
+msgid "node.misc.description"
+msgstr "杂项工具与实用功能。"
+
+msgid "node.import_legacy.name"
 msgstr "导入 v1 旧版配置"
+
+msgid "node.import_legacy.description"
+msgstr "导入 v1 旧版配置归档并转换为 v2 格式。"
 
 # 旧版配置导入
 msgid "legacy.import.title"

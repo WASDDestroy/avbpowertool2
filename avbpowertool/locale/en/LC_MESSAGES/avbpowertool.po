@@ -79,8 +79,18 @@ msgstr "View current settings"
 msgid "settings.action.check_l10n"
 msgstr "Check missing translations"
 
-msgid "settings.action.import_legacy"
+# Other features node
+msgid "node.misc.name"
+msgstr "Other Features"
+
+msgid "node.misc.description"
+msgstr "Miscellaneous tools and utilities."
+
+msgid "node.import_legacy.name"
 msgstr "Import v1 legacy config"
+
+msgid "node.import_legacy.description"
+msgstr "Import a v1 legacy config archive, converting it to v2."
 
 # Legacy config import
 msgid "legacy.import.title"

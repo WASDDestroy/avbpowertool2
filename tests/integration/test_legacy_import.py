@@ -157,23 +157,23 @@ class TestLegacyImportTuiWiring:
             Path(__file__).parent.parent.parent / "avbpowertool" / "resources" / "navigation.json"
         )
 
-    def test_settings_route_has_legacy_import_action(self) -> None:
+    def test_misc_route_has_legacy_import_action(self) -> None:
         from avbpowertool.presentation.tui.router import Router
 
         router = Router(self._nav_file())
-        settings_route = router.get_route("route:settings")
-        assert settings_route is not None
-        actions = [item.action_id for item in settings_route.items]
-        assert "action:settings.import_legacy" in actions
-        # shortcut 'I' must not collide with existing settings shortcuts
-        shortcuts = [item.shortcut for item in settings_route.items]
+        misc_route = router.get_route("route:misc")
+        assert misc_route is not None
+        actions = [item.action_id for item in misc_route.items]
+        assert "action:misc.import_legacy" in actions
+        # shortcut 'I' must not collide with existing misc shortcuts
+        shortcuts = [item.shortcut for item in misc_route.items]
         assert len(shortcuts) == len(set(shortcuts))
-        assert "action:settings.import_legacy" in router._actions
+        assert "action:misc.import_legacy" in router._actions
 
-    def test_settings_view_exposes_handler(self) -> None:
-        from avbpowertool.presentation.tui.views import settings as settings_view
+    def test_misc_view_exposes_handler(self) -> None:
+        from avbpowertool.presentation.tui.views import misc as misc_view
 
-        assert callable(settings_view.show_import_legacy)
+        assert callable(misc_view.show_import_legacy)
 
     def test_app_view_map_includes_handler(self) -> None:
         """The production app must dispatch the new action to its handler."""
@@ -182,5 +182,5 @@ class TestLegacyImportTuiWiring:
         from avbpowertool.presentation.tui import app as tui_app
 
         source = inspect.getsource(tui_app.App._dispatch_action)
-        assert "action:settings.import_legacy" in source
-        assert "settings.show_import_legacy" in source
+        assert "action:misc.import_legacy" in source
+        assert "misc.show_import_legacy" in source

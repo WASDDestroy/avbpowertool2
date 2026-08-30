@@ -10,7 +10,16 @@
         {"route": "route:config_manager", "shortcut": "M"},
         {"action": "action:image.sign", "shortcut": "S"},
         {"route": "route:settings", "shortcut": "T"},
-        {"action": "action:view_current_config", "shortcut": "V"}
+        {"action": "action:view_current_config", "shortcut": "V"},
+        {"route": "route:misc", "shortcut": "O"}
+      ]
+    },
+    "route:misc": {
+      "title_key": "node.misc.name",
+      "description_key": "node.misc.description",
+      "parent": "route:home",
+      "items": [
+        {"action": "action:misc.import_legacy", "shortcut": "I"}
       ]
     },
     "route:config_manager": {
@@ -32,7 +41,6 @@
       "items": [
         {"action": "action:settings.edit", "shortcut": "E"},
         {"action": "action:settings.view", "shortcut": "V"},
-        {"action": "action:settings.import_legacy", "shortcut": "I"},
         {"action": "action:settings.check_l10n", "shortcut": "C"}
       ]
     }
@@ -78,9 +86,9 @@
       "label_key": "settings.action.view",
       "description_key": ""
     },
-    "action:settings.import_legacy": {
-      "label_key": "settings.action.import_legacy",
-      "description_key": ""
+    "action:misc.import_legacy": {
+      "label_key": "node.import_legacy.name",
+      "description_key": "node.import_legacy.description"
     },
     "action:settings.check_l10n": {
       "label_key": "settings.action.check_l10n",
