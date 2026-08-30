@@ -75,6 +75,16 @@ Every change must pass this pipeline before commit:
 
 If any step fails, fix the issue and restart from step 2.
 
+### Committing Is Mandatory
+
+A task is not complete when the code works — it is complete when the changes are committed. Step 6 is not optional:
+
+- Never end a session with uncommitted changes. If the working tree is dirty when you finish, commit it.
+- Commit as soon as a coherent unit of work passes the pipeline; prefer small, focused commits over one giant commit.
+- Docs/markdown-only changes skip steps 2–5 (nothing to test or lint) but still require a commit.
+- Match the existing commit message style (`feat(scope):`, `fix:`, `docs:`, `refactor:`).
+- Do not push unless explicitly asked. Committing is part of the work; pushing is a separate decision.
+
 ## Development Commands
 
 ```shell
