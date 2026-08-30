@@ -238,6 +238,9 @@ See [AGENTS.md](AGENTS.md) for development guidelines.
 - [Adding Navigation](docs/en/FRONTEND_NAVIGATION.md) — add entries to the TUI navigation tree
 - [Editing Pages](docs/en/FRONTEND_PAGES.md) — create or modify TUI views
 - [Legacy Config Import](docs/en/LEGACY_CONFIG_IMPORT.md) — v1 → v2 conversion design and implementation
+- [Architecture](docs/en/ARCHITECTURE.md) — layers, data flow, and module responsibilities
+- [Internationalization](docs/en/I18N.md) — add and use localized string resources
+- [中文文档](docs/zh/README.md) — Chinese docs (ARCHITECTURE.md / I18N.md included)
 
 ## License
 
