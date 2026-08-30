@@ -17,6 +17,64 @@ msgstr "读取镜像信息"
 msgid "node.read_image_info.description"
 msgstr "读取工作目录中镜像的 AVB 配置。"
 
+# 读取镜像信息
+msgid "read_image_info.title"
+msgstr "读取镜像信息"
+
+msgid "read_image_info.no_images_dir"
+msgstr "未找到 Images/ 目录。"
+
+msgid "read_image_info.no_images"
+msgstr "Images/ 目录中未找到 .img 文件。"
+
+msgid "read_image_info.select_title"
+msgstr "选择要读取的镜像"
+
+msgid "read_image_info.results_title"
+msgstr "镜像信息结果"
+
+msgid "read_image_info.field.path"
+msgstr "  路径：{value}"
+
+msgid "read_image_info.field.descriptor"
+msgstr "  描述符：{value}"
+
+msgid "read_image_info.field.algorithm"
+msgstr "  算法：{value}"
+
+msgid "read_image_info.field.partition_name"
+msgstr "  分区名：{value}"
+
+msgid "read_image_info.field.public_key_sha1"
+msgstr "  公钥 SHA1：{value}"
+
+msgid "read_image_info.field.rollback_index"
+msgstr "  回滚索引：{value}"
+
+msgid "read_image_info.field.rollback_index_location"
+msgstr "  回滚索引位置：{value}"
+
+msgid "read_image_info.field.hash_algorithm"
+msgstr "  哈希算法：{value}"
+
+msgid "read_image_info.field.salt"
+msgstr "  盐值：{value}"
+
+msgid "read_image_info.field.digest"
+msgstr "  摘要：{value}"
+
+msgid "read_image_info.field.flags"
+msgstr "  标志位：{value}"
+
+msgid "read_image_info.field.prop"
+msgstr "  属性：{key} = {value}"
+
+msgid "read_image_info.field.included_partitions"
+msgstr "  包含的分区：{value}"
+
+msgid "read_image_info.field.chain"
+msgstr "  链：{name} slot={slot} pubkey={pubkey}"
+
 msgid "node.config_manager.name"
 msgstr "配置管理器"
 

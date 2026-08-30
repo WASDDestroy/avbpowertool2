@@ -7,6 +7,7 @@ from avbpowertool.application.ports import AvbToolPort
 from avbpowertool.application.services.inspect_images import InspectImagesUseCase
 from avbpowertool.domain.models import ImageInspection
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
+from avbpowertool.presentation.i18n import _
 from avbpowertool.presentation.tui.widgets import (
     SelectorWidget,
     message_screen,
@@ -23,7 +24,7 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     active_id = _get_active_profile(ws)
 
     if not ws.images.exists():
-        message_screen(stdscr_c, "Read Image Info", ["No Images/ directory found."])
+        message_screen(stdscr_c, _("read_image_info.title"), [_("read_image_info.no_images_dir")])
         return
 
     images: list[str] = []
@@ -32,11 +33,11 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
             images.append(f.stem)
 
     if not images:
-        message_screen(stdscr_c, "Read Image Info", ["No .img files found in Images/ directory."])
+        message_screen(stdscr_c, _("read_image_info.title"), [_("read_image_info.no_images")])
         return
 
     # Multi-select
-    sel = SelectorWidget("Select Images to Read", images, multi_select=True)
+    sel = SelectorWidget(_("read_image_info.select_title"), images, multi_select=True)
     chosen = sel.run(stdscr_c)
     if not chosen:
         return
@@ -58,7 +59,7 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     for iss in result.issues:
         lines.append(f"  [{iss.error_code}] {iss.message}")
 
-    message_screen(stdscr_c, "Image Info Results", lines)
+    message_screen(stdscr_c, _("read_image_info.results_title"), lines)
 
 
 def image_inspection_lines(img: ImageInspection) -> list[str]:
@@ -69,35 +70,47 @@ def image_inspection_lines(img: ImageInspection) -> list[str]:
     field parsed from the AVB metadata is shown.
     """
     lines: list[str] = [f"[{img.image_name}]"]
-    lines.append(f"  Path: {img.image_path}")
-    lines.append(f"  Descriptor: {img.descriptor.value if img.descriptor else 'N/A'}")
+    lines.append(_("read_image_info.field.path", value=img.image_path))
+    lines.append(
+        _(
+            "read_image_info.field.descriptor",
+            value=img.descriptor.value if img.descriptor else "N/A",
+        )
+    )
     if img.algorithm:
-        lines.append(f"  Algorithm: {img.algorithm}")
+        lines.append(_("read_image_info.field.algorithm", value=img.algorithm))
     if img.partition_name:
-        lines.append(f"  Partition Name: {img.partition_name}")
+        lines.append(_("read_image_info.field.partition_name", value=img.partition_name))
     if img.public_key_sha1:
-        lines.append(f"  Public Key SHA1: {img.public_key_sha1}")
+        lines.append(_("read_image_info.field.public_key_sha1", value=img.public_key_sha1))
     if img.rollback_index is not None:
-        lines.append(f"  Rollback Index: {img.rollback_index}")
+        lines.append(_("read_image_info.field.rollback_index", value=img.rollback_index))
     if img.rollback_index_location is not None:
-        lines.append(f"  Rollback Index Location: {img.rollback_index_location}")
+        lines.append(
+            _("read_image_info.field.rollback_index_location", value=img.rollback_index_location)
+        )
     if img.hash_algorithm:
-        lines.append(f"  Hash Algorithm: {img.hash_algorithm}")
+        lines.append(_("read_image_info.field.hash_algorithm", value=img.hash_algorithm))
     if img.salt:
-        lines.append(f"  Salt: {img.salt}")
+        lines.append(_("read_image_info.field.salt", value=img.salt))
     if img.digest:
-        lines.append(f"  Digest: {img.digest}")
+        lines.append(_("read_image_info.field.digest", value=img.digest))
     if img.flags:
-        lines.append(f"  Flags: {img.flags}")
+        lines.append(_("read_image_info.field.flags", value=img.flags))
     for key, value in img.props:
-        lines.append(f"  Prop: {key} = {value}")
+        lines.append(_("read_image_info.field.prop", key=key, value=value))
     if img.included_partitions:
-        lines.append(f"  Included Partitions: {', '.join(img.included_partitions)}")
+        lines.append(
+            _("read_image_info.field.included_partitions", value=", ".join(img.included_partitions))
+        )
     for chain in img.chain_descriptors:
         lines.append(
-            f"  Chain: {chain.partition_name} "
-            f"slot={chain.rollback_index_location} "
-            f"pubkey={chain.public_key_sha1 or 'N/A'}"
+            _(
+                "read_image_info.field.chain",
+                name=chain.partition_name,
+                slot=chain.rollback_index_location,
+                pubkey=chain.public_key_sha1 or "N/A",
+            )
         )
     for key, value in img.raw_extensions:
         lines.append(f"  {key}: {value}")

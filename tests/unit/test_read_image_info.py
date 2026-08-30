@@ -7,7 +7,10 @@ from avbpowertool.domain.models import (
     DescriptorType,
     ImageInspection,
 )
+from avbpowertool.presentation.i18n import init_i18n
 from avbpowertool.presentation.tui.views.read_image_info import image_inspection_lines
+
+init_i18n("en")
 
 
 def _inspection(**overrides: object) -> ImageInspection:

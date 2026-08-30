@@ -17,6 +17,64 @@ msgstr "Read Image Info"
 msgid "node.read_image_info.description"
 msgstr "Read AVB configs of images in working dir."
 
+# Read Image Info
+msgid "read_image_info.title"
+msgstr "Read Image Info"
+
+msgid "read_image_info.no_images_dir"
+msgstr "No Images/ directory found."
+
+msgid "read_image_info.no_images"
+msgstr "No .img files found in Images/ directory."
+
+msgid "read_image_info.select_title"
+msgstr "Select Images to Read"
+
+msgid "read_image_info.results_title"
+msgstr "Image Info Results"
+
+msgid "read_image_info.field.path"
+msgstr "  Path: {value}"
+
+msgid "read_image_info.field.descriptor"
+msgstr "  Descriptor: {value}"
+
+msgid "read_image_info.field.algorithm"
+msgstr "  Algorithm: {value}"
+
+msgid "read_image_info.field.partition_name"
+msgstr "  Partition Name: {value}"
+
+msgid "read_image_info.field.public_key_sha1"
+msgstr "  Public Key SHA1: {value}"
+
+msgid "read_image_info.field.rollback_index"
+msgstr "  Rollback Index: {value}"
+
+msgid "read_image_info.field.rollback_index_location"
+msgstr "  Rollback Index Location: {value}"
+
+msgid "read_image_info.field.hash_algorithm"
+msgstr "  Hash Algorithm: {value}"
+
+msgid "read_image_info.field.salt"
+msgstr "  Salt: {value}"
+
+msgid "read_image_info.field.digest"
+msgstr "  Digest: {value}"
+
+msgid "read_image_info.field.flags"
+msgstr "  Flags: {value}"
+
+msgid "read_image_info.field.prop"
+msgstr "  Prop: {key} = {value}"
+
+msgid "read_image_info.field.included_partitions"
+msgstr "  Included Partitions: {value}"
+
+msgid "read_image_info.field.chain"
+msgstr "  Chain: {name} slot={slot} pubkey={pubkey}"
+
 msgid "node.config_manager.name"
 msgstr "Config Manager"
 
