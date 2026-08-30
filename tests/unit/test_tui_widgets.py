@@ -259,6 +259,38 @@ class TestSelectorHotkeys:
         assert result == []
 
 
+class TestSelectorNavigation:
+    def _run_selector(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        keys: list[int],
+        items: list[str],
+        multi_select: bool = False,
+    ) -> list[int]:
+        monkeypatch.setattr(curses, "curs_set", lambda v: None)
+        win = FakeWindow(12, 40, keys)
+        return SelectorWidget("Title", items, multi_select=multi_select).run(win)  # type: ignore[arg-type]
+
+    def test_up_from_first_item_wraps_to_last(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        items = ["[A] One", "[B] Two", "[C] Three"]
+        result = self._run_selector(monkeypatch, [curses.KEY_UP, 10], items)
+        assert result == [2]
+
+    def test_down_from_last_item_wraps_to_first(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        items = ["[A] One", "[B] Two", "[C] Three"]
+        result = self._run_selector(
+            monkeypatch, [curses.KEY_DOWN, curses.KEY_DOWN, curses.KEY_DOWN, 10], items
+        )
+        assert result == [0]
+
+    def test_wrap_around_in_multi_select(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        items = ["[A] One", "[B] Two"]
+        result = self._run_selector(
+            monkeypatch, [curses.KEY_UP, ord(" "), 10], items, multi_select=True
+        )
+        assert result == [1]
+
+
 class TestMessageScreenWrapping:
     def test_long_line_is_wrapped_not_truncated(self, monkeypatch: pytest.MonkeyPatch) -> None:
         long = "one two three four five six seven eight nine ten"

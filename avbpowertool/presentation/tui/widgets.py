@@ -295,9 +295,9 @@ class SelectorWidget:
             key = stdscr.getch()
 
             if key in (curses.KEY_UP,):
-                self.current = max(0, self.current - 1)
+                self.current = (self.current - 1) % len(self.items)
             elif key in (curses.KEY_DOWN,):
-                self.current = min(len(self.items) - 1, self.current + 1)
+                self.current = (self.current + 1) % len(self.items)
             elif 32 <= key < 0x100 and chr(key).upper() in self._shortcuts:
                 idx = self._shortcuts[chr(key).upper()]
                 audit.audit_logger().debug(
