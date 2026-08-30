@@ -1,4 +1,4 @@
-"""Miscellaneous features view — legacy (v1) config import."""
+"""Legacy (v1) config import view — import and convert v1 archives to v2."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from avbpowertool.presentation.tui.widgets import (
 )
 
 
-def show_import_legacy(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
+def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     """Import a legacy (v1) config archive, converting it to v2."""
     stdscr_c: curses.window = stdscr  # type: ignore[assignment]
 

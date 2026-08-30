@@ -131,8 +131,8 @@ class App:
             display_avb_info,
             export_config,
             import_config,
+            import_legacy,
             manage_keys,
-            misc,
             read_image_info,
             settings,
             sign_images,
@@ -149,7 +149,7 @@ class App:
             "action:key.manage": manage_keys.show,
             "action:settings.edit": settings.show_edit,
             "action:settings.view": settings.show_view,
-            "action:misc.import_legacy": misc.show_import_legacy,
+            "action:misc.import_legacy": import_legacy.show,
             "action:settings.check_l10n": settings.show_check_l10n,
         }
 

@@ -171,9 +171,9 @@ class TestLegacyImportTuiWiring:
         assert "action:misc.import_legacy" in router._actions
 
     def test_misc_view_exposes_handler(self) -> None:
-        from avbpowertool.presentation.tui.views import misc as misc_view
+        from avbpowertool.presentation.tui.views import import_legacy as import_legacy_view
 
-        assert callable(misc_view.show_import_legacy)
+        assert callable(import_legacy_view.show)
 
     def test_app_view_map_includes_handler(self) -> None:
         """The production app must dispatch the new action to its handler."""
@@ -183,4 +183,4 @@ class TestLegacyImportTuiWiring:
 
         source = inspect.getsource(tui_app.App._dispatch_action)
         assert "action:misc.import_legacy" in source
-        assert "misc.show_import_legacy" in source
+        assert "import_legacy.show" in source
