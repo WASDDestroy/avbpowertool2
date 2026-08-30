@@ -8,11 +8,6 @@ import locale
 import logging
 from pathlib import Path
 
-from avbpowertool.application.services.manage_profiles import (
-    ProfileActivateUseCase,
-    ProfileDeleteUseCase,
-    ProfileListUseCase,
-)
 from avbpowertool.infrastructure.avbtool.runner import SubprocessAvbTool
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.presentation import audit
@@ -127,6 +122,7 @@ class App:
     def _dispatch_action(self, stdscr: curses.window, action_id: str) -> None:
         """Dispatch an action to the appropriate view handler."""
         from avbpowertool.presentation.tui.views import (
+            config_library,
             create_config,
             display_avb_info,
             export_config,
@@ -145,7 +141,7 @@ class App:
             "action:config.import": import_config.show,
             "action:config.export": export_config.show,
             "action:view_current_config": display_avb_info.show,
-            "action:config.library": self._show_config_library,
+            "action:config.library": config_library.show,
             "action:key.manage": manage_keys.show,
             "action:settings.edit": settings.show_edit,
             "action:settings.view": settings.show_view,
@@ -170,82 +166,3 @@ class App:
             message_screen(stdscr, "Error", [str(exc)])
         else:
             audit.log_action_end("tui", action_id, "completed")
-
-    def _show_config_library(self, stdscr: curses.window, ws: WorkspacePaths, avb: object) -> None:
-        """Config library management view."""
-        uc = ProfileListUseCase(ws)
-        from avbpowertool.application.commands import ProfileListRequest
-
-        result = uc.execute(ProfileListRequest())
-        if not result.profiles:
-            audit_log.debug("tui message: Config Library (empty)")
-            message_screen(stdscr, "Config Library", ["No profiles found."])
-            return
-
-        items = [
-            f"{p.profile_id}: {p.name} {'(active)' if p.is_active else ''}" for p in result.profiles
-        ]
-        sel = SelectorWidget("Config Library", items)
-        choice = sel.run(stdscr)
-        if not choice:
-            audit_log.debug("tui select.cancel: Config Library")
-            return
-
-        profile = result.profiles[choice[0]]
-        audit_log.debug(
-            "tui select.choose: Config Library -> %s (profile %s)",
-            profile.profile_id,
-            profile.profile_id,
-        )
-        actions = ["Activate", "Delete", "Back"]
-        action_sel = SelectorWidget(f"Options for {profile.profile_id}", actions)
-        action_choice = action_sel.run(stdscr)
-        if not action_choice:
-            audit_log.debug("tui select.cancel: Options for %s", profile.profile_id)
-            return
-        audit_log.debug(
-            "tui select.choose: Options for %s -> %s",
-            profile.profile_id,
-            actions[action_choice[0]],
-        )
-        if action_choice[0] == 0:
-            audit.log_action_start("tui", "profile.activate", profile.profile_id)
-            activate_uc = ProfileActivateUseCase(ws)
-            from avbpowertool.application.commands import ProfileActivateRequest
-
-            activate_result = activate_uc.execute(
-                ProfileActivateRequest(profile_id=profile.profile_id)
-            )
-            if activate_result.issues:
-                audit.log_action_end(
-                    "tui",
-                    "profile.activate",
-                    f"issues: {[i.error_code for i in activate_result.issues]}",
-                )
-                message_screen(stdscr, "Error", [i.message for i in activate_result.issues])
-            else:
-                audit.log_action_end("tui", "profile.activate", "activated")
-                message_screen(stdscr, "Success", [f"Activated: {profile.profile_id}"])
-        elif action_choice[0] == 1:
-            from avbpowertool.presentation.tui.widgets import confirm_dialog
-
-            confirmed = confirm_dialog(
-                stdscr, f"Delete profile '{profile.profile_id}'? This cannot be undone."
-            )
-            audit.log_confirmation(f"Delete profile '{profile.profile_id}'", confirmed)
-            if not confirmed:
-                return
-            audit.log_action_start("tui", "profile.delete", profile.profile_id)
-            from avbpowertool.application.commands import ProfileDeleteRequest
-
-            result = ProfileDeleteUseCase(ws).execute(
-                ProfileDeleteRequest(profile_id=profile.profile_id)
-            )
-            if result.issues:
-                audit.log_action_end(
-                    "tui", "profile.delete", f"issues: {[i.error_code for i in result.issues]}"
-                )
-                message_screen(stdscr, "Error", [i.message for i in result.issues])
-            else:
-                audit.log_action_end("tui", "profile.delete", "deleted")
-                message_screen(stdscr, "Success", [f"Deleted: {profile.profile_id}"])
