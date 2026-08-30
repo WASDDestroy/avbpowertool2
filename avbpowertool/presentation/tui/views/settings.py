@@ -12,6 +12,7 @@ from avbpowertool.infrastructure.persistence.settings_repository import (
     SETTING_DEFS,
     SettingsRepository,
 )
+from avbpowertool.presentation import audit
 from avbpowertool.presentation.i18n import _, check_l10n, get_current_language
 from avbpowertool.presentation.tui.widgets import (
     SelectorWidget,
@@ -101,6 +102,20 @@ def show_edit(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
         new_value = option_keys[opt_result[0]]
         new_settings = settings.with_value(chosen_key, new_value)
         repo.save(new_settings)
+
+        # Apply the new log level immediately; the TUI keeps running in
+        # this process, so waiting for a restart would lose audit records.
+        if chosen_key == "log_level":
+            from avbpowertool.bootstrap import _configure_audit_logger, _level_from_name
+
+            _configure_audit_logger(_level_from_name(new_value))
+            audit.audit_logger().info(
+                "tui settings.log_level_changed: %s -> %s", current_val, new_value
+            )
+
+        audit.audit_logger().debug(
+            "tui settings.changed: %s = %s (was %s)", chosen_key, new_value, current_val
+        )
 
         message_screen(
             stdscr_c,

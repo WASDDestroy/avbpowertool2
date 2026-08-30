@@ -75,6 +75,7 @@ class ProfileActivateUseCase:
         # Verify profile exists
         profile_ids = repo.list_profiles()
         if request.profile_id not in profile_ids:
+            logger.warning("Cannot activate missing profile %r", request.profile_id)
             issues.append(
                 OperationIssue(
                     "config.not_found",
@@ -88,7 +89,9 @@ class ProfileActivateUseCase:
 
         try:
             repo.activate(request.profile_id)
+            logger.info("Activated profile %r", request.profile_id)
         except Exception as exc:
+            logger.error("Failed to activate profile %r: %s", request.profile_id, exc)
             issues.append(
                 OperationIssue(
                     "config.activate_failed",
@@ -111,11 +114,13 @@ class ProfileDeleteUseCase:
     def execute(self, request: ProfileDeleteRequest) -> ProfileDeleteResult:
         repo = ProfileRepository(self._ws)
         if request.profile_id not in repo.list_profiles():
+            logger.warning("Cannot delete missing profile %r", request.profile_id)
             return ProfileDeleteResult(
                 request.profile_id,
                 (OperationIssue("config.not_found", f"Profile not found: {request.profile_id}"),),
             )
         if repo.get_active_profile_id() == request.profile_id:
+            logger.warning("Refused to delete active profile %r", request.profile_id)
             return ProfileDeleteResult(
                 request.profile_id,
                 (
@@ -126,7 +131,9 @@ class ProfileDeleteUseCase:
             )
         try:
             repo.delete(request.profile_id)
+            logger.info("Deleted profile %r", request.profile_id)
         except Exception as exc:
+            logger.error("Failed to delete profile %r: %s", request.profile_id, exc)
             return ProfileDeleteResult(
                 request.profile_id,
                 (OperationIssue("config.delete_failed", f"Failed to delete profile: {exc}"),),

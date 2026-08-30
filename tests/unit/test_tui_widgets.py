@@ -200,6 +200,65 @@ class TestPadCjkLine:
         assert widgets._pad_cjk_line(text, 19) == text + " "
 
 
+class TestSelectorHotkeys:
+    def _run_selector(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        keys: list[int],
+        items: list[str],
+        multi_select: bool = False,
+    ) -> tuple[list[int], FakeWindow]:
+        monkeypatch.setattr(curses, "curs_set", lambda v: None)
+        win = FakeWindow(12, 40, keys)
+        result = SelectorWidget("Title", items, multi_select=multi_select).run(win)  # type: ignore[arg-type]
+        return result, win
+
+    def test_uppercase_hotkey_activates_item(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        items = ["[R] Read image info", "[S] Sign images", "[E] Exit"]
+        result, _win = self._run_selector(monkeypatch, [ord("R")], items)
+        assert result == [0]
+
+    def test_lowercase_hotkey_activates_item(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Hotkeys match both letter cases.
+        items = ["[R] Read image info", "[S] Sign images", "[E] Exit"]
+        result, _win = self._run_selector(monkeypatch, [ord("s")], items)
+        assert result == [1]
+
+    def test_hotkey_for_back_and_exit_entries(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        items = ["[R] Read image info", "[B] Back"]
+        result, _win = self._run_selector(monkeypatch, [ord("B")], items)
+        assert result == [1]
+
+    def test_hotkey_moves_cursor_in_multi_select(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        items = ["[A] One", "[B] Two"]
+        result, _win = self._run_selector(
+            monkeypatch, [ord("B"), ord(" "), 10], items, multi_select=True
+        )
+        assert result == [1]
+
+    def test_unknown_letter_is_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        items = ["[R] Read image info"]
+        result, _win = self._run_selector(monkeypatch, [ord("x"), 27], items)
+        assert result == []
+
+    def test_items_without_bracket_prefix_have_no_hotkey(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # e.g. the config library selector: plain labels, no hotkeys.
+        result, _win = self._run_selector(monkeypatch, [ord("y"), 27], ["Yes", "No"])
+        assert result == []
+
+    def test_j_and_k_are_no_longer_movement_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # j/k must not move the cursor: 'k' now triggers the [K] hotkey
+        # (e.g. "[K] Manage keys" in Key Management) and 'j' is inert
+        # unless an item exposes [J].
+        items = ["[C] One", "[K] Two", "[E] Three"]
+        result, _win = self._run_selector(monkeypatch, [ord("k")], items)
+        assert result == [1]  # hotkey wins over vim-style movement
+        result, _win = self._run_selector(monkeypatch, [ord("j"), 27], items)
+        assert result == []
+
+
 class TestMessageScreenWrapping:
     def test_long_line_is_wrapped_not_truncated(self, monkeypatch: pytest.MonkeyPatch) -> None:
         long = "one two three four five six seven eight nine ten"

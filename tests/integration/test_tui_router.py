@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from avbpowertool.presentation.tui.router import Router
 
 
@@ -126,3 +128,44 @@ class TestRouter:
         router = Router(nav_file)
         assert router.get_action_label("action:image.inspect") == "node.read_image_info.name"
         assert router.get_action_label("unknown") == "unknown"
+
+
+class TestRouterAuditTrail:
+    def test_navigation_trail_records_steps(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """start/push/pop emit the tui nav.* audit trail at DEBUG."""
+        import logging
+
+        from avbpowertool.presentation import audit
+
+        nav_file = _write_nav(tmp_path, _make_nav())
+        router = Router(nav_file)
+
+        with caplog.at_level(logging.DEBUG, logger=audit.AUDIT_LOGGER_NAME):
+            router.start()
+            router.push("route:settings")
+            router.pop()
+
+        messages = [r.getMessage() for r in caplog.records]
+        assert "tui nav.enter: route:home (start)" in messages
+        assert "tui nav.enter: route:settings (depth 2)" in messages
+        assert "tui nav.back: from route:settings to route:home" in messages
+
+    def test_push_unknown_route_is_audited(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        from avbpowertool.presentation import audit
+
+        nav_file = _write_nav(tmp_path, _make_nav())
+        router = Router(nav_file)
+        router.start()
+
+        with caplog.at_level(logging.DEBUG, logger=audit.AUDIT_LOGGER_NAME):
+            assert not router.push("route:nonexistent")
+
+        assert any(
+            "tui nav.push_failed: route:nonexistent" in r.getMessage() for r in caplog.records
+        )

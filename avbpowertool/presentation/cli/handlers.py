@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from argparse import Namespace
-from typing import TextIO
+from typing import Any, TextIO, cast
 
 from avbpowertool.application.commands import (
     ConfigEditRequest,
@@ -36,6 +36,7 @@ from avbpowertool.application.services.manage_profiles import (
 from avbpowertool.application.services.sign_images import SignImagesUseCase
 from avbpowertool.infrastructure.avbtool.runner import SubprocessAvbTool
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
+from avbpowertool.presentation import audit
 from avbpowertool.presentation.actions import ActionId
 from avbpowertool.presentation.cli.renderer import (
     exit_code_from_issues,
@@ -70,6 +71,7 @@ def dispatch(args: Namespace, out: TextIO = sys.stdout) -> int:
     """Dispatch parsed CLI args to the appropriate handler. Returns exit code."""
     action_id = getattr(args, "action_id", None)
     if action_id is None:
+        audit.audit_logger().warning("cli dispatch.refused: no action_id")
         return 2
 
     as_json = getattr(args, "json", False)
@@ -91,10 +93,34 @@ def dispatch(args: Namespace, out: TextIO = sys.stdout) -> int:
 
     handler = handler_map.get(action_id)
     if handler is None:
+        audit.audit_logger().warning("cli dispatch.refused: unsupported action %s", action_id)
         print(f"error: unsupported action {action_id}", file=sys.stderr)
         return 2
 
-    return handler(args, workspace, as_json, out)
+    audit.log_action_start("cli", str(action_id), _request_summary(args))
+    code = handler(args, workspace, as_json, out)
+    audit.log_action_end("cli", str(action_id), f"exit_code={code}")
+    return code
+
+
+def _request_summary(args: Namespace) -> str:
+    """One-line rendering of the parsed args for the audit trail."""
+    parts: list[str] = []
+    items: list[tuple[str, Any]] = sorted((str(k), v) for k, v in vars(args).items())
+    for key, value in items:
+        if key in ("action_id", "json", "rest") or key.startswith("_"):
+            continue
+        if value is True:
+            parts.append(f"--{key.replace('_', '-')}")
+        elif value is False or value is None:
+            continue
+        elif isinstance(value, list):
+            # argparse list values (images, --set updates) are always str.
+            str_list = cast("list[str]", value)
+            parts.append(" ".join(str_list))
+        else:
+            parts.append(str(value))
+    return " ".join(parts)
 
 
 # ---------------------------------------------------------------------------

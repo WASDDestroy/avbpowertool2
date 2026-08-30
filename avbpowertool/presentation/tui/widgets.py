@@ -8,10 +8,12 @@ from __future__ import annotations
 import contextlib
 import curses
 import locale
+import re
 import unicodedata
 from collections.abc import Sequence
 from typing import NamedTuple
 
+from avbpowertool.presentation import audit
 from avbpowertool.presentation.i18n import _
 
 # PDCurses (windows-curses on Windows) accounts a line's width as one column
@@ -195,8 +197,17 @@ def wrap_text(lines: Sequence[str], width: int) -> list[str]:
     return wrapped
 
 
+_SHORTCUT_RE = re.compile(r"^\[([A-Za-z0-9])\]")
+
+
 class SelectorWidget:
-    """Single/multi-select list widget with keyboard navigation."""
+    """Single/multi-select list widget with keyboard navigation.
+
+    Items rendered as ``[X] label`` expose ``X`` as a hotkey: pressing it
+    jumps straight to that entry (and activates it in single-select mode).
+    Because hotkeys match both letter cases, the vim-style ``j``/``k``
+    movement keys are intentionally not supported here.
+    """
 
     def __init__(
         self,
@@ -209,11 +220,18 @@ class SelectorWidget:
         self.multi_select = multi_select
         self.current = 0
         self.selected: set[int] = set()
+        # Map hotkey letter -> item index (first occurrence wins).
+        self._shortcuts: dict[str, int] = {}
+        for i, item in enumerate(self.items):
+            m = _SHORTCUT_RE.match(item)
+            if m:
+                self._shortcuts.setdefault(m.group(1).upper(), i)
 
     def run(self, stdscr: curses.window) -> list[int]:
         """Run the selector. Returns list of selected indices."""
         curses.curs_set(0)
         stdscr.keypad(True)
+        audit.audit_logger().debug("tui select.open: %s (%d items)", self.title, len(self.items))
 
         while True:
             stdscr.clear()
@@ -262,7 +280,7 @@ class SelectorWidget:
                     stdscr.addstr(status_row + 1, 0, _truncate_to_width(status, cols - 1))
                 help_text = "  Up/Down: Navigate  Space: Select  Enter: Confirm  Esc: Cancel"
             else:
-                help_text = "  Up/Down: Navigate  Enter: Select  Esc: Back"
+                help_text = "  Up/Down: Navigate  Enter: Select  [X]: Hotkey  Esc: Back"
             with contextlib.suppress(curses.error):
                 stdscr.addstr(
                     rows - 1,
@@ -276,22 +294,60 @@ class SelectorWidget:
             # Input
             key = stdscr.getch()
 
-            if key in (curses.KEY_UP, ord("k")):
+            if key in (curses.KEY_UP,):
                 self.current = max(0, self.current - 1)
-            elif key in (curses.KEY_DOWN, ord("j")):
+            elif key in (curses.KEY_DOWN,):
                 self.current = min(len(self.items) - 1, self.current + 1)
+            elif 32 <= key < 0x100 and chr(key).upper() in self._shortcuts:
+                idx = self._shortcuts[chr(key).upper()]
+                audit.audit_logger().debug(
+                    "tui select.hotkey: %s -> [%d] %s",
+                    self.title,
+                    idx,
+                    self.items[idx] if idx < len(self.items) else "?",
+                )
+                if not self.multi_select:
+                    return [idx]
+                self.current = idx
             elif key == ord(" ") and self.multi_select:
                 if self.current in self.selected:
                     self.selected.discard(self.current)
+                    audit.audit_logger().debug(
+                        "tui select.unmark: %s -> [%d] %s",
+                        self.title,
+                        self.current,
+                        self.items[self.current] if self.current < len(self.items) else "?",
+                    )
                 else:
                     self.selected.add(self.current)
+                    audit.audit_logger().debug(
+                        "tui select.mark: %s -> [%d] %s",
+                        self.title,
+                        self.current,
+                        self.items[self.current] if self.current < len(self.items) else "?",
+                    )
             elif key in (curses.KEY_ENTER, 10, 13):
                 if not self.multi_select:
+                    audit.audit_logger().debug(
+                        "tui select.choose: %s -> [%d] %s",
+                        self.title,
+                        self.current,
+                        self.items[self.current] if self.current < len(self.items) else "?",
+                    )
                     return [self.current]
                 if not self.selected:
+                    audit.audit_logger().debug(
+                        "tui select.choose: %s -> <nothing selected>", self.title
+                    )
                     return []
+                audit.audit_logger().debug(
+                    "tui select.choose: %s -> %s",
+                    self.title,
+                    sorted(self.selected),
+                )
                 return sorted(self.selected)
             elif key == 27:  # Esc
+                audit.audit_logger().debug("tui select.cancel: %s", self.title)
                 return []
 
         return []
@@ -301,7 +357,9 @@ def confirm_dialog(stdscr: curses.window, prompt: str) -> bool:
     """Show a yes/no confirmation dialog. Returns True if confirmed."""
     sel = SelectorWidget(prompt, ["Yes", "No"])
     result = sel.run(stdscr)
-    return len(result) > 0 and result[0] == 0
+    confirmed = len(result) > 0 and result[0] == 0
+    audit.log_confirmation(prompt, confirmed)
+    return confirmed
 
 
 def message_screen(stdscr: curses.window, title: str, lines: list[str]) -> None:
@@ -312,6 +370,7 @@ def message_screen(stdscr: curses.window, title: str, lines: list[str]) -> None:
     scrolled with the arrow keys (or ``j``/``k``), ``PageUp``/``PageDown``,
     ``Home``/``End`` and the mouse wheel.  Enter or Esc closes the screen.
     """
+    audit.log_message_screen(title)
     curses.curs_set(0)
     stdscr.keypad(True)
     with contextlib.suppress(curses.error):
@@ -629,6 +688,7 @@ def input_prompt(stdscr: curses.window, prompt: str) -> str:
     _curs_set(False)
     stdscr.keypad(True)
     editor = _LineEditor()
+    audit.audit_logger().debug("tui input.open: %s", prompt)
 
     while True:
         _draw_input_prompt(stdscr, prompt, editor)
@@ -638,8 +698,11 @@ def input_prompt(stdscr: curses.window, prompt: str) -> str:
             editor.insert(key)
             continue
         if key in (curses.KEY_ENTER, 10, 13):
-            return editor.text().strip()
+            value = editor.text().strip()
+            audit.log_input(prompt, value, cancelled=False)
+            return value
         if key == 27:  # Esc
+            audit.log_input(prompt, "", cancelled=True)
             return ""
         if key == curses.KEY_LEFT:
             editor.left()

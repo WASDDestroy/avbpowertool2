@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from avbpowertool.presentation import audit
+
+audit_log = audit.audit_logger()
 
 
 @dataclass
@@ -108,6 +109,7 @@ class Router:
     def start(self) -> str:
         """Navigate to the start route and return its ID."""
         self._stack = [self._start_route]
+        audit_log.debug("tui nav.enter: %s (start)", self._start_route)
         return self._start_route
 
     def current_route(self) -> NavRoute | None:
@@ -119,15 +121,21 @@ class Router:
     def push(self, route_id: str) -> bool:
         """Push a route onto the stack. Returns False if route not found."""
         if route_id not in self._routes:
+            audit_log.debug("tui nav.push_failed: %s (unknown route)", route_id)
             return False
         self._stack.append(route_id)
+        audit_log.debug("tui nav.enter: %s (depth %d)", route_id, len(self._stack))
         return True
 
     def pop(self) -> bool:
         """Pop the current route. Returns False if at root."""
         if len(self._stack) <= 1:
+            audit_log.debug("tui nav.back_refused: at root")
             return False
-        self._stack.pop()
+        popped = self._stack.pop()
+        audit_log.debug(
+            "tui nav.back: from %s to %s", popped, self._stack[-1] if self._stack else "<none>"
+        )
         return True
 
     def is_root(self) -> bool:

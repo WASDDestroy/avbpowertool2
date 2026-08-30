@@ -15,6 +15,7 @@ from avbpowertool.application.services.manage_profiles import (
 )
 from avbpowertool.infrastructure.avbtool.runner import SubprocessAvbTool
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
+from avbpowertool.presentation import audit
 from avbpowertool.presentation.i18n import _
 from avbpowertool.presentation.tui.router import Router
 from avbpowertool.presentation.tui.widgets import (
@@ -23,6 +24,7 @@ from avbpowertool.presentation.tui.widgets import (
 )
 
 logger = logging.getLogger(__name__)
+audit_log = audit.audit_logger()
 
 
 class App:
@@ -41,11 +43,15 @@ class App:
 
     def run(self) -> None:
         """Run the TUI application."""
+        audit.log_session_start("tui", f"root={self._ws.root}")
         # curses needs a real locale to count multibyte (CJK) columns
         # correctly; without it ncurses falls back to per-byte accounting.
         with contextlib.suppress(Exception):
             locale.setlocale(locale.LC_ALL, "")
-        curses.wrapper(self._main_loop)
+        try:
+            curses.wrapper(self._main_loop)
+        finally:
+            audit.log_session_end("tui", "TUI closed")
 
     def _main_loop(self, stdscr: curses.window) -> None:
         """Main curses loop."""
@@ -91,7 +97,9 @@ class App:
 
             if not result:
                 # Esc pressed
+                audit_log.debug("tui select.cancel: %s", title)
                 if not self._router.pop():
+                    audit_log.debug("tui session.exit_requested: esc at root")
                     break
                 continue
 
@@ -100,11 +108,14 @@ class App:
                 continue
 
             chosen = action_ids[idx]
+            audit_log.debug("tui select.choose: %s -> %s", title, chosen)
 
             if chosen == "system:exit":
+                audit_log.debug("tui session.exit_requested: exit chosen")
                 break
             elif chosen == "system:back":
                 if not self._router.pop():
+                    audit_log.debug("tui session.exit_requested: back at root")
                     break
             elif chosen.startswith("route:"):
                 route_id = chosen[6:]
@@ -143,16 +154,21 @@ class App:
 
         handler = view_map.get(action_id)
         if handler is None:
+            audit_log.warning("tui action.unimplemented: %s", action_id)
             message_screen(
                 stdscr, "Not Implemented", [f"Action {action_id} is not yet implemented."]
             )
             return
 
+        audit.log_action_start("tui", action_id)
         try:
             handler(stdscr, self._ws, self._avb)
         except Exception as exc:
             logger.exception("Error in action %s", action_id)
+            audit.log_action_end("tui", action_id, f"error: {exc}")
             message_screen(stdscr, "Error", [str(exc)])
+        else:
+            audit.log_action_end("tui", action_id, "completed")
 
     def _show_config_library(self, stdscr: curses.window, ws: WorkspacePaths, avb: object) -> None:
         """Config library management view."""
@@ -161,6 +177,7 @@ class App:
 
         result = uc.execute(ProfileListRequest())
         if not result.profiles:
+            audit_log.debug("tui message: Config Library (empty)")
             message_screen(stdscr, "Config Library", ["No profiles found."])
             return
 
@@ -170,13 +187,28 @@ class App:
         sel = SelectorWidget("Config Library", items)
         choice = sel.run(stdscr)
         if not choice:
+            audit_log.debug("tui select.cancel: Config Library")
             return
 
         profile = result.profiles[choice[0]]
+        audit_log.debug(
+            "tui select.choose: Config Library -> %s (profile %s)",
+            profile.profile_id,
+            profile.profile_id,
+        )
         actions = ["Activate", "Delete", "Back"]
         action_sel = SelectorWidget(f"Options for {profile.profile_id}", actions)
         action_choice = action_sel.run(stdscr)
-        if action_choice and action_choice[0] == 0:
+        if not action_choice:
+            audit_log.debug("tui select.cancel: Options for %s", profile.profile_id)
+            return
+        audit_log.debug(
+            "tui select.choose: Options for %s -> %s",
+            profile.profile_id,
+            actions[action_choice[0]],
+        )
+        if action_choice[0] == 0:
+            audit.log_action_start("tui", "profile.activate", profile.profile_id)
             activate_uc = ProfileActivateUseCase(ws)
             from avbpowertool.application.commands import ProfileActivateRequest
 
@@ -184,22 +216,35 @@ class App:
                 ProfileActivateRequest(profile_id=profile.profile_id)
             )
             if activate_result.issues:
+                audit.log_action_end(
+                    "tui",
+                    "profile.activate",
+                    f"issues: {[i.error_code for i in activate_result.issues]}",
+                )
                 message_screen(stdscr, "Error", [i.message for i in activate_result.issues])
             else:
+                audit.log_action_end("tui", "profile.activate", "activated")
                 message_screen(stdscr, "Success", [f"Activated: {profile.profile_id}"])
-        elif action_choice and action_choice[0] == 1:
+        elif action_choice[0] == 1:
             from avbpowertool.presentation.tui.widgets import confirm_dialog
 
-            if not confirm_dialog(
+            confirmed = confirm_dialog(
                 stdscr, f"Delete profile '{profile.profile_id}'? This cannot be undone."
-            ):
+            )
+            audit.log_confirmation(f"Delete profile '{profile.profile_id}'", confirmed)
+            if not confirmed:
                 return
+            audit.log_action_start("tui", "profile.delete", profile.profile_id)
             from avbpowertool.application.commands import ProfileDeleteRequest
 
             result = ProfileDeleteUseCase(ws).execute(
                 ProfileDeleteRequest(profile_id=profile.profile_id)
             )
             if result.issues:
+                audit.log_action_end(
+                    "tui", "profile.delete", f"issues: {[i.error_code for i in result.issues]}"
+                )
                 message_screen(stdscr, "Error", [i.message for i in result.issues])
             else:
+                audit.log_action_end("tui", "profile.delete", "deleted")
                 message_screen(stdscr, "Success", [f"Deleted: {profile.profile_id}"])

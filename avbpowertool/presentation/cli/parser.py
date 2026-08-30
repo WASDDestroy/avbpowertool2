@@ -187,13 +187,23 @@ def main(argv: Sequence[str] | None = None, out: TextIO = sys.stdout) -> int:
         app.run()
         return 0
 
+    # CLI mode: bootstrap wires logging (it is TUI-only otherwise) so the
+    # invoked command is audited even before any handler runs.
+    from avbpowertool.bootstrap import bootstrap
+    from avbpowertool.presentation import audit
+    from avbpowertool.presentation.cli.handlers import dispatch
+
+    bootstrap()
+    argv_list = list(argv) if argv is not None else sys.argv[1:]
+    audit.log_cli_command(argv_list)
+
     # Handle --execute flag for sign
     if action_id == ActionId.IMAGE_SIGN and getattr(args, "execute", False):
         args.dry_run = False
 
-    from avbpowertool.presentation.cli.handlers import dispatch
-
-    return dispatch(args, out)
+    code = dispatch(args, out)
+    audit.log_session_end("cli", f"exit_code={code}")
+    return code
 
 
 def _handle_deprecated(old: str, args: argparse.Namespace, out: TextIO) -> int:
@@ -210,6 +220,14 @@ def _handle_deprecated(old: str, args: argparse.Namespace, out: TextIO) -> int:
         print(f"error: unknown deprecated command '{old}'", file=sys.stderr)
         return 2
 
+    from avbpowertool.bootstrap import bootstrap
+    from avbpowertool.presentation import audit
+
+    # CLI mode: wire logging so the deprecated invocation is audited too.
+    bootstrap()
+    audit.log_cli_command([old, *(getattr(args, "rest", []) or [])])
+    audit.audit_logger().warning("cli deprecated.command: %s mapped to %s", old, action)
+
     # Re-dispatch with mapped action
     args.action_id = action
     # Ensure images is a tuple for image commands
@@ -217,7 +235,9 @@ def _handle_deprecated(old: str, args: argparse.Namespace, out: TextIO) -> int:
         args.images = getattr(args, "rest", []) or []
     from avbpowertool.presentation.cli.handlers import dispatch
 
-    return dispatch(args, out)
+    code = dispatch(args, out)
+    audit.log_session_end("cli", f"exit_code={code}")
+    return code
 
 
 if __name__ == "__main__":
