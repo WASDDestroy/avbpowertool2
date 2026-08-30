@@ -6,7 +6,6 @@
       "title_key": "node.home.name",
       "description_key": "node.home.description",
       "items": [
-        {"action": "action:image.read_info", "shortcut": "R"},
         {"route": "route:config_manager", "shortcut": "M"},
         {"action": "action:image.sign", "shortcut": "S"},
         {"route": "route:settings", "shortcut": "T"},
@@ -19,7 +18,8 @@
       "description_key": "node.misc.description",
       "parent": "route:home",
       "items": [
-        {"action": "action:misc.import_legacy", "shortcut": "I"}
+        {"action": "action:misc.import_legacy", "shortcut": "I"},
+        {"action": "action:image.read_info", "shortcut": "R"}
       ]
     },
     "route:config_manager": {
