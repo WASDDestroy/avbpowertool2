@@ -240,7 +240,7 @@ def _collect_partitions_auto(
     raw = dir_path.strip() if dir_path else ""
     image_dir = Path(raw) if raw else default_dir
     if not image_dir.is_dir():
-        message_screen(stdscr, "Error", [_("config.wizard.auto_dir_not_found")])
+        message_screen(stdscr, _("app.error_title"), [_("config.wizard.auto_dir_not_found")])
         return None
 
     # Scan for .img files
@@ -250,7 +250,7 @@ def _collect_partitions_auto(
             image_names.append(f.stem)
 
     if not image_names:
-        message_screen(stdscr, "Error", [_("config.wizard.auto_no_images")])
+        message_screen(stdscr, _("app.error_title"), [_("config.wizard.auto_no_images")])
         return None
 
     # Show found images

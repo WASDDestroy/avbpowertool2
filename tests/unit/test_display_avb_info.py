@@ -12,7 +12,10 @@ from avbpowertool.infrastructure.persistence.profile_codec import (
     decode_profile_with_issues,
     encode_profile,
 )
+from avbpowertool.presentation.i18n import init_i18n
 from avbpowertool.presentation.tui.views.display_avb_info import partition_config_lines
+
+init_i18n("en")
 
 
 def _config(**overrides: object) -> PartitionConfig:

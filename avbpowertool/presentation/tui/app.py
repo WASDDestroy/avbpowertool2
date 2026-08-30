@@ -153,7 +153,9 @@ class App:
         if handler is None:
             audit_log.warning("tui action.unimplemented: %s", action_id)
             message_screen(
-                stdscr, "Not Implemented", [f"Action {action_id} is not yet implemented."]
+                stdscr,
+                _("app.not_implemented_title"),
+                [_("app.not_implemented_msg", action=action_id)],
             )
             return
 
@@ -163,6 +165,6 @@ class App:
         except Exception as exc:
             logger.exception("Error in action %s", action_id)
             audit.log_action_end("tui", action_id, f"error: {exc}")
-            message_screen(stdscr, "Error", [str(exc)])
+            message_screen(stdscr, _("app.error_title"), [str(exc)])
         else:
             audit.log_action_end("tui", action_id, "completed")

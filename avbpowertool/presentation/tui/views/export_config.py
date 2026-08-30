@@ -8,6 +8,7 @@ from avbpowertool.application.commands import ConfigExportRequest
 from avbpowertool.application.ports import AvbToolPort
 from avbpowertool.application.services.manage_configs import ConfigExportUseCase
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
+from avbpowertool.presentation.i18n import _
 from avbpowertool.presentation.tui.widgets import (
     SelectorWidget,
     message_screen,
@@ -24,10 +25,10 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     profile_ids = repo.list_profiles()
 
     if not profile_ids:
-        message_screen(stdscr_c, "Export Config", ["No profiles found."])
+        message_screen(stdscr_c, _("export.title"), [_("library.no_profiles")])
         return
 
-    sel = SelectorWidget("Select Profile to Export", list(profile_ids))
+    sel = SelectorWidget(_("export.select_profile"), list(profile_ids))
     chosen = sel.run(stdscr_c)
     if not chosen:
         return
@@ -41,8 +42,8 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
 
     lines: list[str] = []
     if not any(i.error_code.startswith("config.export") for i in result.issues):
-        lines.append(f"Exported to: {result.output_path}")
+        lines.append(_("export.success", path=result.output_path))
     for iss in result.issues:
         lines.append(f"  [{iss.error_code}] {iss.message}")
 
-    message_screen(stdscr_c, "Export Result", lines)
+    message_screen(stdscr_c, _("export.result_title"), lines)

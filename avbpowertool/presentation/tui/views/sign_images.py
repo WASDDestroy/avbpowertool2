@@ -23,7 +23,7 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     active_id = _get_active_profile(ws)
 
     if not ws.images.exists():
-        message_screen(stdscr_c, "Sign Images", ["No Images/ directory found."])
+        message_screen(stdscr_c, _("sign.title"), [_("sign.no_images_dir")])
         return
 
     images: list[str] = []
@@ -32,15 +32,15 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
             images.append(f.stem)
 
     if not images:
-        message_screen(stdscr_c, "Sign Images", ["No .img files found in Images/ directory."])
+        message_screen(stdscr_c, _("sign.title"), [_("sign.no_images")])
         return
 
     # Confirm
-    if not confirm_dialog(stdscr_c, "Sign images? This will modify image files."):
+    if not confirm_dialog(stdscr_c, _("sign.confirm")):
         return
 
     # Multi-select
-    sel = SelectorWidget("Select Images to Sign", images, multi_select=True)
+    sel = SelectorWidget(_("sign.select_title"), images, multi_select=True)
     chosen = sel.run(stdscr_c)
     if not chosen:
         return
@@ -52,7 +52,9 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     # props read back from images are usually duplicates of build info).
     include_vbmeta_props = False
     if _has_vbmeta_partition(ws, active_id, selected_names):
-        props_sel = SelectorWidget(_("sign.vbmeta.props_prompt"), ["No", "Yes"])
+        props_sel = SelectorWidget(
+            _("sign.vbmeta.props_prompt"), [_("widget.choice.no"), _("widget.choice.yes")]
+        )
         props_choice = props_sel.run(stdscr_c)
         if props_choice and props_choice[0] == 1:
             include_vbmeta_props = True
@@ -70,10 +72,10 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     # Display results
     lines: list[str] = []
     if result.executed:
-        lines.append(f"Success: {result.success_count}, Failed: {result.fail_count}")
+        lines.append(_("sign.summary", success=result.success_count, failed=result.fail_count))
     else:
-        lines.append("Dry run completed.")
-        lines.append(f"Steps planned: {len(result.plan.steps)}")
+        lines.append(_("sign.dry_run_done"))
+        lines.append(_("sign.steps_planned", count=len(result.plan.steps)))
 
     for step in result.plan.steps:
         lines.append(f"  [{step.order}] {step.operation} {step.partition_name}")
@@ -81,7 +83,7 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     for iss in result.issues:
         lines.append(f"  [{iss.error_code}] {iss.message}")
 
-    message_screen(stdscr_c, "Signing Results", lines)
+    message_screen(stdscr_c, _("sign.results_title"), lines)
 
 
 def _get_active_profile(ws: WorkspacePaths) -> str:

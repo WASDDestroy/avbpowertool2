@@ -8,6 +8,7 @@ from avbpowertool.application.commands import ConfigImportRequest
 from avbpowertool.application.ports import AvbToolPort
 from avbpowertool.application.services.manage_configs import ConfigImportUseCase
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
+from avbpowertool.presentation.i18n import _
 from avbpowertool.presentation.tui.widgets import (
     SelectorWidget,
     message_screen,
@@ -25,10 +26,10 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
             zip_files.append(f.name)
 
     if not zip_files:
-        message_screen(stdscr_c, "Import Config", ["No .zip files found in project root."])
+        message_screen(stdscr_c, _("import.title"), [_("import.no_archives")])
         return
 
-    sel = SelectorWidget("Select Archive to Import", zip_files)
+    sel = SelectorWidget(_("import.select_archive"), zip_files)
     chosen = sel.run(stdscr_c)
     if not chosen:
         return
@@ -42,8 +43,8 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
 
     lines: list[str] = []
     if result.profile_id:
-        lines.append(f"Imported profile: {result.profile_id}")
+        lines.append(_("import.success", profile=result.profile_id))
     for iss in result.issues:
         lines.append(f"  [{iss.error_code}] {iss.message}")
 
-    message_screen(stdscr_c, "Import Result", lines)
+    message_screen(stdscr_c, _("import.result_title"), lines)

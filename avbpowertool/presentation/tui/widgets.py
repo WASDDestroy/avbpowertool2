@@ -275,12 +275,12 @@ class SelectorWidget:
             status_row = rows - 2
             stdscr.addstr(status_row, 0, "=" * min(80, cols - 1))
             if self.multi_select:
-                status = f"  Selected: {len(self.selected)}/{len(self.items)}"
+                status = f"  {_('widget.selected_count', selected=len(self.selected), total=len(self.items))}"
                 with contextlib.suppress(curses.error):
                     stdscr.addstr(status_row + 1, 0, _truncate_to_width(status, cols - 1))
-                help_text = "  Up/Down: Navigate  Space: Select  Enter: Confirm  Esc: Cancel"
+                help_text = "  " + _("widget.help.multi_select")
             else:
-                help_text = "  Up/Down: Navigate  Enter: Select  [X]: Hotkey  Esc: Back"
+                help_text = "  " + _("widget.help.single_select")
             with contextlib.suppress(curses.error):
                 stdscr.addstr(
                     rows - 1,
@@ -355,7 +355,7 @@ class SelectorWidget:
 
 def confirm_dialog(stdscr: curses.window, prompt: str) -> bool:
     """Show a yes/no confirmation dialog. Returns True if confirmed."""
-    sel = SelectorWidget(prompt, ["Yes", "No"])
+    sel = SelectorWidget(prompt, [_("widget.choice.yes"), _("widget.choice.no")])
     result = sel.run(stdscr)
     confirmed = len(result) > 0 and result[0] == 0
     audit.log_confirmation(prompt, confirmed)
@@ -404,7 +404,7 @@ def message_screen(stdscr: curses.window, title: str, lines: list[str]) -> None:
             with contextlib.suppress(curses.error):
                 stdscr.addstr(2 + i, 0, wrapped[idx])
 
-        help_text = "  Up/Down: Scroll  PgUp/PgDn: Page  Enter/Esc: Exit"
+        help_text = "  " + _("widget.help.message_screen")
         with contextlib.suppress(curses.error):
             stdscr.addstr(
                 rows - 1,

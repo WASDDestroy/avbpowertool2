@@ -74,7 +74,7 @@ def image_inspection_lines(img: ImageInspection) -> list[str]:
     lines.append(
         _(
             "read_image_info.field.descriptor",
-            value=img.descriptor.value if img.descriptor else "N/A",
+            value=img.descriptor.value if img.descriptor else _("common.not_available"),
         )
     )
     if img.algorithm:
@@ -109,7 +109,7 @@ def image_inspection_lines(img: ImageInspection) -> list[str]:
                 "read_image_info.field.chain",
                 name=chain.partition_name,
                 slot=chain.rollback_index_location,
-                pubkey=chain.public_key_sha1 or "N/A",
+                pubkey=chain.public_key_sha1 or _("common.not_available"),
             )
         )
     for key, value in img.raw_extensions:

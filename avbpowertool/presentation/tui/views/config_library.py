@@ -17,6 +17,7 @@ from avbpowertool.application.services.manage_profiles import (
 )
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.presentation import audit
+from avbpowertool.presentation.i18n import _
 from avbpowertool.presentation.tui.widgets import (
     SelectorWidget,
     confirm_dialog,
@@ -34,13 +35,14 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
     result = uc.execute(ProfileListRequest())
     if not result.profiles:
         audit_log.debug("tui message: Config Library (empty)")
-        message_screen(stdscr_c, "Config Library", ["No profiles found."])
+        message_screen(stdscr_c, _("library.title"), [_("library.no_profiles")])
         return
 
     items = [
-        f"{p.profile_id}: {p.name} {'(active)' if p.is_active else ''}" for p in result.profiles
+        f"{p.profile_id}: {p.name} {('(' + _('library.active_suffix') + ')') if p.is_active else ''}"
+        for p in result.profiles
     ]
-    sel = SelectorWidget("Config Library", items)
+    sel = SelectorWidget(_("library.title"), items)
     choice = sel.run(stdscr_c)
     if not choice:
         audit_log.debug("tui select.cancel: Config Library")
@@ -52,8 +54,8 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
         profile.profile_id,
         profile.profile_id,
     )
-    actions = ["Activate", "Delete", "Back"]
-    action_sel = SelectorWidget(f"Options for {profile.profile_id}", actions)
+    actions = [_("library.action.activate"), _("library.action.delete"), _("Back")]
+    action_sel = SelectorWidget(_("library.options_title", profile=profile.profile_id), actions)
     action_choice = action_sel.run(stdscr_c)
     if not action_choice:
         audit_log.debug("tui select.cancel: Options for %s", profile.profile_id)
@@ -74,13 +76,19 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
                 "profile.activate",
                 f"issues: {[i.error_code for i in activate_result.issues]}",
             )
-            message_screen(stdscr_c, "Error", [i.message for i in activate_result.issues])
+            message_screen(
+                stdscr_c, _("app.error_title"), [i.message for i in activate_result.issues]
+            )
         else:
             audit.log_action_end("tui", "profile.activate", "activated")
-            message_screen(stdscr_c, "Success", [f"Activated: {profile.profile_id}"])
+            message_screen(
+                stdscr_c,
+                _("app.success_title"),
+                [_("library.activated", profile=profile.profile_id)],
+            )
     elif action_choice[0] == 1:
         confirmed = confirm_dialog(
-            stdscr_c, f"Delete profile '{profile.profile_id}'? This cannot be undone."
+            stdscr_c, _("library.delete_confirm", profile=profile.profile_id)
         )
         audit.log_confirmation(f"Delete profile '{profile.profile_id}'", confirmed)
         if not confirmed:
@@ -94,7 +102,11 @@ def show(stdscr: object, ws: WorkspacePaths, avb: AvbToolPort) -> None:
             audit.log_action_end(
                 "tui", "profile.delete", f"issues: {[i.error_code for i in result.issues]}"
             )
-            message_screen(stdscr_c, "Error", [i.message for i in result.issues])
+            message_screen(stdscr_c, _("app.error_title"), [i.message for i in result.issues])
         else:
             audit.log_action_end("tui", "profile.delete", "deleted")
-            message_screen(stdscr_c, "Success", [f"Deleted: {profile.profile_id}"])
+            message_screen(
+                stdscr_c,
+                _("app.success_title"),
+                [_("library.deleted", profile=profile.profile_id)],
+            )

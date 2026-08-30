@@ -475,3 +475,248 @@ msgstr "Back"
 
 msgid "input.help"
 msgstr "Left/Right/Home/End: Move cursor  Backspace/Delete: Erase  Ctrl+U: Clear  Enter: Confirm  Esc: Cancel"
+
+# Shared widgets
+msgid "widget.choice.yes"
+msgstr "Yes"
+
+msgid "widget.choice.no"
+msgstr "No"
+
+msgid "widget.selected_count"
+msgstr "Selected: {selected}/{total}"
+
+msgid "widget.help.single_select"
+msgstr "Up/Down: Navigate  Enter: Select  [X]: Hotkey  Esc: Back"
+
+msgid "widget.help.multi_select"
+msgstr "Up/Down: Navigate  Space: Select  Enter: Confirm  Esc: Cancel"
+
+msgid "widget.help.message_screen"
+msgstr "Up/Down: Scroll  PgUp/PgDn: Page  Enter/Esc: Exit"
+
+# App shell
+msgid "app.error_title"
+msgstr "Error"
+
+msgid "app.success_title"
+msgstr "Success"
+
+msgid "app.not_implemented_title"
+msgstr "Not Implemented"
+
+msgid "app.not_implemented_msg"
+msgstr "Action {action} is not yet implemented."
+
+# Common values
+msgid "common.not_available"
+msgstr "N/A"
+
+# Config library
+msgid "library.title"
+msgstr "Config Library"
+
+msgid "library.no_profiles"
+msgstr "No profiles found."
+
+msgid "library.active_suffix"
+msgstr "active"
+
+msgid "library.options_title"
+msgstr "Options for {profile}"
+
+msgid "library.action.activate"
+msgstr "Activate"
+
+msgid "library.action.delete"
+msgstr "Delete"
+
+msgid "library.activated"
+msgstr "Activated: {profile}"
+
+msgid "library.delete_confirm"
+msgstr "Delete profile '{profile}'? This cannot be undone."
+
+msgid "library.deleted"
+msgstr "Deleted: {profile}"
+
+# Import config
+msgid "import.title"
+msgstr "Import Config"
+
+msgid "import.no_archives"
+msgstr "No .zip files found in project root."
+
+msgid "import.select_archive"
+msgstr "Select Archive to Import"
+
+msgid "import.success"
+msgstr "Imported profile: {profile}"
+
+msgid "import.result_title"
+msgstr "Import Result"
+
+# Export config
+msgid "export.title"
+msgstr "Export Config"
+
+msgid "export.select_profile"
+msgstr "Select Profile to Export"
+
+msgid "export.success"
+msgstr "Exported to: {path}"
+
+msgid "export.result_title"
+msgstr "Export Result"
+
+# Sign images
+msgid "sign.title"
+msgstr "Sign Images"
+
+msgid "sign.no_images_dir"
+msgstr "No Images/ directory found."
+
+msgid "sign.no_images"
+msgstr "No .img files found in Images/ directory."
+
+msgid "sign.confirm"
+msgstr "Sign images? This will modify image files."
+
+msgid "sign.select_title"
+msgstr "Select Images to Sign"
+
+msgid "sign.summary"
+msgstr "Success: {success}, Failed: {failed}"
+
+msgid "sign.dry_run_done"
+msgstr "Dry run completed."
+
+msgid "sign.steps_planned"
+msgstr "Steps planned: {count}"
+
+msgid "sign.results_title"
+msgstr "Signing Results"
+
+# Current config display
+msgid "config.show_title"
+msgstr "Current Config Info"
+
+msgid "config.no_partitions"
+msgstr "No partitions configured."
+
+msgid "config.field.profile"
+msgstr "Profile: {value}"
+
+msgid "config.field.image"
+msgstr "  Image: {value}"
+
+msgid "config.field.descriptor"
+msgstr "  Descriptor: {value}"
+
+msgid "config.field.algorithm"
+msgstr "  Algorithm: {value}"
+
+msgid "config.field.key_id"
+msgstr "  Key ID: {value}"
+
+msgid "config.field.partition_size"
+msgstr "  Partition Size: {value}"
+
+msgid "config.field.dynamic_partition_size"
+msgstr "  Dynamic Partition Size: true"
+
+msgid "config.field.rollback_index"
+msgstr "  Rollback Index: {value}"
+
+msgid "config.field.rollback_index_location"
+msgstr "  Rollback Index Location: {value}"
+
+msgid "config.field.salt"
+msgstr "  Salt: {value}"
+
+msgid "config.field.hash_algorithm"
+msgstr "  Hash Algorithm: {value}"
+
+msgid "config.field.flags"
+msgstr "  Flags: {value}"
+
+msgid "config.field.props_header"
+msgstr "  Props:"
+
+msgid "config.field.prop_from_file_header"
+msgstr "  Prop From File:"
+
+msgid "config.field.set_hashtree_disabled"
+msgstr "  Set Hashtree Disabled: true"
+
+msgid "config.field.set_verification_disabled"
+msgstr "  Set Verification Disabled: true"
+
+msgid "config.field.block_size"
+msgstr "  Block Size: {value}"
+
+msgid "config.field.do_not_generate_fec"
+msgstr "  Do Not Generate FEC: true"
+
+msgid "config.field.fec_num_roots"
+msgstr "  FEC Num Roots: {value}"
+
+msgid "config.field.no_hashtree"
+msgstr "  No Hashtree: true"
+
+msgid "config.field.check_at_most_once"
+msgstr "  Check At Most Once: true"
+
+msgid "config.field.setup_as_rootfs_from_kernel"
+msgstr "  Setup As Rootfs From Kernel: true"
+
+msgid "config.field.included_partitions"
+msgstr "  Included Partitions: {value}"
+
+msgid "config.field.include_descriptors_from_image"
+msgstr "  Include Descriptors From Image: {value}"
+
+msgid "config.field.chain_partitions"
+msgstr "  Chain Partitions: {value}"
+
+msgid "config.field.chain_partitions_no_ab"
+msgstr "  Chain Partitions (no AB): {value}"
+
+msgid "config.field.kernel_cmdlines"
+msgstr "  Kernel Cmdlines: {value}"
+
+msgid "config.field.setup_rootfs_from_kernel"
+msgstr "  Setup Rootfs From Kernel: {value}"
+
+msgid "config.field.padding_size"
+msgstr "  Padding Size: {value}"
+
+msgid "config.field.output_vbmeta_image"
+msgstr "  Output Vbmeta Image: {value}"
+
+msgid "config.field.calc_max_image_size"
+msgstr "  Calc Max Image Size: true"
+
+msgid "config.field.do_not_append_vbmeta_image"
+msgstr "  Do Not Append Vbmeta Image: true"
+
+msgid "config.field.print_required_libavb_version"
+msgstr "  Print Required Libavb Version: true"
+
+msgid "config.field.use_persistent_digest"
+msgstr "  Use Persistent Digest: true"
+
+msgid "config.field.do_not_use_ab"
+msgstr "  Do Not Use AB: true"
+
+msgid "config.field.signing_helper"
+msgstr "  Signing Helper: {value}"
+
+msgid "config.field.signing_helper_with_files"
+msgstr "  Signing Helper With Files: {value}"
+
+msgid "config.field.public_key_metadata"
+msgstr "  Public Key Metadata: {value}"
+
+msgid "config.field.append_to_release_string"
+msgstr "  Append To Release String: {value}"

@@ -475,3 +475,248 @@ msgstr "返回"
 
 msgid "input.help"
 msgstr "左右方向键/Home/End: 移动光标  退格/Delete: 删除  Ctrl+U: 清空  Enter: 确认  Esc: 取消"
+
+# 共享组件
+msgid "widget.choice.yes"
+msgstr "是"
+
+msgid "widget.choice.no"
+msgstr "否"
+
+msgid "widget.selected_count"
+msgstr "已选择：{selected}/{total}"
+
+msgid "widget.help.single_select"
+msgstr "上下方向键: 移动  Enter: 选择  [X]: 快捷键  Esc: 返回"
+
+msgid "widget.help.multi_select"
+msgstr "上下方向键: 移动  空格: 选择  Enter: 确认  Esc: 取消"
+
+msgid "widget.help.message_screen"
+msgstr "上下方向键: 滚动  PgUp/PgDn: 翻页  Enter/Esc: 退出"
+
+# 应用外壳
+msgid "app.error_title"
+msgstr "错误"
+
+msgid "app.success_title"
+msgstr "成功"
+
+msgid "app.not_implemented_title"
+msgstr "未实现"
+
+msgid "app.not_implemented_msg"
+msgstr "功能 {action} 尚未实现。"
+
+# 通用值
+msgid "common.not_available"
+msgstr "无"
+
+# 配置库
+msgid "library.title"
+msgstr "配置库"
+
+msgid "library.no_profiles"
+msgstr "未找到配置。"
+
+msgid "library.active_suffix"
+msgstr "已激活"
+
+msgid "library.options_title"
+msgstr "{profile} 的操作"
+
+msgid "library.action.activate"
+msgstr "激活"
+
+msgid "library.action.delete"
+msgstr "删除"
+
+msgid "library.activated"
+msgstr "已激活：{profile}"
+
+msgid "library.delete_confirm"
+msgstr "删除配置 '{profile}'？此操作不可撤销。"
+
+msgid "library.deleted"
+msgstr "已删除：{profile}"
+
+# 导入配置
+msgid "import.title"
+msgstr "导入配置"
+
+msgid "import.no_archives"
+msgstr "项目根目录中未找到 .zip 文件。"
+
+msgid "import.select_archive"
+msgstr "选择要导入的压缩包"
+
+msgid "import.success"
+msgstr "已导入配置：{profile}"
+
+msgid "import.result_title"
+msgstr "导入结果"
+
+# 导出配置
+msgid "export.title"
+msgstr "导出配置"
+
+msgid "export.select_profile"
+msgstr "选择要导出的配置"
+
+msgid "export.success"
+msgstr "已导出到：{path}"
+
+msgid "export.result_title"
+msgstr "导出结果"
+
+# 签名镜像
+msgid "sign.title"
+msgstr "签名镜像"
+
+msgid "sign.no_images_dir"
+msgstr "未找到 Images/ 目录。"
+
+msgid "sign.no_images"
+msgstr "Images/ 目录中未找到 .img 文件。"
+
+msgid "sign.confirm"
+msgstr "签名镜像？此操作会修改镜像文件。"
+
+msgid "sign.select_title"
+msgstr "选择要签名的镜像"
+
+msgid "sign.summary"
+msgstr "成功：{success}，失败：{failed}"
+
+msgid "sign.dry_run_done"
+msgstr "试运行完成。"
+
+msgid "sign.steps_planned"
+msgstr "计划步骤数：{count}"
+
+msgid "sign.results_title"
+msgstr "签名结果"
+
+# 当前配置展示
+msgid "config.show_title"
+msgstr "当前配置信息"
+
+msgid "config.no_partitions"
+msgstr "未配置任何分区。"
+
+msgid "config.field.profile"
+msgstr "配置：{value}"
+
+msgid "config.field.image"
+msgstr "  镜像：{value}"
+
+msgid "config.field.descriptor"
+msgstr "  描述符：{value}"
+
+msgid "config.field.algorithm"
+msgstr "  算法：{value}"
+
+msgid "config.field.key_id"
+msgstr "  密钥 ID：{value}"
+
+msgid "config.field.partition_size"
+msgstr "  分区大小：{value}"
+
+msgid "config.field.dynamic_partition_size"
+msgstr "  动态分区大小：true"
+
+msgid "config.field.rollback_index"
+msgstr "  回滚索引：{value}"
+
+msgid "config.field.rollback_index_location"
+msgstr "  回滚索引位置：{value}"
+
+msgid "config.field.salt"
+msgstr "  盐值：{value}"
+
+msgid "config.field.hash_algorithm"
+msgstr "  哈希算法：{value}"
+
+msgid "config.field.flags"
+msgstr "  标志位：{value}"
+
+msgid "config.field.props_header"
+msgstr "  属性："
+
+msgid "config.field.prop_from_file_header"
+msgstr "  文件属性："
+
+msgid "config.field.set_hashtree_disabled"
+msgstr "  设置 Hashtree 禁用：true"
+
+msgid "config.field.set_verification_disabled"
+msgstr "  设置校验禁用：true"
+
+msgid "config.field.block_size"
+msgstr "  块大小：{value}"
+
+msgid "config.field.do_not_generate_fec"
+msgstr "  不生成 FEC：true"
+
+msgid "config.field.fec_num_roots"
+msgstr "  FEC 根数：{value}"
+
+msgid "config.field.no_hashtree"
+msgstr "  无 Hashtree：true"
+
+msgid "config.field.check_at_most_once"
+msgstr "  至多校验一次：true"
+
+msgid "config.field.setup_as_rootfs_from_kernel"
+msgstr "  从内核设置 rootfs：true"
+
+msgid "config.field.included_partitions"
+msgstr "  包含的分区：{value}"
+
+msgid "config.field.include_descriptors_from_image"
+msgstr "  从镜像包含描述符：{value}"
+
+msgid "config.field.chain_partitions"
+msgstr "  链分区：{value}"
+
+msgid "config.field.chain_partitions_no_ab"
+msgstr "  链分区（非 A/B）：{value}"
+
+msgid "config.field.kernel_cmdlines"
+msgstr "  内核命令行：{value}"
+
+msgid "config.field.setup_rootfs_from_kernel"
+msgstr "  从内核设置 rootfs：{value}"
+
+msgid "config.field.padding_size"
+msgstr "  填充大小：{value}"
+
+msgid "config.field.output_vbmeta_image"
+msgstr "  输出 vbmeta 镜像：{value}"
+
+msgid "config.field.calc_max_image_size"
+msgstr "  计算最大镜像大小：true"
+
+msgid "config.field.do_not_append_vbmeta_image"
+msgstr "  不附加 vbmeta 镜像：true"
+
+msgid "config.field.print_required_libavb_version"
+msgstr "  打印所需 libavb 版本：true"
+
+msgid "config.field.use_persistent_digest"
+msgstr "  使用持久摘要：true"
+
+msgid "config.field.do_not_use_ab"
+msgstr "  不使用 A/B：true"
+
+msgid "config.field.signing_helper"
+msgstr "  签名辅助程序：{value}"
+
+msgid "config.field.signing_helper_with_files"
+msgstr "  基于文件的签名辅助程序：{value}"
+
+msgid "config.field.public_key_metadata"
+msgstr "  公钥元数据：{value}"
+
+msgid "config.field.append_to_release_string"
+msgstr "  附加到版本字符串：{value}"
