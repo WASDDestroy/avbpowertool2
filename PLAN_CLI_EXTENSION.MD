@@ -463,3 +463,38 @@ $ uv run avbpowertool image inspect vbmeta vbmeta_system --json
 
 > 注：`tests/conftest.py:89-121` 的 `tmp_workspace` 恰好创建了一个**真名为 `current`** 的 profile，
 > 因此"`current` 不解析"这个缺陷在测试中从未暴露。P0-1 的"字面优先"规则既修复缺陷，又保持该 fixture 可用。
+
+---
+
+## 9. 实施状态（已完成）
+
+本计划的 P0-1…P2-2 已全部落地，对应以下 commit（自旧到新）：
+
+```
+e8ad8aa test(fixtures): restore the legacy key fixtures hidden by the Keys/ ignore rule
+21be09c fix(cli): resolve the active profile for current and add --profile
+c0ba228 feat(cli): extend config edit with key_id/algorithm/image/props and append/remove
+417837f fix(cli): reject malformed chain append items and mismatched profile ids
+56029fb style(tests): format config edit test file
+dcbff71 feat(cli): add keys list/discover/ensure-public/add/remove commands
+ba438ca feat(cli): add config create with allow-empty profile creation
+143dbeb refactor(app): move auto partition generation out of the TUI wizard
+f5b2f61 feat(cli): add config create --from-images
+e446a11 feat(cli): add config rename
+99a01ce feat(cli): add config check-chains and unify exit codes
+```
+
+第 8 节的四个未决问题已按「作答」列实现：
+
+| # | 问题 | 落地结果 |
+|---|---|---|
+| Q1 | 镜像头部算法为 `NONE` 的分区（`dtbo`/`init_boot`/`pvmfw`/`vendor_boot`）换 key 时是否同时改 `algorithm`？ | **这些分区的算法保持 NONE**：`config create --from-images` 读回 `NONE` 即写 `NONE`，换 key 由脚本按需 `--set algorithm=...` |
+| Q2 | 「剪掉 `--include_descriptors_from_image` 条目」指 `included_partitions` 还是字面字段 `include_descriptors_from_image`？ | **剪掉 `included_partitions`**：`config edit --remove included_partitions=<name>`；`include_descriptors_from_image` 保持独立字段 |
+| Q3 | `chain_partitions` 硬编码三条是「整组替换」还是「按分区名合并」？ | **按照分区名合并**：`config edit --append chain_partitions=PART:SLOT:KEYFILE` 重名时**原地替换**该条，保留镜像读回的其它链 |
+| Q4 | 是否需要还原 hashtree 分区原始 `partition_size`？ | **不需要还原**：`--from-images` 对 hash 分区按镜像文件大小向上取整到 4096 倍数填 `partition_size`，hashtree 分区保持 `0`（追加到末尾） |
+
+文档侧同步产物：新增 `docs/zh/CLI_REFERENCE.md` 与 `docs/en/CLI_REFERENCE.md`
+（命令面 + 退出码/错误码表 + 端到端示例），并更新
+`README.md`、`docs/zh/README.md`、`docs/{zh,en}/CONFIG_CREATION.md`、
+`docs/{zh,en}/KEY_MANAGEMENT.md`、`docs/{zh,en}/BACKEND_API.md`、
+`docs/zh/CONFIG_EXPANSION.md`。

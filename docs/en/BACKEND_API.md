@@ -214,6 +214,156 @@ result.discovered_count   # int
 result.manifest_entries   # tuple[tuple[str, str], ...]  (key_id, filename)
 ```
 
+`KeyDiscoveryRequest(merge=True)` (the default) keeps the cached `public_key` /
+`public_key_sha1` entries, but only while an entry still points at the same
+`private_key` filename; `merge=False` (the CLI's `--replace`) rebuilds the
+manifest from scratch and drops the cache. The result also carries
+`retained_count` (kept entries with no matching `.pem`) and `merged`.
+
+### KeyEnsurePublicUseCase
+
+Materialises the missing public-key files (`<private_key>.pem.bin`) and writes
+`public_key` back into the manifest. Needs an `AvbToolPort`.
+
+```python
+from avbpowertool.application.commands import KeyEnsurePublicRequest
+from avbpowertool.application.services.manage_keys import KeyEnsurePublicUseCase
+
+uc = KeyEnsurePublicUseCase(ws, avb)
+result = uc.execute(KeyEnsurePublicRequest(profile_id="current"))
+
+result.extracted  # tuple[tuple[str, str], ...]  (key_id, public-key filename)
+result.skipped    # tuple[str, ...]  key_ids skipped because the private key is missing
+result.issues     # tuple[OperationIssue, ...]
+```
+
+### ConfigAutoCreateUseCase
+
+Scans an image directory → inspects each image with `info_image` → builds the
+partition configs. It **never writes to disk**; the create wizard and the CLI's
+`config create --from-images` share it.
+
+```python
+from avbpowertool.application.commands import ConfigAutoCreateRequest
+from avbpowertool.application.services.config_auto_create import ConfigAutoCreateUseCase
+
+uc = ConfigAutoCreateUseCase(ws, avb)
+result = uc.execute(ConfigAutoCreateRequest(
+    image_dir=ws.images,                 # required
+    image_names=("boot", "vbmeta"),      # empty = every *.img in the directory (sorted)
+    key_id=None,                         # override the automatic key choice
+    available_keys=("mykey_rsa4096",),   # candidates for the automatic choice
+    default_key_id="default",
+    profile_id="current",                # used for chain resolution
+    resolve_chains=True,
+    allow_fallback=True,                 # the TUI's historical behaviour; the CLI passes False
+))
+
+result.partitions      # tuple[PartitionConfig, ...]
+result.scanned_images  # tuple[str, ...]  scanned image stems (sorted)
+result.skipped_images  # tuple[str, ...]  images skipped for having no AVB structure
+result.chain_issues    # tuple[OperationIssue, ...]  chain-resolution problems (never blocking)
+result.issues          # tuple[OperationIssue, ...]  issues from the inspection phase
+```
+
+### ConfigCreateFromImagesUseCase
+
+The use case behind `config create --from-images`: scan → build → **write** →
+report the still-missing keys. Every early return **leaves the workspace
+untouched**. Needs an `AvbToolPort`.
+
+```python
+from avbpowertool.application.commands import ConfigCreateFromImagesRequest
+from avbpowertool.application.services.config_auto_create import ConfigCreateFromImagesUseCase
+
+uc = ConfigCreateFromImagesUseCase(ws, avb)
+result = uc.execute(ConfigCreateFromImagesRequest(
+    profile_id="my_device",
+    profile_name="",                     # empty -> the profile id
+    image_dir=None,                      # None -> the workspace Images/
+    image_names=("boot", "vbmeta"),      # empty -> every *.img in the directory
+    key_id=None,
+    resolve_chains=True,
+    allow_fallback=False,                # CLI default; True restores the wizard's "include everything"
+    skip_non_avb=False,                  # False makes an image without AVB structure fatal
+    overwrite=False,
+    activate=False,                      # not activated by default
+))
+
+result.created          # bool   whether the profile directory was written
+result.partition_count  # int
+result.chain_count      # int
+result.scanned_images   # tuple[str, ...]
+result.skipped_images   # tuple[str, ...]
+result.missing_keys     # tuple[str, ...]  informational only, never fails the call
+result.issues           # tuple[OperationIssue, ...]
+```
+
+`ConfigCreateUseCase` covers the empty-profile path; its request additionally has
+`allow_empty: bool = False` and `overwrite: bool = False`.
+
+### ProfileRenameUseCase
+
+```python
+from avbpowertool.application.commands import ProfileRenameRequest
+from avbpowertool.application.services.manage_profiles import ProfileRenameUseCase
+
+uc = ProfileRenameUseCase(ws)
+result = uc.execute(ProfileRenameRequest(
+    profile_id="old_id",
+    new_profile_id="new_id",   # same as profile_id = only change the display name
+    new_name="New name",       # None = keep the current name
+))
+
+result.old_profile_id  # str
+result.profile_id      # str   the new id
+result.renamed         # bool  whether the directory was actually moved
+result.name_changed    # bool
+result.issues          # tuple[OperationIssue, ...]
+```
+
+### CheckChainsUseCase
+
+The read-only chain consistency check. Needs an `AvbToolPort` (used to extract a
+public key into the staging directory when the manifest has no usable
+`public_key` — **never** into the key store).
+
+```python
+from avbpowertool.application.commands import CheckChainsRequest
+from avbpowertool.application.services.check_chains import CheckChainsUseCase
+
+uc = CheckChainsUseCase(ws, avb)
+result = uc.execute(CheckChainsRequest(profile_id="current"))
+
+result.profile_id  # str
+result.checked     # int  number of chain entries checked
+result.entries     # tuple[ChainCheckEntry, ...]  (partition_name, entry, ok)
+result.issues      # tuple[OperationIssue, ...]  including chain.key_mismatch
+```
+
+### How `profile_id` is resolved
+
+`profile_id` defaults to `"current"` and is resolved **literal-first**:
+
+1. `profiles/<profile_id>/profile.json` exists → use the literal id;
+2. the request is `"current"`/empty and `.active-profile` points at an existing
+   profile → use that id;
+3. otherwise `config.no_active_profile` (for a current/empty request) or
+   `config.not_found`.
+
+Affected use cases: `ConfigShowUseCase`, `ConfigValidateUseCase`,
+`ConfigEditUseCase`, `ConfigMigrateUseCase`, `SignImagesUseCase`,
+`CheckChainsUseCase`, `ResolveChainKeysUseCase`.
+
+**The key-store use cases resolve leniently**: `KeyListUseCase` /
+`KeyDiscoveryUseCase` / `KeyEnsurePublicUseCase` / `KeyAddUseCase` /
+`KeyRemoveUseCase` go through `resolve_key_store_profile_id` — the same
+literal-first + current→active mapping, but **a non-empty request that cannot be
+resolved is used literally** and the use case reports
+`keys.directory_not_found` itself. That is what lets the create wizard prepare
+`profiles/<id>/keys/` before `profile.json` is written; only an empty request
+with no active profile reports `config.no_active_profile` directly.
+
 ## Domain Models
 
 ### AvbProfile
@@ -224,7 +374,7 @@ from avbpowertool.domain.models import AvbProfile, PartitionConfig, DescriptorTy
 profile = AvbProfile(
     id="myprofile",
     name="My Profile",
-    schema_version=2,
+    schema_version=3,
     key_store_path="keys",
     partitions={
         "boot": PartitionConfig(
@@ -301,16 +451,45 @@ result = avb.extract_public_key(
 
 ## Error Codes
 
+All use cases return `OperationIssue` tuples instead of raising exceptions.
+Error codes are stable and dot-prefixed; the CLI maps them to exit codes as
+`config.*` / `keys.*` / `image.*` / `chain.*` → 1, `tool.*` / `signing.*` → 3,
+unknown prefix → 0. The full list is in
+[CLI_REFERENCE.md](CLI_REFERENCE.md#5-error-code-list).
+
 | Code | Meaning |
 |---|---|
 | `config.not_found` | Profile or config not found |
+| `config.no_active_profile` | `current`/empty was requested but nothing is active |
 | `config.parse_error` | Invalid config format |
-| `config.key_missing` | Key file not found |
+| `config.invalid_profile_id` | The profile id contains illegal characters |
+| `config.profile_exists` | A profile with that name already exists |
+| `config.profile_id_mismatch` | The directory name disagrees with the id inside `profile.json`; the write is refused |
+| `config.no_partitions` | The profile has no partitions |
+| `config.invalid_field` | A field is not whitelisted for editing, or its value is invalid |
+| `config.invalid_algorithm` | Not a valid signing algorithm |
+| `config.invalid_option_combination` | The same field was given in both `--set/--unset` and `--append/--remove`; or an illegal option combination |
 | `config.partition_missing` | Partition not in profile |
+| `config.key_missing` | Key file not found / key_id not in the manifest |
+| `config.missing_included_partition` | A vbmeta includes a partition that is not in the profile |
+| `config.auto_dir_not_found` | The `--from-images DIR` directory does not exist |
+| `config.vbmeta_no_contents` | A vbmeta has neither `included_partitions` nor `chain_partitions` |
 | `config.invalid_schema_version` | Wrong schema version |
+| `config.save_failed` / `config.rename_failed` / `config.activate_failed` | The corresponding write operation failed |
+| `config.invalid_archive` | Invalid archive format |
 | `image.not_found` | Image file not found |
 | `image.no_vbmeta_structure` | Image has no AVB footer |
+| `chain.malformed_entry` | A chain entry is not a valid triple |
+| `chain.key_file_missing` | The chain entry's public-key file is not in the key store |
+| `chain.key_mismatch` | The chain entry's public key differs from the key the chained partition is signed with |
+| `chain.chained_partition_unsigned` | The chained partition is NONE (unsigned) |
+| `chain.key_not_found` | No key matched the descriptor's public-key SHA1 during chain resolution |
 | `signing.step_failed` | A signing step failed |
 | `tool.execution_failed` | avbtool returned non-zero |
+| `keys.directory_not_found` | The key-store directory does not exist |
+| `keys.file_not_found` | The private-key file named by `keys add` does not exist |
+| `keys.not_found` / `keys.already_exists` | The `keys remove` / `keys add` key_id state conflicts |
+| `keys.private_key_missing` | An entry's private-key file is missing |
+| `keys.public_key_extract_failed` | Public-key extraction failed |
 | `keys.manifest_not_found` | Key manifest missing |
 | `workspace.path_escape` | Path escapes workspace |

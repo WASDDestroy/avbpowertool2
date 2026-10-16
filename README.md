@@ -96,14 +96,39 @@ avbpowertool config show
 avbpowertool config validate
 avbpowertool config activate myprofile
 avbpowertool config import myconfig.zip
-avbpowertool config import-legacy mylegacy_v1.zip   # auto-convert legacy v1 config to v2
+avbpowertool config import-legacy mylegacy_v1.zip   # auto-convert legacy v1 config
 avbpowertool config export myprofile
+
+# Create a profile (empty, or generated from the AVB metadata of the images)
+avbpowertool config create --id myprofile --allow-empty
+avbpowertool config create --id myprofile --from-images \
+  --images boot,dtbo,vbmeta,vbmeta_system --json
+
+# Edit one partition field (repeatable --set / --unset / --append / --remove)
+avbpowertool config edit vbmeta --profile myprofile --set flags=1 \
+  --append chain_partitions=boot:3:mykey_rsa4096.pem.bin
+
+# Check chain partitions against the key store (read-only)
+avbpowertool config check-chains --profile myprofile --json
+
+# Rename a profile (directory id and/or display name)
+avbpowertool config rename myprofile my_device_rom --name "My Device ROM"
+
+# Key store
+avbpowertool keys list          --profile myprofile
+avbpowertool keys discover      --profile myprofile            # --replace drops cached public keys
+avbpowertool keys ensure-public --profile myprofile            # writes <name>.pem.bin
+avbpowertool keys add    mykey --file mykey.pem --profile myprofile
+avbpowertool keys remove mykey --profile myprofile
 
 # About
 avbpowertool about
 ```
 
-All commands support `--json` for machine-readable output.
+All commands except `about` support `--json` for machine-readable output.
+Exit codes: `0` success, `1` config/key/image/chain errors, `2` usage errors,
+`3` avbtool (`tool.*` / `signing.*`) failures. Full command surface, exit-code
+table, and error-code list: [CLI Reference](docs/en/CLI_REFERENCE.md).
 
 > Without `uv`, or when the console script is not on `PATH`, prefix any
 > command with `python -m`:
@@ -234,6 +259,9 @@ See [AGENTS.md](AGENTS.md) for development guidelines.
 ## Documentation
 
 - [Implementation Plan](docs/en/IMPLEMENTATION_PLAN.md) — architecture and phase breakdown
+- [CLI Reference](docs/en/CLI_REFERENCE.md) — commands, flags, exit codes, and error codes
+- [Creating a Configuration](docs/en/CONFIG_CREATION.md) — TUI wizard, CLI, and API
+- [Key Management](docs/en/KEY_MANAGEMENT.md) — key store, manifest, and the `keys` commands
 - [Backend API Reference](docs/en/BACKEND_API.md) — use the backend from Python
 - [Adding Navigation](docs/en/FRONTEND_NAVIGATION.md) — add entries to the TUI navigation tree
 - [Editing Pages](docs/en/FRONTEND_PAGES.md) — create or modify TUI views

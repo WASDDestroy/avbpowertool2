@@ -93,14 +93,39 @@ avbpowertool config show
 avbpowertool config validate
 avbpowertool config activate myprofile
 avbpowertool config import myconfig.zip
-avbpowertool config import-legacy mylegacy_v1.zip   # 旧版 v1 配置自动转换为 v2
+avbpowertool config import-legacy mylegacy_v1.zip   # 旧版 v1 配置自动转换
 avbpowertool config export myprofile
+
+# 创建配置（空配置，或从镜像的 AVB 元数据生成）
+avbpowertool config create --id myprofile --allow-empty
+avbpowertool config create --id myprofile --from-images `
+  --images boot,dtbo,vbmeta,vbmeta_system --json
+
+# 修改单个分区的字段（--set / --unset / --append / --remove 均可重复）
+avbpowertool config edit vbmeta --profile myprofile --set flags=1 `
+  --append chain_partitions=boot:3:mykey_rsa4096.pem.bin
+
+# 校验链式分区与密钥库是否一致（只读）
+avbpowertool config check-chains --profile myprofile --json
+
+# 重命名配置（目录 id 和/或显示名）
+avbpowertool config rename myprofile my_device_rom --name "我的设备 ROM"
+
+# 密钥库
+avbpowertool keys list          --profile myprofile
+avbpowertool keys discover      --profile myprofile            # --replace 会丢弃缓存的公钥
+avbpowertool keys ensure-public --profile myprofile            # 生成 <name>.pem.bin
+avbpowertool keys add    mykey --file mykey.pem --profile myprofile
+avbpowertool keys remove mykey --profile myprofile
 
 # 关于
 avbpowertool about
 ```
 
-所有命令支持 `--json` 以获得机器可读的输出。
+除 `about` 外所有命令都支持 `--json` 以获得机器可读的输出。
+退出码：`0` 成功、`1` 配置/密钥/镜像/链错误、`2` 用法错误、
+`3` avbtool（`tool.*` / `signing.*`）失败。完整命令面、退出码表与错误码清单见
+[CLI 参考](CLI_REFERENCE.md)。
 
 > 未使用 `uv`，或控制台脚本不在 `PATH` 中时，请在命令前加 `python -m`：
 >
@@ -229,6 +254,9 @@ profiles/
 ## 文档
 
 - [实现计划](IMPLEMENTATION_PLAN.md) — 架构和阶段分解
+- [CLI 参考](CLI_REFERENCE.md) — 命令面、旗标、退出码与错误码
+- [创建配置](CONFIG_CREATION.md) — TUI 向导、CLI 与 API
+- [密钥管理](KEY_MANAGEMENT.md) — 密钥库、manifest 与 `keys` 命令
 - [后端 API 参考](BACKEND_API.md) — 在 Python 中调用后端
 - [添加导航](FRONTEND_NAVIGATION.md) — 在 TUI 导航树中添加条目
 - [编辑页面](FRONTEND_PAGES.md) — 创建或修改 TUI 视图

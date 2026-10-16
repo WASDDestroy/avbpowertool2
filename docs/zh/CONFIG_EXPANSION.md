@@ -518,9 +518,13 @@ def migrate_v2_to_v3(data: dict[str, Any]) -> tuple[dict[str, Any], list[Operati
    `block_size`、`fec_num_roots`、`do_not_generate_fec`；vbmeta 展示
    `padding_size`、`chain_partitions_do_not_use_ab`、`kernel_cmdlines`。
    高级项折叠到"进阶配置"（对齐 Android GUI 的 advanced 分组）。
-2. **CLI**：新增 `avbpowertool config edit [--profile ID]` 交互编辑
-   （或在 `config create` 增加 `--advanced` 透传），字段清单由 §3.1 的
-   规格表驱动。
+2. **CLI**：已落地为 `avbpowertool config edit <PARTITION> [--profile ID]`，
+   字段清单由字段白名单驱动，支持 `--set` / `--unset` / `--append` / `--remove`
+   （含新增的 `key_id` / `algorithm` / `image` / `props` / `prop_from_file`），
+   链式字段的 `--append` 按分区名原地替换；创建侧由
+   `config create [--allow-empty|--from-images]` 覆盖，未采用
+   `--advanced` 透传方案。完整命令面见
+   [CLI_REFERENCE.md](CLI_REFERENCE.md)。
 3. **i18n**：`locale/*/avbpowertool.po` 增加向导提示与校验消息键
    （`config.wizard.partition_size`、`config.wizard.block_size` 等）。
 

@@ -71,6 +71,69 @@ else:
     print(f"配置已创建: {result.profile_id}")
 ```
 
+### 使用 CLI
+
+`config create` 有两条**互斥**的创建路径（同时给 `--from-images` 和
+`--allow-empty` 会被 argparse 拒绝，退出码 2）。
+
+#### 空配置：`--allow-empty`
+
+```shell
+avbpowertool config create --id my_device --allow-empty
+avbpowertool config create --id my_device --name "我的设备 ROM" --allow-empty --json
+```
+
+落盘 `profiles/<id>/profile.json`（无分区）与 `profiles/<id>/keys/`，并在
+`keys/manifest.json` **不存在时**写入 `{}`（不会覆盖已经发现的密钥）。同 id 已存在
+→ `config.profile_exists`（`--overwrite` 只对 `--from-images` 路径生效）。
+适合「先建配置 → 放密钥 → 再灌分区」的流程。
+
+#### 从镜像生成：`--from-images`
+
+```shell
+# 不带值 = 扫描工作区 Images/ 下全部 *.img
+avbpowertool config create --id my_device --from-images --json
+
+# 只处理指定镜像（逗号分隔，可重复；boot 与 boot.img 等价）
+avbpowertool config create --id my_device --from-images \
+  --images boot,dtbo,init_boot,pvmfw,recovery,vendor_boot,vbmeta,vbmeta_system --json
+
+# 指定扫描目录
+avbpowertool config create --id my_device --from-images D:\dump\Images --json
+```
+
+行为与失败策略（执行顺序固定，每个提前返回都**不写盘**）：
+
+| 情况 | 结果 |
+|---|---|
+| `--images` 里**显式请求**的镜像不存在 | `image.not_found`，**不创建配置**（脚本的笔误必须响亮地失败） |
+| 镜像没有 AVB 结构 | 默认**致命**：`image.no_vbmeta_structure`，不创建配置；加 `--skip-non-avb` 才跳过，并在结果的 `skipped_images` 里列出 |
+| 一个分区都生成不出来 | `config.no_partitions`（想建空配置请用 `--allow-empty`） |
+| `profiles/<id>/` 已存在 | `config.profile_exists`；加 `--overwrite` 才复用（保留其 `keys/`，替换分区集合） |
+| 链式分区解析不到密钥 | `chain.key_not_found`（退出码 1），但**不阻断创建**，`created` 仍为 `true` |
+| 缺少密钥 | 只写进结果的 `missing_keys`，**不影响创建成功** |
+
+`--images` 只过滤扫描集合（镜像集合通常由包装脚本按旗标表算好再传进来）；
+`--key KEY_ID` 可以给所有生成的分区指定同一个 key_id（默认按镜像算法自动挑）。
+
+**`--include-fallback`（默认关闭）**：vbmeta 的内嵌描述符在扫描集合里全部被剪空时，
+CLI 默认**保留剪空后的结果**；若该 vbmeta 最终既无 `included_partitions` 也无
+`chain_partitions`，会报 `config.vbmeta_no_contents`（退出码 1，配置**仍会被创建**）。
+加上 `--include-fallback` 才恢复 TUI 向导的历史行为 —— 回退为「其它所有被扫描的
+非 vbmeta 分区」。
+
+**激活**：`config create` 默认**不写** `.active-profile`（`--no-activate` 是默认值），
+需要时显式给 `--activate`。
+
+> **`--profile current` 现在真的会解析活动配置。** `config show` / `config validate` /
+> `config check-chains` / `image sign` / `config edit` / `config migrate` 的 `--profile`
+> 默认值是 `current`，解析顺序为：先按字面 id 找 `profiles/<id>/profile.json`；
+> 找不到且请求是 `current`/空时，再看 `.active-profile` 指向的活动配置；
+> 两者都没有则报 `config.no_active_profile`（退出码 1）。也就是说，一个**真名叫
+> `current` 的配置仍然优先**（字面优先，向后兼容）。`config export` / `config rename`
+> 不接受 `--profile`，用位置参数显式指定 id。
+> 完整规则见 [CLI_REFERENCE.md](CLI_REFERENCE.md#3-profile-与配置解析规则)。
+
 ## 创建配置后的步骤
 
 ### 1. 放置镜像文件
@@ -269,19 +332,71 @@ avbpowertool config migrate [--profile ID]
 avbpowertool config edit boot --profile current \
   --set partition_size=67108864 --set rollback_index=1 \
   --set kernel_cmdlines=androidboot.avb.test=1
+
+# 重置为「空值」（str -> ''、int -> 0、bool -> false、tuple -> ()）
+avbpowertool config edit boot --profile my_device --unset salt --unset flags
+
+# 元组字段逐项增删（可重复；先执行全部 --remove，再执行全部 --append）
+avbpowertool config edit vbmeta --profile my_device \
+  --append included_partitions=system --remove included_partitions=odm
 ```
 
-可编辑字段：`partition_size`、`rollback_index`、`rollback_index_location`、`flags`、
-`block_size`、`fec_num_roots`、`padding_size`（整数）；`salt`、`hash_algorithm`、
-`output_vbmeta_image`、`setup_rootfs_from_kernel`、`signing_helper`、
-`signing_helper_with_files`、`public_key_metadata`、`append_to_release_string`（字符串）；
-`dynamic_partition_size`、`do_not_generate_fec`、`calc_max_image_size`、
-`do_not_append_vbmeta_image`、`no_hashtree`、`check_at_most_once`、
-`use_persistent_digest`、`do_not_use_ab`、`set_hashtree_disabled_flag`、
-`set_verification_disabled_flag`、`print_required_libavb_version`、
-`setup_as_rootfs_from_kernel`（布尔）；`kernel_cmdlines`、`chain_partitions`、
-`chain_partitions_do_not_use_ab`、`included_partitions`、
-`include_descriptors_from_image`（逗号分隔数组）。
+**可编辑字段**（白名单之外的字段一律 `config.invalid_field`）：
+
+- 整数：`partition_size`、`rollback_index`、`rollback_index_location`、`flags`、
+  `block_size`、`fec_num_roots`、`padding_size`
+- 布尔：`dynamic_partition_size`、`do_not_generate_fec`、`calc_max_image_size`、
+  `do_not_append_vbmeta_image`、`no_hashtree`、`check_at_most_once`、
+  `use_persistent_digest`、`do_not_use_ab`、`set_hashtree_disabled_flag`、
+  `set_verification_disabled_flag`、`print_required_libavb_version`、
+  `setup_as_rootfs_from_kernel`
+- 字符串：`salt`、`hash_algorithm`、`output_vbmeta_image`、
+  `setup_rootfs_from_kernel`、`signing_helper`、`signing_helper_with_files`、
+  `public_key_metadata`、`append_to_release_string`、**`key_id`**
+- 枚举/文件名：**`algorithm`**（非法值 → `config.invalid_algorithm`）、
+  **`image`**（必须以 `.img` 结尾）
+- 逗号分隔元组：`kernel_cmdlines`、`chain_partitions`、
+  `chain_partitions_do_not_use_ab`、`included_partitions`、
+  `include_descriptors_from_image`、**`props`**、**`prop_from_file`**
+  （`props` / `prop_from_file` 的每一项是 `KEY:VALUE` / `KEY:PATH`）
+
+加粗字段是本轮 CLI 扩展新增的（`config edit` 现已支持
+`key_id` / `algorithm` / `image` / `props` / `prop_from_file`）。
+
+**链式字段的 `--append` 按分区名原地替换**：`chain_partitions` /
+`chain_partitions_do_not_use_ab` 的 ITEM **必须是完整的 `PART:SLOT:KEYFILE`
+三元组**（SLOT 为数字且 ≥ 1，KEYFILE 非空）；若该分区已有链条目则替换那一条并
+**保留它的位置**，不会产生重复，也不会像 `--set` 那样清掉从镜像读回的其它链。
+`--remove` 可以只写裸分区名。
+
+**同一字段同时用 `--set`/`--unset` 与 `--append`/`--remove` 会被拒绝**
+（`config.invalid_option_combination`，且不写盘）；不同字段混用是允许的。
+
+实例 —— 硬编码链式分区、vbmeta `flags=1`、并把 `vbmeta_system` 换成 2048 位密钥与
+对应算法：
+
+```shell
+# 1) vbmeta：flags=1，三条链式分区（重名替换语义）
+avbpowertool config edit vbmeta --profile my_device --set flags=1 \
+  --append chain_partitions=boot:3:mykey_rsa4096.pem.bin \
+  --append chain_partitions=recovery:1:mykey_rsa4096.pem.bin \
+  --append chain_partitions=vbmeta_system:2:mykey_rsa2048.pem.bin
+
+# 2) vbmeta_system：换 2048 密钥 + SHA256_RSA2048
+avbpowertool config edit vbmeta_system --profile my_device \
+  --set key_id=mykey_rsa2048 --set algorithm=SHA256_RSA2048
+
+# 3) 复核
+avbpowertool config check-chains --profile my_device --json
+```
+
+> 链式条目里的 KEYFILE 必须是 `avbtool extract_public_key` 的产物
+> （`*.pem.bin`）：avbtool 把第三段当**原始字节**读入，传 `.pem` 会写坏 vbmeta。
+> 用 `config check-chains` 可以发现「链条目公钥与实际签名密钥不一致」
+> （`chain.key_mismatch`）。详见 [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md)。
+
+`config edit` 的完整参数语义（含 `--set` 的值写法与全部冲突规则）见
+[CLI_REFERENCE.md](CLI_REFERENCE.md#config-edit)。
 
 ## 无签名（NONE）分区
 

@@ -73,6 +73,77 @@ else:
     print(f"Created profile: {result.profile_id}")
 ```
 
+### Using the CLI
+
+`config create` has two **mutually exclusive** creation paths (passing both
+`--from-images` and `--allow-empty` is rejected by argparse with exit code 2).
+
+#### Empty profile: `--allow-empty`
+
+```shell
+avbpowertool config create --id my_device --allow-empty
+avbpowertool config create --id my_device --name "My Device ROM" --allow-empty --json
+```
+
+Writes `profiles/<id>/profile.json` (no partitions) and
+`profiles/<id>/keys/`, plus an empty `keys/manifest.json` **only when none
+exists yet** (discovered keys are never overwritten). An existing id gives
+`config.profile_exists` (`--overwrite` only applies to the `--from-images`
+path). This is the "create the profile → drop keys in → fill in partitions"
+flow.
+
+#### Generated from images: `--from-images`
+
+```shell
+# Without a value: scan every *.img under the workspace Images/
+avbpowertool config create --id my_device --from-images --json
+
+# Only the listed images (comma-separated, repeatable; boot and boot.img are equivalent)
+avbpowertool config create --id my_device --from-images \
+  --images boot,dtbo,init_boot,pvmfw,recovery,vendor_boot,vbmeta,vbmeta_system --json
+
+# Explicit scan directory
+avbpowertool config create --id my_device --from-images D:\dump\Images --json
+```
+
+Behaviour and failure policy (the order is fixed and every early return
+**leaves the workspace untouched**):
+
+| Situation | Result |
+|---|---|
+| An image **explicitly requested** by `--images` does not exist | `image.not_found`, the profile is **not created** (a typo in a wrapper script must fail loudly) |
+| An image has no AVB structure | Fatal by default: `image.no_vbmeta_structure`, the profile is not created; only `--skip-non-avb` skips it, listing it in the result's `skipped_images` |
+| No partition could be generated at all | `config.no_partitions` (use `--allow-empty` when you really want an empty profile) |
+| `profiles/<id>/` already exists | `config.profile_exists`; only `--overwrite` reuses it (keeping its `keys/`, replacing the partitions) |
+| A chain partition's key cannot be resolved | `chain.key_not_found` (exit code 1) but creation is **not blocked** — `created` stays `true` |
+| Missing keys | Only reported in the result's `missing_keys`; they **never fail the creation** |
+
+`--images` only filters the scanned set (a wrapper script normally computes the
+image set from its own flag table); `--key KEY_ID` forces one key_id for every
+generated partition (by default it is picked from the image's algorithm).
+
+**`--include-fallback` (off by default)**: when a vbmeta's embedded descriptors
+are all pruned from the scanned set, the CLI **keeps the pruned result**; if that
+vbmeta ends up with neither `included_partitions` nor `chain_partitions`,
+`config.vbmeta_no_contents` is reported (exit code 1, but the profile **is still
+created**). Only `--include-fallback` restores the TUI wizard's historical
+behaviour of falling back to "every other scanned non-vbmeta partition".
+
+**Activation**: `config create` does **not** write `.active-profile` by default
+(`--no-activate` is the default); pass `--activate` explicitly when needed.
+
+> **`--profile current` now really resolves the active profile.** The
+> `--profile` default of `config show` / `config validate` /
+> `config check-chains` / `image sign` / `config edit` / `config migrate` is
+> `current`, resolved as: first look for a literal `profiles/<id>/profile.json`;
+> if that fails and the request is `current`/empty, use the profile
+> `.active-profile` points at; if neither exists, report
+> `config.no_active_profile` (exit code 1). In other words a profile that is
+> **really named `current` still wins** (literal-first, for backward
+> compatibility). `config export` / `config rename` do not accept `--profile`
+> and take the id as a positional argument.
+> Full rules: [CLI_REFERENCE.md](CLI_REFERENCE.md#3---profile-and-profile-resolution).
+
 ## After Creating a Profile
 
 ### 1. Place Image Files
@@ -289,20 +360,77 @@ avbpowertool config migrate [--profile ID]
 avbpowertool config edit boot --profile current \
   --set partition_size=67108864 --set rollback_index=1 \
   --set kernel_cmdlines=androidboot.avb.test=1
+
+# Reset fields to their empty value (str -> '', int -> 0, bool -> false, tuple -> ())
+avbpowertool config edit boot --profile my_device --unset salt --unset flags
+
+# Add/remove tuple items one by one (repeatable; all --remove run before all --append)
+avbpowertool config edit vbmeta --profile my_device \
+  --append included_partitions=system --remove included_partitions=odm
 ```
 
-Editable fields: integers — `partition_size`, `rollback_index`,
-`rollback_index_location`, `flags`, `block_size`, `fec_num_roots`, `padding_size`;
-strings — `salt`, `hash_algorithm`, `output_vbmeta_image`, `setup_rootfs_from_kernel`,
-`signing_helper`, `signing_helper_with_files`, `public_key_metadata`,
-`append_to_release_string`; booleans — `dynamic_partition_size`,
-`do_not_generate_fec`, `calc_max_image_size`, `do_not_append_vbmeta_image`,
-`no_hashtree`, `check_at_most_once`, `use_persistent_digest`, `do_not_use_ab`,
-`set_hashtree_disabled_flag`, `set_verification_disabled_flag`,
-`print_required_libavb_version`, `setup_as_rootfs_from_kernel`;
-comma-separated arrays — `kernel_cmdlines`, `chain_partitions`,
-`chain_partitions_do_not_use_ab`, `included_partitions`,
-`include_descriptors_from_image`.
+**Editable fields** (anything outside the whitelist gives
+`config.invalid_field`):
+
+- Integers: `partition_size`, `rollback_index`, `rollback_index_location`,
+  `flags`, `block_size`, `fec_num_roots`, `padding_size`
+- Booleans: `dynamic_partition_size`, `do_not_generate_fec`,
+  `calc_max_image_size`, `do_not_append_vbmeta_image`, `no_hashtree`,
+  `check_at_most_once`, `use_persistent_digest`, `do_not_use_ab`,
+  `set_hashtree_disabled_flag`, `set_verification_disabled_flag`,
+  `print_required_libavb_version`, `setup_as_rootfs_from_kernel`
+- Strings: `salt`, `hash_algorithm`, `output_vbmeta_image`,
+  `setup_rootfs_from_kernel`, `signing_helper`, `signing_helper_with_files`,
+  `public_key_metadata`, `append_to_release_string`, **`key_id`**
+- Enum / filename: **`algorithm`** (an invalid value gives
+  `config.invalid_algorithm`), **`image`** (must end in `.img`)
+- Comma-separated tuples: `kernel_cmdlines`, `chain_partitions`,
+  `chain_partitions_do_not_use_ab`, `included_partitions`,
+  `include_descriptors_from_image`, **`props`**, **`prop_from_file`**
+  (each `props` / `prop_from_file` item is `KEY:VALUE` / `KEY:PATH`)
+
+The bold fields are the ones added by this CLI extension (`config edit` now
+supports `key_id` / `algorithm` / `image` / `props` / `prop_from_file`).
+
+**`--append` on the chain fields merges by partition name, replacing in
+place**: the ITEM of `chain_partitions` / `chain_partitions_do_not_use_ab`
+**must be a full `PART:SLOT:KEYFILE` triple** (SLOT numeric and >= 1, KEYFILE
+non-empty); if that partition is already chained its entry is replaced and
+**keeps its position**, no duplicate is created, and unlike `--set` the other
+chains read back from the image are not wiped. `--remove` also accepts a bare
+partition name.
+
+**Using `--set`/`--unset` and `--append`/`--remove` on the same field is
+rejected** (`config.invalid_option_combination`, with nothing written);
+mixing different fields is allowed.
+
+Example — hardcode the chains, set vbmeta `flags=1`, and switch
+`vbmeta_system` to a 2048-bit key and the matching algorithm:
+
+```shell
+# 1) vbmeta: flags=1 plus three chain partitions (replace-by-name semantics)
+avbpowertool config edit vbmeta --profile my_device --set flags=1 \
+  --append chain_partitions=boot:3:mykey_rsa4096.pem.bin \
+  --append chain_partitions=recovery:1:mykey_rsa4096.pem.bin \
+  --append chain_partitions=vbmeta_system:2:mykey_rsa2048.pem.bin
+
+# 2) vbmeta_system: 2048-bit key + SHA256_RSA2048
+avbpowertool config edit vbmeta_system --profile my_device \
+  --set key_id=mykey_rsa2048 --set algorithm=SHA256_RSA2048
+
+# 3) Verify
+avbpowertool config check-chains --profile my_device --json
+```
+
+> The KEYFILE in a chain entry must be an `avbtool extract_public_key` product
+> (`*.pem.bin`): avbtool reads the third field as **raw bytes**, so a `.pem`
+> corrupts the vbmeta. Use `config check-chains` to find a "chain entry public
+> key disagrees with the actual signing key" (`chain.key_mismatch`). See
+> [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md).
+
+The full argument semantics of `config edit` (including `--set` value syntax and
+every conflict rule) are in
+[CLI_REFERENCE.md](CLI_REFERENCE.md#config-edit).
 
 ## Unsigned (NONE) Partitions
 
