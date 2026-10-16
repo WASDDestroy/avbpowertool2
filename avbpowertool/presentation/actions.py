@@ -17,6 +17,7 @@ class ActionId(StrEnum):
     IMAGE_SIGN = "image.sign"
     CONFIG_SHOW = "config.show"
     CONFIG_VALIDATE = "config.validate"
+    CONFIG_CREATE = "config.create"
     CONFIG_IMPORT = "config.import"
     CONFIG_IMPORT_LEGACY = "config.import_legacy"
     CONFIG_EXPORT = "config.export"

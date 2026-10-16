@@ -84,6 +84,39 @@ def build_parser() -> argparse.ArgumentParser:
     p_cfg_val.add_argument("--json", action="store_true", help="JSON output")
     p_cfg_val.set_defaults(action_id=ActionId.CONFIG_VALIDATE)
 
+    # config create
+    p_cfg_create = cfg_sub.add_parser(
+        "create",
+        help="Create a new profile (optionally with no partitions)",
+    )
+    p_cfg_create.add_argument("--id", dest="profile_id", required=True, help="New profile ID")
+    p_cfg_create.add_argument(
+        "--name",
+        dest="profile_name",
+        default=None,
+        help="Profile display name (default: the value of --id)",
+    )
+    p_cfg_create.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="Allow creating a profile with no partitions",
+    )
+    create_activation = p_cfg_create.add_mutually_exclusive_group()
+    create_activation.add_argument(
+        "--activate",
+        dest="activate",
+        action="store_true",
+        help="Make the new profile the active one (writes .active-profile; default: not activated)",
+    )
+    create_activation.add_argument(
+        "--no-activate",
+        dest="activate",
+        action="store_false",
+        help="Do not touch .active-profile (default)",
+    )
+    p_cfg_create.add_argument("--json", action="store_true", help="JSON output")
+    p_cfg_create.set_defaults(action_id=ActionId.CONFIG_CREATE, activate=False)
+
     # config list
     p_cfg_list = cfg_sub.add_parser("list", help="List all profiles")
     p_cfg_list.add_argument("--json", action="store_true", help="JSON output")

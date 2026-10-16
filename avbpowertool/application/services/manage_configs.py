@@ -361,7 +361,14 @@ def _derive_v1_config_name(config_dir: Path, archive_path: Path) -> str:
 
 
 class ConfigCreateUseCase:
-    """Create a new profile with partitions and optional key store."""
+    """Create a new profile with partitions and optional key store.
+
+    A request with ``allow_empty`` set may create a profile with zero
+    partitions: ``config.no_partitions`` is filtered out of the validation
+    issues (the domain validator stays strict) so the "create config,
+    then add keys, then fill in partitions" flow works.  Every other
+    issue is still reported.
+    """
 
     def __init__(self, workspace: WorkspacePaths) -> None:
         self._ws = workspace
@@ -370,21 +377,34 @@ class ConfigCreateUseCase:
         issues: list[OperationIssue] = []
         repo = ProfileRepository(self._ws)
 
-        # Check for conflicts
-        existing = repo.list_profiles()
-        if request.profile_id in existing:
+        # The requested id must be usable as a directory name as-is;
+        # silently rewriting it would create a profile under another id.
+        profile_id = _sanitize_profile_id(request.profile_id)
+        if profile_id != request.profile_id:
             issues.append(
                 OperationIssue(
-                    "config.profile_exists",
-                    f"Profile already exists: {request.profile_id}",
+                    "config.invalid_profile_id",
+                    f"Invalid profile id: {request.profile_id!r} "
+                    "(use letters, digits, '_', '-', '.' only)",
                 )
             )
             return ConfigCreateResult(profile_id=request.profile_id, issues=tuple(issues))
 
+        # Check for conflicts
+        existing = repo.list_profiles()
+        if profile_id in existing:
+            issues.append(
+                OperationIssue(
+                    "config.profile_exists",
+                    f"Profile already exists: {profile_id}",
+                )
+            )
+            return ConfigCreateResult(profile_id=profile_id, issues=tuple(issues))
+
         # Build profile
         partitions = {p.partition_name: p for p in request.partitions}
         profile = AvbProfile(
-            id=request.profile_id,
+            id=profile_id,
             name=request.profile_name,
             key_store_path="keys",
             partitions=partitions,
@@ -394,6 +414,10 @@ class ConfigCreateUseCase:
         from avbpowertool.domain.validation import validate_profile
 
         validation_issues = validate_profile(profile)
+        if request.allow_empty:
+            validation_issues = [
+                issue for issue in validation_issues if issue.error_code != "config.no_partitions"
+            ]
         issues.extend(validation_issues)
         if any(
             i.error_code
@@ -404,12 +428,13 @@ class ConfigCreateUseCase:
             }
             for i in validation_issues
         ):
-            return ConfigCreateResult(profile_id=request.profile_id, issues=tuple(issues))
+            return ConfigCreateResult(profile_id=profile_id, issues=tuple(issues))
 
         # Create profile directory and key store
-        profile_dir = self._ws.resolve_profile_dir(request.profile_id)
-        key_dir = self._ws.resolve_key_dir(request.profile_id)
+        profile_dir = self._ws.resolve_profile_dir(profile_id)
+        key_dir = self._ws.resolve_key_dir(profile_id)
 
+        created = False
         try:
             profile_dir.mkdir(parents=True, exist_ok=True)
             key_dir.mkdir(parents=True, exist_ok=True)
@@ -430,15 +455,16 @@ class ConfigCreateUseCase:
 
             # Activate if requested
             if request.activate:
-                repo.activate(request.profile_id)
+                repo.activate(profile_id)
 
-            logger.info("Created profile %r", request.profile_id)
+            created = True
+            logger.info("Created profile %r", profile_id)
         except Exception as exc:
             issues.append(
                 OperationIssue("config.create_failed", f"Failed to create profile: {exc}")
             )
 
-        return ConfigCreateResult(profile_id=request.profile_id, issues=tuple(issues))
+        return ConfigCreateResult(profile_id=profile_id, created=created, issues=tuple(issues))
 
 
 # ---------------------------------------------------------------------------

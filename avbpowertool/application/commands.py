@@ -143,12 +143,20 @@ class ConfigValidateResult:
 
 @dataclass(frozen=True)
 class ConfigCreateRequest:
-    """Request to create a new profile."""
+    """Request to create a new profile.
+
+    ``allow_empty`` permits creating a profile with zero partitions, which
+    the strict domain validator reports as ``config.no_partitions``.  Only
+    that one issue is suppressed; every other validation issue still
+    applies.  It defaults to ``False`` so the creation wizard keeps its
+    current behaviour.
+    """
 
     profile_id: str
     profile_name: str
     partitions: tuple[PartitionConfig, ...] = ()
     activate: bool = True
+    allow_empty: bool = False
 
 
 @dataclass(frozen=True)
@@ -156,6 +164,7 @@ class ConfigCreateResult:
     """Result of profile creation."""
 
     profile_id: str
+    created: bool = False  # True when the profile directory was written
     issues: tuple[OperationIssue, ...] = ()
 
 

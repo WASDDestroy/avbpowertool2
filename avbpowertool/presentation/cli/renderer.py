@@ -7,6 +7,7 @@ import sys
 from typing import Any, TextIO
 
 from avbpowertool.application.commands import (
+    ConfigCreateResult,
     ConfigEditResult,
     ConfigExportResult,
     ConfigImportResult,
@@ -231,6 +232,26 @@ def render_config_validate(
         _emit_text(f"  Missing images: {', '.join(result.missing_images)}", out)
     if result.missing_keys:
         _emit_text(f"  Missing keys:   {', '.join(result.missing_keys)}", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_config_create(
+    result: ConfigCreateResult, as_json: bool, out: TextIO = sys.stdout
+) -> None:
+    if as_json:
+        _emit_json(
+            {
+                "profile_id": result.profile_id,
+                "created": result.created,
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if result.created:
+        _emit_text(f"Created profile '{result.profile_id}'.", out)
     for iss in result.issues:
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
 

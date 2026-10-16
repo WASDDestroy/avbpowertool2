@@ -7,6 +7,7 @@ from argparse import Namespace
 from typing import Any, TextIO, cast
 
 from avbpowertool.application.commands import (
+    ConfigCreateRequest,
     ConfigEditRequest,
     ConfigExportRequest,
     ConfigImportRequest,
@@ -26,6 +27,7 @@ from avbpowertool.application.commands import (
 )
 from avbpowertool.application.services.inspect_images import InspectImagesUseCase
 from avbpowertool.application.services.manage_configs import (
+    ConfigCreateUseCase,
     ConfigEditUseCase,
     ConfigExportUseCase,
     ConfigImportUseCase,
@@ -52,6 +54,7 @@ from avbpowertool.presentation import audit
 from avbpowertool.presentation.actions import ActionId
 from avbpowertool.presentation.cli.renderer import (
     exit_code_from_issues,
+    render_config_create,
     render_config_edit,
     render_config_migrate,
     render_config_show,
@@ -99,6 +102,7 @@ def dispatch(args: Namespace, out: TextIO = sys.stdout) -> int:
         ActionId.IMAGE_SIGN: _handle_sign,
         ActionId.CONFIG_SHOW: _handle_config_show,
         ActionId.CONFIG_VALIDATE: _handle_config_validate,
+        ActionId.CONFIG_CREATE: _handle_config_create,
         ActionId.CONFIG_LIST: _handle_config_list,
         ActionId.CONFIG_ACTIVATE: _handle_config_activate,
         ActionId.CONFIG_IMPORT: _handle_config_import,
@@ -204,6 +208,25 @@ def _handle_config_validate(
     render_config_validate(result, as_json, out)
     if result.missing_images:
         return 2
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_config_create(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    profile_id = args.profile_id
+    uc = ConfigCreateUseCase(workspace)
+    request = ConfigCreateRequest(
+        profile_id=profile_id,
+        # The use case keeps its strict "empty name is invalid" semantics;
+        # the CLI is what defaults the name to the id.
+        profile_name=getattr(args, "profile_name", None) or profile_id,
+        allow_empty=getattr(args, "allow_empty", False),
+        # Scripted creation must not silently change the active profile.
+        activate=getattr(args, "activate", False),
+    )
+    result = uc.execute(request)
+    render_config_create(result, as_json, out)
     return exit_code_from_issues(result.issues)
 
 

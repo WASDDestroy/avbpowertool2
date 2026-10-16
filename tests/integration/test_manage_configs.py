@@ -261,3 +261,112 @@ class TestConfigCreateUseCase:
             (ws.resolve_key_dir("my_device") / "manifest.json").read_text(encoding="utf-8")
         )
         assert on_disk == {"release": {"private_key": "release.pem"}}
+
+
+class TestConfigCreateAllowEmpty:
+    """``allow_empty`` enables the "create config, then fill it" flow."""
+
+    def test_allow_empty_creates_profile_without_partitions(self, tmp_path: Path) -> None:
+        ws = WorkspacePaths.discover(tmp_path)
+        ws.ensure_dirs()
+
+        result = ConfigCreateUseCase(ws).execute(
+            ConfigCreateRequest(
+                profile_id="dev",
+                profile_name="Dev",
+                allow_empty=True,
+                activate=False,
+            )
+        )
+
+        assert result.issues == ()
+        assert result.created is True
+        assert result.profile_id == "dev"
+
+        profile_path = ws.resolve_profile_dir("dev") / "profile.json"
+        assert profile_path.is_file()
+        assert json.loads(profile_path.read_text(encoding="utf-8"))["partitions"] == {}
+        assert (ws.resolve_key_dir("dev") / "manifest.json").is_file()
+
+    def test_without_allow_empty_rejects_and_creates_nothing(self, tmp_path: Path) -> None:
+        ws = WorkspacePaths.discover(tmp_path)
+        ws.ensure_dirs()
+
+        result = ConfigCreateUseCase(ws).execute(
+            ConfigCreateRequest(profile_id="dev", profile_name="Dev", activate=False)
+        )
+
+        assert any(i.error_code == "config.no_partitions" for i in result.issues)
+        assert result.created is False
+        assert not ws.resolve_profile_dir("dev").exists()
+
+    def test_invalid_profile_id_rejected(self, tmp_path: Path) -> None:
+        ws = WorkspacePaths.discover(tmp_path)
+        ws.ensure_dirs()
+
+        result = ConfigCreateUseCase(ws).execute(
+            ConfigCreateRequest(
+                profile_id="bad id!",
+                profile_name="Bad",
+                allow_empty=True,
+                activate=False,
+            )
+        )
+
+        assert any(i.error_code == "config.invalid_profile_id" for i in result.issues)
+        assert result.created is False
+        assert not (ws.profiles / "bad id!").exists()
+        assert not (ws.profiles / "bad_id_").exists()
+
+    def test_duplicate_id_rejected(self, tmp_path: Path) -> None:
+        ws = _setup_profile(tmp_path)  # creates profile id "test"
+
+        result = ConfigCreateUseCase(ws).execute(
+            ConfigCreateRequest(
+                profile_id="test",
+                profile_name="Duplicate",
+                allow_empty=True,
+                activate=False,
+            )
+        )
+
+        assert any(i.error_code == "config.profile_exists" for i in result.issues)
+        assert result.created is False
+
+    def test_allow_empty_still_requires_a_name(self, tmp_path: Path) -> None:
+        """The use case keeps its strict "empty name is invalid" semantics.
+
+        ``config.missing_profile_name`` is reported even under
+        ``allow_empty`` (only ``config.no_partitions`` is suppressed); the
+        CLI is what defaults the name to the id.
+        """
+        ws = WorkspacePaths.discover(tmp_path)
+        ws.ensure_dirs()
+
+        result = ConfigCreateUseCase(ws).execute(
+            ConfigCreateRequest(
+                profile_id="dev",
+                profile_name="",
+                allow_empty=True,
+                activate=False,
+            )
+        )
+
+        assert any(i.error_code == "config.missing_profile_name" for i in result.issues)
+        assert all(i.error_code != "config.no_partitions" for i in result.issues)
+
+    def test_allow_empty_activates_when_requested(self, tmp_path: Path) -> None:
+        ws = WorkspacePaths.discover(tmp_path)
+        ws.ensure_dirs()
+
+        result = ConfigCreateUseCase(ws).execute(
+            ConfigCreateRequest(
+                profile_id="dev",
+                profile_name="Dev",
+                allow_empty=True,
+                activate=True,
+            )
+        )
+
+        assert result.issues == ()
+        assert ProfileRepository(ws).get_active_profile_id() == "dev"
