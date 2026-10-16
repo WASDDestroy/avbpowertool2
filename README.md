@@ -125,13 +125,21 @@ avbpowertool keys ensure-public --profile myprofile            # writes <name>.p
 avbpowertool keys add    mykey --file mykey.pem --profile myprofile
 avbpowertool keys remove mykey --profile myprofile
 
+# Plugins (everything after a standalone -- goes to the plugin)
+avbpowertool plugin list
+avbpowertool plugin install ./my_plugin.zip --json             # --force to overwrite
+avbpowertool plugin run testkey_config_gen -- --core --8e --no_prompt
+avbpowertool plugin uninstall my_plugin --yes
+
 # About
 avbpowertool about
 ```
 
 All commands except `about` support `--json` for machine-readable output.
-Exit codes: `0` success, `1` config/key/image/chain errors, `2` usage errors,
-`3` avbtool (`tool.*` / `signing.*`) failures. Full command surface, exit-code
+Exit codes: `0` success, `1` config/key/image/chain/plugin errors, `2` usage
+errors, `3` avbtool (`tool.*` / `signing.*`) failures. `plugin run` is the
+exception: with no issues it returns **the plugin's own exit code**, so gate on
+`issues[]` rather than on the exit code alone. Full command surface, exit-code
 table, and error-code list: [CLI Reference](docs/en/CLI_REFERENCE.md).
 
 > Without `uv`, or when the console script is not on `PATH`, prefix any
@@ -157,6 +165,13 @@ table, defaults, exit codes, and examples:
 
 ```bat
 plugins\testkey_config_gen\make-testkey-config.cmd --core --8e --no_prompt
+```
+
+The same wrapper is also reachable as an installed plugin, with every argument
+after `--` passed straight through:
+
+```shell
+avbpowertool plugin run testkey_config_gen -- --core --8e --no_prompt
 ```
 
 ### TUI Usage
@@ -284,6 +299,8 @@ See [AGENTS.md](AGENTS.md) for development guidelines.
 - [CLI Reference](docs/en/CLI_REFERENCE.md) — commands, flags, exit codes, and error codes
 - [Creating a Configuration](docs/en/CONFIG_CREATION.md) — TUI wizard, CLI, and API
 - [Key Management](docs/en/KEY_MANAGEMENT.md) — key store, manifest, and the `keys` commands
+- [Plugin System](docs/en/PLUGINS.md) — plugin layout, manifest XML, packaging, and the runtime contract
+  (中文: [插件系统](docs/zh/PLUGINS.md))
 - [Backend API Reference](docs/en/BACKEND_API.md) — use the backend from Python
 - [Adding Navigation](docs/en/FRONTEND_NAVIGATION.md) — add entries to the TUI navigation tree
 - [Editing Pages](docs/en/FRONTEND_PAGES.md) — create or modify TUI views

@@ -24,6 +24,10 @@ from avbpowertool.application.commands import (
     KeyListRequest,
     KeyRemoveRequest,
     LegacyImportRequest,
+    PluginInstallRequest,
+    PluginListRequest,
+    PluginRunRequest,
+    PluginUninstallRequest,
     ProfileActivateRequest,
     ProfileDeleteRequest,
     ProfileListRequest,
@@ -52,6 +56,12 @@ from avbpowertool.application.services.manage_keys import (
     KeyListUseCase,
     KeyRemoveUseCase,
 )
+from avbpowertool.application.services.manage_plugins import (
+    PluginInstallUseCase,
+    PluginListUseCase,
+    PluginRunUseCase,
+    PluginUninstallUseCase,
+)
 from avbpowertool.application.services.manage_profiles import (
     ProfileActivateUseCase,
     ProfileDeleteUseCase,
@@ -62,6 +72,7 @@ from avbpowertool.application.services.sign_images import SignImagesUseCase
 from avbpowertool.infrastructure.avbtool.runner import SubprocessAvbTool
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.infrastructure.persistence.profile_repository import ProfileRepository
+from avbpowertool.infrastructure.plugins.runner import SubprocessPluginRunner
 from avbpowertool.presentation import audit
 from avbpowertool.presentation.actions import ActionId
 from avbpowertool.presentation.cli.renderer import (
@@ -84,10 +95,15 @@ from avbpowertool.presentation.cli.renderer import (
     render_key_list,
     render_key_remove,
     render_legacy_import,
+    render_plugin_install,
+    render_plugin_list,
+    render_plugin_run,
+    render_plugin_uninstall,
     render_profile_activate,
     render_profile_list,
     render_sign,
 )
+from avbpowertool.presentation.i18n import get_current_language
 
 
 def _create_workspace() -> WorkspacePaths:
@@ -96,6 +112,11 @@ def _create_workspace() -> WorkspacePaths:
 
 def _create_avb_tool(workspace: WorkspacePaths) -> SubprocessAvbTool:
     return SubprocessAvbTool(workspace.avbtool_script)
+
+
+def _create_plugin_runner() -> SubprocessPluginRunner:
+    """Build the plugin runner; a factory so tests can monkeypatch it."""
+    return SubprocessPluginRunner()
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +155,10 @@ def dispatch(args: Namespace, out: TextIO = sys.stdout) -> int:
         ActionId.KEY_ENSURE_PUBLIC: _handle_key_ensure_public,
         ActionId.KEY_ADD: _handle_key_add,
         ActionId.KEY_REMOVE: _handle_key_remove,
+        ActionId.PLUGIN_LIST: _handle_plugin_list,
+        ActionId.PLUGIN_INSTALL: _handle_plugin_install,
+        ActionId.PLUGIN_UNINSTALL: _handle_plugin_uninstall,
+        ActionId.PLUGIN_RUN: _handle_plugin_run,
     }
 
     handler = handler_map.get(action_id)
@@ -530,3 +555,76 @@ def _handle_key_remove(
     result = uc.execute(request)
     render_key_remove(result, as_json, out)
     return exit_code_from_issues(result.issues)
+
+
+# ---------------------------------------------------------------------------
+# Plugins
+# ---------------------------------------------------------------------------
+
+
+def _handle_plugin_list(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    # The language is injected, not looked up: the application layer never
+    # imports the presentation layer.
+    uc = PluginListUseCase(workspace, language=get_current_language())
+    result = uc.execute(PluginListRequest())
+    render_plugin_list(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_plugin_install(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    uc = PluginInstallUseCase(workspace)
+    request = PluginInstallRequest(
+        source_path=args.source,
+        force=getattr(args, "force", False),
+    )
+    result = uc.execute(request)
+    render_plugin_install(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_plugin_uninstall(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    # A plugin directory can hold key material and other bundled files, so
+    # --yes is a hard gate: without it nothing is touched and no use case is
+    # even built (same shape as ``config delete``).
+    if not getattr(args, "yes", False):
+        print(
+            "This deletes the plugin directory including any bundled files. Use --yes to confirm.",
+            file=sys.stderr,
+        )
+        return 1
+
+    uc = PluginUninstallUseCase(workspace)
+    request = PluginUninstallRequest(plugin_id=args.plugin_id)
+    result = uc.execute(request)
+    render_plugin_uninstall(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_plugin_run(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    uc = PluginRunUseCase(
+        workspace,
+        _create_plugin_runner(),
+        language=get_current_language(),
+    )
+    request = PluginRunRequest(
+        plugin_id=args.plugin_id,
+        # main() filled this from everything after the first ``--``.
+        args=tuple(getattr(args, "plugin_args", ()) or ()),
+    )
+    result = uc.execute(request)
+    render_plugin_run(result, as_json, out)
+
+    # A non-zero exit code is the plugin's own verdict and is passed through
+    # untouched; only an issue means the plugin never ran, and then the
+    # ``exit_code`` is the placeholder -1 that must not reach the shell.
+    if result.issues:
+        return exit_code_from_issues(result.issues)
+    return result.exit_code

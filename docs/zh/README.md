@@ -118,14 +118,21 @@ avbpowertool keys ensure-public --profile myprofile            # 生成 <name>.p
 avbpowertool keys add    mykey --file mykey.pem --profile myprofile
 avbpowertool keys remove mykey --profile myprofile
 
+# 插件（第一个独立的 -- 之后的全部内容原样传给插件）
+avbpowertool plugin list
+avbpowertool plugin install ./my_plugin.zip --json             # --force 可覆盖安装
+avbpowertool plugin run testkey_config_gen -- --core --8e --no_prompt
+avbpowertool plugin uninstall my_plugin --yes
+
 # 关于
 avbpowertool about
 ```
 
 除 `about` 外所有命令都支持 `--json` 以获得机器可读的输出。
-退出码：`0` 成功、`1` 配置/密钥/镜像/链错误、`2` 用法错误、
-`3` avbtool（`tool.*` / `signing.*`）失败。完整命令面、退出码表与错误码清单见
-[CLI 参考](CLI_REFERENCE.md)。
+退出码：`0` 成功、`1` 配置/密钥/镜像/链/插件错误、`2` 用法错误、
+`3` avbtool（`tool.*` / `signing.*`）失败。`plugin run` 是特例：没有 issue 时返回
+**插件自己的退出码**，因此判断失败要看 `issues[]` 而不是只看退出码。
+完整命令面、退出码表与错误码清单见 [CLI 参考](CLI_REFERENCE.md)。
 
 > 未使用 `uv`，或控制台脚本不在 `PATH` 中时，请在命令前加 `python -m`：
 >
@@ -257,6 +264,7 @@ profiles/
 - [CLI 参考](CLI_REFERENCE.md) — 命令面、旗标、退出码与错误码
 - [创建配置](CONFIG_CREATION.md) — TUI 向导、CLI 与 API
 - [密钥管理](KEY_MANAGEMENT.md) — 密钥库、manifest 与 `keys` 命令
+- [插件系统](PLUGINS.md) — 插件目录布局、清单 XML、打包方式与环境变量契约
 - [后端 API 参考](BACKEND_API.md) — 在 Python 中调用后端
 - [添加导航](FRONTEND_NAVIGATION.md) — 在 TUI 导航树中添加条目
 - [编辑页面](FRONTEND_PAGES.md) — 创建或修改 TUI 视图

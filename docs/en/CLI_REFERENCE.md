@@ -24,6 +24,7 @@ argument semantics, exit codes, and error codes.
   - [`config delete`](#config-delete)
   - [`config import` / `config import-legacy` / `config export` / `config migrate`](#config-import--config-import-legacy--config-export--config-migrate)
   - [`keys` subcommands](#keys-subcommands)
+  - [`plugin` subcommands](#plugin-subcommands)
   - [`about`](#about)
 - [5. Error Code List](#5-error-code-list)
 - [6. End-to-End Example](#6-end-to-end-example)
@@ -72,15 +73,27 @@ avbpowertool                             # no arguments   -> TUI
 
 | Exit code | Triggered by |
 |---|---|
-| `0` | Success. Also used for issues whose error-code prefix is in none of the classes below — an unknown prefix never turns a success into a failure |
-| `1` | Any issue prefixed `config.*` / `keys.*` / `image.*` / `chain.*`; plus three explicit cases: `config validate` reporting `missing_images` / `missing_keys`; `image sign --execute` without `--yes` (stderr: `This will modify image files. Use --yes to confirm.`); `config delete` without `--yes` (stderr: `This deletes the profile directory including its private keys. Use --yes to confirm.`) |
+| `0` | Success. Also used for issues whose error-code prefix is in none of the classes below — an unknown prefix never turns a success into a failure. **The `plugin run` exception**: once the plugin started (`issues` empty) the command returns **the plugin's own exit code**, even a non-zero one |
+| `1` | Any issue prefixed `config.*` / `keys.*` / `image.*` / `chain.*` / `plugin.*`; plus four explicit cases: `config validate` reporting `missing_images` / `missing_keys`; `image sign --execute` without `--yes` (stderr: `This will modify image files. Use --yes to confirm.`); `config delete` without `--yes` (stderr: `This deletes the profile directory including its private keys. Use --yes to confirm.`); `plugin uninstall` without `--yes` (stderr: `This deletes the plugin directory including any bundled files. Use --yes to confirm.`) |
 | `2` | argparse usage error: unknown command or flag, missing required argument, mutually exclusive flags given together (`--from-images` + `--allow-empty`, `--activate` + `--no-activate`, `--merge` + `--replace`), and `config create --overwrite` without `--from-images` |
 | `3` | Any issue prefixed `tool.*` / `signing.*` (an avbtool subprocess failure, a failed signing step) |
 
 The mapping lives in
 `avbpowertool/presentation/cli/renderer.py::exit_code_from_issues`: if **any**
 issue belongs to a higher-priority class, that class's exit code wins
-(`tool` / `signing` outrank `config` / `keys` / `chain` / `image`).
+(`tool` / `signing` outrank `config` / `keys` / `chain` / `image` / `plugin`).
+
+**`plugin run` is the one exception**: when it has issues the plugin never started
+(and its `exit_code` is the placeholder `-1`), so it returns `1` per the table above;
+with no issues it returns **the plugin's own exit code** — including a non-zero status
+the plugin chose. Scripts must therefore gate on whether `issues[]` is empty rather
+than on the exit code alone:
+
+```powershell
+$data = avbpowertool plugin run testkey_config_gen --json | ConvertFrom-Json
+if ($data.issues.Count -gt 0) { throw "plugin never started" }
+if ($data.exit_code -ne 0) { throw "the plugin itself failed" }
+```
 
 Typical use in a script:
 
@@ -622,6 +635,75 @@ deleting the `.pem` file**). An unknown key_id gives `keys.not_found`.
 > `chain_partition` as **raw bytes**, so passing a `.pem` corrupts the vbmeta.
 > See [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md).
 
+### `plugin` subcommands
+
+```
+avbpowertool plugin list      [-h] [--json]
+avbpowertool plugin install   [-h] [--force] [--json] SOURCE
+avbpowertool plugin uninstall [-h] [--yes] [--json] PLUGIN_ID
+avbpowertool plugin run       [-h] [--json] PLUGIN_ID [-- <args> ...]
+```
+
+The plugin system itself (directory layout, manifest XML, packaging, entry
+dispatch, environment contract, security statement) is documented in
+[PLUGINS.md](PLUGINS.md). This section covers the command surface only.
+
+**`plugin list`** — lists the plugins under `plugins/`, sorted by id. `name` is
+already resolved for the current language (`settings.json`'s `language`, default
+`en`). With no plugins the text mode prints `No plugins installed.`. A directory
+whose manifest is broken shows up in `issues[]` (`plugin.manifest_*`) and is never
+silently dropped.
+`--json` keys: `plugins[]` (`plugin_id` / `name` / `entry` / `path`), `issues[]`.
+
+**`plugin install <SOURCE>`** — installs from a directory or a zip. `SOURCE` is a
+plugin directory or a `.zip`; a zip may use the "root layout" or the "exactly one
+directory level" layout (the latter is what `Compress-Archive` produces). When the
+target `plugins/<id>/` already exists:
+
+| Flag | Semantics |
+|---|---|
+| (default) | Report `plugin.exists`, exit 1, **overwrite nothing** |
+| `--force` | Overwrite the installation |
+
+`--json` keys: `plugin_id`, `installed`, `file_count`, `issues[]`. An unsafe archive
+(absolute path / drive letter / `:` / `..`) is refused before a single byte is
+extracted (`plugin.install_failed`) and leaves no half-installed directory.
+
+**`plugin uninstall <PLUGIN_ID>`** — removes the whole `plugins/<PLUGIN_ID>/`
+directory. `--yes` is a **hard gate**: without it stderr gets
+`This deletes the plugin directory including any bundled files. Use --yes to confirm.`
+and the command exits `1`, removing **nothing** (the directory can carry key
+material). `--json` keys: `plugin_id`, `removed`, `removed_files`,
+`removed_bytes` (regular files and bytes counted **before** the removal), `issues[]`.
+
+**`plugin run <PLUGIN_ID> [-- <args…>]`** — runs the plugin's entry script with the
+matching interpreter (`.py` → the current interpreter, `.ps1` →
+`pwsh -NoProfile -File`, `.cmd`/`.bat` → `cmd /c`, `.sh` → `sh`). The working
+directory is the workspace root and the environment variables are listed in
+[PLUGINS.md](PLUGINS.md#5-the-plugin--tool-contract).
+
+Argument pass-through (**the first standalone `--` is the boundary**):
+
+| Invocation | Result |
+|---|---|
+| `plugin run <id> --json` | `--json` is consumed by **this tool**, which prints one result JSON |
+| `plugin run <id> -- --json` | `--json` is **passed through** to the plugin; the tool does not switch to JSON output |
+| `plugin run <id> --json -- --json` | Both at once: the tool prints JSON and the plugin receives `--json` |
+| `plugin run <id> -- --core --8e --no_prompt` | `--core --8e --no_prompt` all pass through |
+
+> This is deliberately not `argparse.REMAINDER`: REMAINDER would also swallow the
+> `--json` in `plugin run <id> --json`, so it cannot express the first two rows. The
+> implementation splits argv at the first `--` inside `main()`
+> (`_split_plugin_passthrough`) and only for `plugin run`.
+
+A plugin's stdio is **fully inherited** (it may be interactive), so in text mode a
+successful run makes this tool print **nothing extra**; `--json` also describes only
+what this tool saw — the plugin's own stdout/stderr still goes straight to the
+terminal. `--json` keys: `plugin_id`, `exit_code`, `issues[]`.
+
+**Exit code**: with any `issues[]` (the plugin never started) → `1`; with none →
+**the plugin's own exit code**, passed through untouched (see section 2).
+
 ### `about`
 
 ```
@@ -710,6 +792,26 @@ result of the `exit_code_from_issues` mapping.
 | `chain.chained_partition_unsigned` | The chained partition is NONE (unsigned), so a chain check is meaningless |
 | `chain.key_not_found` | No key in the store matched the descriptor's public-key SHA1 during chain resolution (`config create --from-images` reports this code but does **not** block creation). There it is **informational**: it only appears in `chain_issues[]` (rendered as its own section in text output) and **never fails the command on its own**; in `config check-chains` and friends it still maps to exit code 1 |
 
+### `plugin.*` → exit code 1
+
+| Error code | Meaning |
+|---|---|
+| `plugin.not_found` | `plugins/<id>/` does not exist (the `plugin uninstall` / `plugin run` id is not installed) |
+| `plugin.exists` | The target plugin is already installed and `--force` was not given (`plugin install` overwrites nothing) |
+| `plugin.id_invalid` | Illegal plugin id: empty, `.`, `..`, containing `/` or `\`, or not resolving to a direct child of `plugins/` |
+| `plugin.manifest_missing` | No `avbpowertool_plugin_config.xml` in the install source (directory or archive) |
+| `plugin.manifest_invalid` | The manifest XML cannot be parsed, the root element name is wrong, `schema_version` is unsupported, the id is empty, or no `<name>` is declared |
+| `plugin.entry_missing` | The manifest's `<entry>` is empty |
+| `plugin.entry_invalid` | `<entry>` contains `/` or `\` (an attempt to point outside the plugin directory) |
+| `plugin.entry_not_found` | The entry file the manifest points at does not exist in the plugin directory (`plugin run`) |
+| `plugin.install_failed` | Install failed: `SOURCE` is neither a directory nor a valid zip, the archive holds an unsafe member (absolute path / drive letter / `:` / `..`), or the copy/extraction raised `OSError` |
+| `plugin.uninstall_failed` | Removing the plugin directory failed (a locked file on Windows, for instance) |
+| `plugin.run_failed` | The plugin **never started**: unsupported entry suffix, missing interpreter, or a subprocess that could not be created. `exit_code` is the placeholder `-1` |
+
+> `plugin run` is the special case: any of the issues above → exit code `1`; an empty
+> `issues[]` returns **the plugin's own exit code** (a plugin exiting 3 gives 3), and a
+> non-zero status is not a tool error.
+
 ### `tool.*` / `signing.*` → exit code 3
 
 | Error code | Meaning |
@@ -795,5 +897,6 @@ Invoke-Avb @('config','check-chains','--profile','my_testkey_config','--json')
 
 - [Creating a Configuration](CONFIG_CREATION.md) — create profiles from the CLI / TUI / API
 - [Key Management](KEY_MANAGEMENT.md) — key store, manifest, and public-key file requirements
+- [Plugin System](PLUGINS.md) — plugin directory layout, manifest XML, packaging, and the environment contract
 - [Backend API Reference](BACKEND_API.md) — call the same use cases from Python
 - [README](../../README.md) — installation and quick start

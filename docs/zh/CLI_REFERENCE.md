@@ -21,6 +21,7 @@ AVBPowerTool2 命令行的完整参考：命令面、参数语义、退出码与
   - [`config delete`](#config-delete)
   - [`config import` / `config import-legacy` / `config export` / `config migrate`](#config-import--config-import-legacy--config-export--config-migrate)
   - [`keys list` / `keys discover` / `keys ensure-public` / `keys add` / `keys remove`](#keys-子命令)
+  - [`plugin` 子命令](#plugin-子命令)
   - [`about`](#about)
 - [5. 错误码清单](#5-错误码清单)
 - [6. 端到端示例](#6-端到端示例)
@@ -61,14 +62,24 @@ avbpowertool                             # 不带参数 -> TUI
 
 | 退出码 | 触发条件 |
 |---|---|
-| `0` | 成功。也用于「错误码前缀不在下表任何一类」的 issue —— 未知前缀不会把成功变成失败 |
-| `1` | issue 中出现 `config.*` / `keys.*` / `image.*` / `chain.*` 前缀；另外两种显式情况：`config validate` 报告了 `missing_images` / `missing_keys`；`image sign --execute` / `config delete` 没有同时给 `--yes`（stderr 分别打印 `This will modify image files. Use --yes to confirm.` 与 `This deletes the profile directory including its private keys. Use --yes to confirm.`） |
+| `0` | 成功。也用于「错误码前缀不在下表任何一类」的 issue —— 未知前缀不会把成功变成失败。**`plugin run` 的特例**：插件成功启动（`issues` 为空）时返回**插件自己的退出码**，即使它是非 0 |
+| `1` | issue 中出现 `config.*` / `keys.*` / `image.*` / `chain.*` / `plugin.*` 前缀；另外三种显式情况：`config validate` 报告了 `missing_images` / `missing_keys`；`image sign --execute` / `config delete` / `plugin uninstall` 没有同时给 `--yes`（stderr 分别打印 `This will modify image files. Use --yes to confirm.`、`This deletes the profile directory including its private keys. Use --yes to confirm.` 与 `This deletes the plugin directory including any bundled files. Use --yes to confirm.`） |
 | `2` | argparse 用法错误：未知命令或旗标、缺少必填参数、互斥旗标同时给出（`--from-images` + `--allow-empty`、`--activate` + `--no-activate`、`--merge` + `--replace`），以及 `config create --overwrite` 没给 `--from-images` |
 | `3` | issue 中出现 `tool.*` / `signing.*` 前缀（avbtool 子进程失败、签名步骤失败） |
 
 映射实现见 `avbpowertool/presentation/cli/renderer.py::exit_code_from_issues`：
 只要有**任意一个** issue 的前缀属于高优先级类别，就返回该类别的退出码
-（`tool` / `signing` 优先于 `config` / `keys` / `chain` / `image`）。
+（`tool` / `signing` 优先于 `config` / `keys` / `chain` / `image` / `plugin`）。
+
+**`plugin run` 是唯一的例外**：它有 issue（插件根本没启动，此时 `exit_code` 是占位的
+`-1`）时按上表返回 `1`；没有 issue 时**原样返回插件自己的退出码**——包括插件主动退出
+的非 0 状态。因此脚本判断 `plugin run` 失败要看 `issues[]` 是否为空，不能只看退出码：
+
+```powershell
+$data = avbpowertool plugin run testkey_config_gen --json | ConvertFrom-Json
+if ($data.issues.Count -gt 0) { throw "plugin never started" }
+if ($data.exit_code -ne 0) { throw "the plugin itself failed" }
+```
 
 脚本里的典型用法：
 
@@ -544,6 +555,68 @@ key_id 已存在 → `keys.already_exists`。`--json` 键：`key_id`、`issues[]
 > （`*.pem.bin`）。avbtool 把 `chain_partition` 的第三段当**原始字节**读入，
 > 传 `.pem` 会写坏 vbmeta。详见 [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md)。
 
+### `plugin` 子命令
+
+```
+avbpowertool plugin list      [-h] [--json]
+avbpowertool plugin install   [-h] [--force] [--json] SOURCE
+avbpowertool plugin uninstall [-h] [--yes] [--json] PLUGIN_ID
+avbpowertool plugin run       [-h] [--json] PLUGIN_ID [-- <args> ...]
+```
+
+插件系统本身的完整说明（目录布局、清单 XML、打包方式、入口分派、环境变量契约、
+安全性声明）见 [PLUGINS.md](PLUGINS.md)。本节只讲命令面。
+
+**`plugin list`** —— 列出 `plugins/` 下的插件，按 id 排序。`name` 已按当前语言
+（`settings.json` 的 `language`，默认 `en`）解析。没有插件时文本模式打印
+`No plugins installed.`。清单损坏的目录会出现在 `issues[]` 里（`plugin.manifest_*`），
+但**不会**被静默丢弃。
+`--json` 键：`plugins[]`（`plugin_id` / `name` / `entry` / `path`）、`issues[]`。
+
+**`plugin install <SOURCE>`** —— 从目录或 zip 安装。`SOURCE` 是插件目录或 `.zip`；
+zip 支持「根布局」与「恰好一层目录」两种形状（后者即 `Compress-Archive` 的产物）。
+目标 `plugins/<id>/` 已存在时：
+
+| 旗标 | 语义 |
+|---|---|
+| （默认） | 报 `plugin.exists`，退出码 1，**不覆盖任何文件** |
+| `--force` | 覆盖安装 |
+
+`--json` 键：`plugin_id`、`installed`、`file_count`、`issues[]`。
+不安全归档（绝对路径 / 盘符 / `:` / `..`）在解压任何字节之前就被拒绝
+（`plugin.install_failed`），不会留下半成品目录。
+
+**`plugin uninstall <PLUGIN_ID>`** —— 删除 `plugins/<PLUGIN_ID>/` 整个目录。
+`--yes` 是**硬门槛**：不给时 stderr 打印
+`This deletes the plugin directory including any bundled files. Use --yes to confirm.`
+并返回退出码 `1`，**不删除任何东西**（目录里可能带着密钥等材料）。
+`--json` 键：`plugin_id`、`removed`、`removed_files`、`removed_bytes`（删除**之前**
+统计的普通文件数与字节数）、`issues[]`。
+
+**`plugin run <PLUGIN_ID> [-- <args…>]`** —— 用对应解释器运行插件的入口脚本
+（`.py` → 当前解释器、`.ps1` → `pwsh -NoProfile -File`、`.cmd`/`.bat` → `cmd /c`、
+`.sh` → `sh`）。工作目录 = 工作区根目录，环境变量见 [PLUGINS.md](PLUGINS.md#5-插件与工具的契约)。
+
+参数透传规则（**第一个独立的 `--` 是分界线**）：
+
+| 写法 | 结果 |
+|---|---|
+| `plugin run <id> --json` | `--json` 被**本工具**消费，输出一行结果 JSON |
+| `plugin run <id> -- --json` | `--json` **原样透传**给插件，本工具不切换成 JSON 输出 |
+| `plugin run <id> --json -- --json` | 两者同时成立：工具输出 JSON，插件收到 `--json` |
+| `plugin run <id> -- --core --8e --no_prompt` | `--core --8e --no_prompt` 全部透传 |
+
+> 这里没有用 `argparse.REMAINDER`：REMAINDER 会把 `plugin run <id> --json` 里的
+> `--json` 也吃掉，无法同时满足前两行。实现在 `main()` 里按第一个 `--` 手工切分 argv
+> （`_split_plugin_passthrough`），只对 `plugin run` 生效。
+
+插件的 stdio **完全继承**（可交互），因此文本模式下插件成功运行时本工具**不额外输出
+任何东西**；`--json` 也只描述本工具看到的结果，插件自己的 stdout/stderr 仍直接写到终端。
+`--json` 键：`plugin_id`、`exit_code`、`issues[]`。
+
+**退出码**：有 `issues[]`（插件没启动）→ `1`；没有 `issues[]` → **插件自己的退出码**，
+原样透传（见第 2 节）。
+
 ### `about`
 
 ```
@@ -630,6 +703,25 @@ avbpowertool about [-h]
 | `chain.chained_partition_unsigned` | 被链分区是 NONE（未签名），链校验无意义 |
 | `chain.key_not_found` | 链解析时没有密钥能匹配描述符的公钥 SHA1（`config create --from-images` 会报此码但**不阻断创建**）。在 `config create --from-images` 里它是**信息性**的：只出现在 `chain_issues[]`（文本输出单独成段），**不单独导致失败**、不影响退出码；在 `config check-chains` 等命令里它仍然映射到退出码 1 |
 
+### `plugin.*` → 退出码 1
+
+| 错误码 | 含义 |
+|---|---|
+| `plugin.not_found` | `plugins/<id>/` 不存在（`plugin uninstall` / `plugin run` 的 id 没装） |
+| `plugin.exists` | 目标插件已安装且没给 `--force`（`plugin install` 不覆盖任何文件） |
+| `plugin.id_invalid` | 插件 id 非法：为空、`.`、`..`、含 `/` 或 `\`，或解析后不是 `plugins/` 的直接子目录 |
+| `plugin.manifest_missing` | 安装源里找不到 `avbpowertool_plugin_config.xml`（目录或归档） |
+| `plugin.manifest_invalid` | 清单 XML 无法解析、根元素名不对、`schema_version` 不受支持、id 为空、或没有声明任何 `<name>` |
+| `plugin.entry_missing` | 清单的 `<entry>` 为空 |
+| `plugin.entry_invalid` | `<entry>` 含 `/` 或 `\`（试图指向插件目录之外） |
+| `plugin.entry_not_found` | 清单指向的入口文件在插件目录里不存在（`plugin run`） |
+| `plugin.install_failed` | 安装失败：`SOURCE` 既不是目录也不是合法 zip、归档含不安全成员（绝对路径 / 盘符 / `:` / `..`）、或复制/解压时报 `OSError` |
+| `plugin.uninstall_failed` | 删除插件目录失败（例如 Windows 上文件被占用） |
+| `plugin.run_failed` | 插件**根本没启动**：入口后缀不支持、解释器缺失、子进程无法创建。此时 `exit_code` 是占位的 `-1` |
+
+> `plugin run` 的退出码是特例：以上任一 issue 出现 → 退出码 `1`；`issues[]` 为空时
+> 返回**插件自己的退出码**（插件退出 3 就是 3），非 0 也不算工具错误。
+
 ### `tool.*` / `signing.*` → 退出码 3
 
 | 错误码 | 含义 |
@@ -712,5 +804,6 @@ Invoke-Avb @('config','check-chains','--profile','my_testkey_config','--json')
 
 - [创建配置](CONFIG_CREATION.md) —— 用 CLI / TUI / API 创建配置
 - [密钥管理](KEY_MANAGEMENT.md) —— key store、manifest 与公钥文件要求
+- [插件系统](PLUGINS.md) —— 插件目录布局、清单 XML、打包方式与环境变量契约
 - [后端 API 参考](BACKEND_API.md) —— 在 Python 中调用同一批用例
 - [README](README.md) —— 安装与快速开始

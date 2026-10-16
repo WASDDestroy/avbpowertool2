@@ -23,6 +23,10 @@ from avbpowertool.application.commands import (
     KeyListResult,
     KeyRemoveResult,
     LegacyImportResult,
+    PluginInstallResult,
+    PluginListResult,
+    PluginRunResult,
+    PluginUninstallResult,
     ProfileActivateResult,
     ProfileDeleteResult,
     ProfileListResult,
@@ -687,6 +691,125 @@ def render_key_remove(result: KeyRemoveResult, as_json: bool, out: TextIO = sys.
 
 
 # ---------------------------------------------------------------------------
+# Plugins
+# ---------------------------------------------------------------------------
+
+
+def render_plugin_list(result: PluginListResult, as_json: bool, out: TextIO = sys.stdout) -> None:
+    """Render the result of ``plugin list``.
+
+    The JSON contract is exactly ``plugins`` (each with ``plugin_id`` /
+    ``name`` / ``entry`` / ``path``) and ``issues``.  ``name`` is already
+    resolved for the language the use case was built with.
+    """
+    if as_json:
+        _emit_json(
+            {
+                "plugins": [
+                    {
+                        "plugin_id": p.plugin_id,
+                        "name": p.name,
+                        "entry": p.entry,
+                        "path": p.path,
+                    }
+                    for p in result.plugins
+                ],
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if not result.plugins:
+        _emit_text("No plugins installed.", out)
+    for p in result.plugins:
+        _emit_text(f"{p.plugin_id}: {p.name} [{p.entry}] ({p.path})", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_plugin_install(
+    result: PluginInstallResult, as_json: bool, out: TextIO = sys.stdout
+) -> None:
+    """Render the result of ``plugin install``.
+
+    The JSON contract is exactly ``plugin_id`` / ``installed`` /
+    ``file_count`` / ``issues``.
+    """
+    if as_json:
+        _emit_json(
+            {
+                "plugin_id": result.plugin_id,
+                "installed": result.installed,
+                "file_count": result.file_count,
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if result.installed and not result.issues:
+        _emit_text(f"Installed plugin: {result.plugin_id}", out)
+        _emit_text(f"  Files: {result.file_count}", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_plugin_uninstall(
+    result: PluginUninstallResult, as_json: bool, out: TextIO = sys.stdout
+) -> None:
+    """Render the result of ``plugin uninstall``.
+
+    The JSON contract is exactly ``plugin_id`` / ``removed`` /
+    ``removed_files`` / ``removed_bytes`` / ``issues``.
+    """
+    if as_json:
+        _emit_json(
+            {
+                "plugin_id": result.plugin_id,
+                "removed": result.removed,
+                "removed_files": result.removed_files,
+                "removed_bytes": result.removed_bytes,
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if result.removed and not result.issues:
+        _emit_text(f"Removed plugin: {result.plugin_id}", out)
+        _emit_text(f"  Files: {result.removed_files}", out)
+        _emit_text(f"  Bytes: {result.removed_bytes}", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_plugin_run(result: PluginRunResult, as_json: bool, out: TextIO = sys.stdout) -> None:
+    """Render the result of ``plugin run``.
+
+    The JSON contract is exactly ``plugin_id`` / ``exit_code`` / ``issues``.
+
+    In text mode a successful run prints nothing at all: the plugin owns
+    stdio (it is interactive), so anything this tool added would land in
+    the middle of the plugin's own output.  Only issues — which mean the
+    plugin never started — are reported.
+    """
+    if as_json:
+        _emit_json(
+            {
+                "plugin_id": result.plugin_id,
+                "exit_code": result.exit_code,
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -700,14 +823,19 @@ def exit_code_from_issues(issues: tuple[OperationIssue, ...]) -> int:
     """Map issues to a stable exit code.
 
     Prefix mapping: ``tool.*`` / ``signing.*`` -> 3, ``config.*`` /
-    ``keys.*`` / ``chain.*`` / ``image.*`` -> 1.  Any other prefix keeps
-    returning 0 (an unknown code must not turn a success into a failure).
+    ``keys.*`` / ``chain.*`` / ``image.*`` / ``plugin.*`` -> 1.  Any other
+    prefix keeps returning 0 (an unknown code must not turn a success into
+    a failure).
+
+    ``plugin run`` is the one command that does not *only* use this: a
+    plugin that started and exited non-zero has no issue at all, and its
+    own exit code is returned instead.
     """
     if not issues:
         return 0
     codes = {i.error_code.split(".")[0] for i in issues}
     if "tool" in codes or "signing" in codes:
         return 3
-    if codes & {"config", "keys", "chain", "image"}:
+    if codes & {"config", "keys", "chain", "image", "plugin"}:
         return 1
     return 0

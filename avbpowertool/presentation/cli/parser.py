@@ -423,6 +423,69 @@ def build_parser() -> argparse.ArgumentParser:
     p_keys_remove.add_argument("--json", action="store_true", help="JSON output")
     p_keys_remove.set_defaults(action_id=ActionId.KEY_REMOVE)
 
+    # --- plugin ---
+    p_plugin = sub.add_parser("plugin", help="Plugin operations")
+    plugin_sub = p_plugin.add_subparsers(dest="plugin_command", required=True)
+
+    # plugin list
+    p_plugin_list = plugin_sub.add_parser("list", help="List the plugins under plugins/")
+    p_plugin_list.add_argument("--json", action="store_true", help="JSON output")
+    p_plugin_list.set_defaults(action_id=ActionId.PLUGIN_LIST)
+
+    # plugin install
+    p_plugin_install = plugin_sub.add_parser(
+        "install", help="Install a plugin from a directory or a zip archive"
+    )
+    p_plugin_install.add_argument("source", metavar="SOURCE", help="Plugin directory or .zip path")
+    p_plugin_install.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an already installed plugin with the same id",
+    )
+    p_plugin_install.add_argument("--json", action="store_true", help="JSON output")
+    p_plugin_install.set_defaults(action_id=ActionId.PLUGIN_INSTALL)
+
+    # plugin uninstall (destructive; --yes is a hard gate)
+    p_plugin_uninstall = plugin_sub.add_parser(
+        "uninstall",
+        help="Remove an installed plugin (its directory, including any bundled files)",
+    )
+    p_plugin_uninstall.add_argument("plugin_id", metavar="PLUGIN_ID", help="Plugin ID to remove")
+    p_plugin_uninstall.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm the removal (required; without it nothing is removed)",
+    )
+    p_plugin_uninstall.add_argument("--json", action="store_true", help="JSON output")
+    p_plugin_uninstall.set_defaults(action_id=ActionId.PLUGIN_UNINSTALL)
+
+    # plugin run
+    #
+    # Everything after a standalone ``--`` goes to the plugin verbatim, so
+    # ``plugin run <id> --json`` still means "this tool prints JSON" while
+    # ``plugin run <id> -- --json`` means "the plugin gets --json".
+    # argparse's REMAINDER cannot express both (it also swallows the
+    # leading --json), so main() splits argv at the first ``--`` before
+    # argparse ever sees it; the parser itself therefore has no positional
+    # for the plugin's own arguments.
+    p_plugin_run = plugin_sub.add_parser(
+        "run",
+        help="Run an installed plugin's entry script",
+        epilog=(
+            "Arguments after a standalone '--' are passed to the plugin verbatim, "
+            "e.g. 'avbpowertool plugin run testkey_config_gen -- --core --8e'. "
+            "A '--json' before the '--' is consumed by avbpowertool, a '--json' "
+            "after it is passed to the plugin."
+        ),
+    )
+    p_plugin_run.add_argument("plugin_id", metavar="PLUGIN_ID", help="Plugin ID to run")
+    p_plugin_run.add_argument(
+        "--json",
+        action="store_true",
+        help="JSON output from avbpowertool (the plugin's own output is never captured)",
+    )
+    p_plugin_run.set_defaults(action_id=ActionId.PLUGIN_RUN)
+
     # --- about ---
     p_about = sub.add_parser("about", help="Show version info")
     p_about.set_defaults(action_id="about")
@@ -438,10 +501,37 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _split_plugin_passthrough(argv: Sequence[str]) -> tuple[list[str], list[str]]:
+    """Split ``plugin run`` argv at its first standalone ``--``.
+
+    Returns ``(plugin_args, tool_argv)``: *plugin_args* is what the plugin
+    receives verbatim and *tool_argv* is what argparse parses.  The split
+    only happens for ``plugin run`` (every other command has no
+    pass-through contract), and only at the first ``--``.
+
+    Doing this here rather than with ``nargs=argparse.REMAINDER`` is what
+    keeps the two ``--json`` meanings apart: REMAINDER starts consuming at
+    the first argument it does not recognize as an option *of the parser*,
+    so ``plugin run <id> --json`` would hand ``--json`` to the plugin and
+    silently disable the tool's own JSON output.
+    """
+    tokens = list(argv)
+    if tokens[:2] != ["plugin", "run"] or "--" not in tokens:
+        return [], tokens
+
+    separator = tokens.index("--")
+    return tokens[separator + 1 :], tokens[:separator]
+
+
 def main(argv: Sequence[str] | None = None, out: TextIO = sys.stdout) -> int:
     """CLI entry point. Returns exit code."""
     parser = build_parser()
-    args = parser.parse_args(argv)
+    argv_list = list(argv) if argv is not None else sys.argv[1:]
+    plugin_args, tool_argv = _split_plugin_passthrough(argv_list)
+    args = parser.parse_args(tool_argv)
+    # Always present so a handler never has to guess; only ``plugin run``
+    # puts anything in it.
+    args.plugin_args = plugin_args
 
     action_id = getattr(args, "action_id", None)
 
@@ -477,7 +567,6 @@ def main(argv: Sequence[str] | None = None, out: TextIO = sys.stdout) -> int:
     from avbpowertool.presentation.cli.handlers import dispatch
 
     bootstrap()
-    argv_list = list(argv) if argv is not None else sys.argv[1:]
     audit.log_cli_command(argv_list)
 
     # Handle --execute flag for sign
