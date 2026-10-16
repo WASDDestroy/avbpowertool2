@@ -440,6 +440,41 @@ class ProfileDeleteResult:
     issues: tuple[OperationIssue, ...] = ()
 
 
+@dataclass(frozen=True)
+class ProfileRenameRequest:
+    """Request to rename a profile directory and/or its display name.
+
+    ``profile_id`` is the current profile id (its directory name).
+    ``new_profile_id`` must survive the public ``sanitize_profile_id``
+    unchanged: a value that would be rewritten is rejected with
+    ``config.invalid_profile_id`` instead of silently creating a profile
+    under another id.  ``new_name`` only touches the display name and may
+    be ``None`` to keep the current one.
+    """
+
+    profile_id: str
+    new_profile_id: str
+    new_name: str | None = None
+
+
+@dataclass(frozen=True)
+class ProfileRenameResult:
+    """Result of renaming a profile.
+
+    ``profile_id`` is the new id.  ``renamed`` is True only when the
+    profile directory really changed name; ``name_changed`` is True when
+    a new display name was written.  An empty ``issues`` tuple means the
+    rename succeeded (which includes the "nothing to do" case where the
+    id did not change and no display name was given).
+    """
+
+    old_profile_id: str
+    profile_id: str
+    renamed: bool = False
+    name_changed: bool = False
+    issues: tuple[OperationIssue, ...] = ()
+
+
 # ---------------------------------------------------------------------------
 # Key Management
 # ---------------------------------------------------------------------------

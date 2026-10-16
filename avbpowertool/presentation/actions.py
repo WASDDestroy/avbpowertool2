@@ -25,6 +25,7 @@ class ActionId(StrEnum):
     CONFIG_LIST = "config.list"
     CONFIG_MIGRATE = "config.migrate"
     CONFIG_EDIT = "config.edit"
+    CONFIG_RENAME = "config.rename"
     KEY_LIST = "keys.list"
     KEY_DISCOVER = "keys.discover"
     KEY_ENSURE_PUBLIC = "keys.ensure_public"

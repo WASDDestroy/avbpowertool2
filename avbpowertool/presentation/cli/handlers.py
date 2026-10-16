@@ -25,6 +25,7 @@ from avbpowertool.application.commands import (
     LegacyImportRequest,
     ProfileActivateRequest,
     ProfileListRequest,
+    ProfileRenameRequest,
     SignImagesRequest,
 )
 from avbpowertool.application.services.config_auto_create import (
@@ -51,10 +52,12 @@ from avbpowertool.application.services.manage_keys import (
 from avbpowertool.application.services.manage_profiles import (
     ProfileActivateUseCase,
     ProfileListUseCase,
+    ProfileRenameUseCase,
 )
 from avbpowertool.application.services.sign_images import SignImagesUseCase
 from avbpowertool.infrastructure.avbtool.runner import SubprocessAvbTool
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
+from avbpowertool.infrastructure.persistence.profile_repository import ProfileRepository
 from avbpowertool.presentation import audit
 from avbpowertool.presentation.actions import ActionId
 from avbpowertool.presentation.cli.renderer import (
@@ -63,6 +66,7 @@ from avbpowertool.presentation.cli.renderer import (
     render_config_create_from_images,
     render_config_edit,
     render_config_migrate,
+    render_config_rename,
     render_config_show,
     render_config_validate,
     render_export,
@@ -116,6 +120,7 @@ def dispatch(args: Namespace, out: TextIO = sys.stdout) -> int:
         ActionId.CONFIG_EXPORT: _handle_config_export,
         ActionId.CONFIG_MIGRATE: _handle_config_migrate,
         ActionId.CONFIG_EDIT: _handle_config_edit,
+        ActionId.CONFIG_RENAME: _handle_config_rename,
         ActionId.KEY_LIST: _handle_key_list,
         ActionId.KEY_DISCOVER: _handle_key_discover,
         ActionId.KEY_ENSURE_PUBLIC: _handle_key_ensure_public,
@@ -397,6 +402,27 @@ def _handle_config_edit(
     )
     result = uc.execute(request)
     render_config_edit(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_config_rename(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    uc = ProfileRenameUseCase(workspace)
+    request = ProfileRenameRequest(
+        profile_id=args.old_profile_id,
+        new_profile_id=args.new_profile_id,
+        new_name=getattr(args, "new_name", None),
+    )
+    result = uc.execute(request)
+    # The active profile is read after the call so the text output can show
+    # whether .active-profile followed the rename.
+    render_config_rename(
+        result,
+        as_json,
+        out,
+        active_profile_id=ProfileRepository(workspace).get_active_profile_id(),
+    )
     return exit_code_from_issues(result.issues)
 
 

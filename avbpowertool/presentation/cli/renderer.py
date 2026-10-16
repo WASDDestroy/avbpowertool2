@@ -24,6 +24,7 @@ from avbpowertool.application.commands import (
     LegacyImportResult,
     ProfileActivateResult,
     ProfileListResult,
+    ProfileRenameResult,
     SignImagesResult,
 )
 from avbpowertool.domain.models import OperationIssue
@@ -401,6 +402,43 @@ def render_profile_activate(
 
     if not result.issues:
         _emit_text(f"Activated profile: {result.profile_id}", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_config_rename(
+    result: ProfileRenameResult,
+    as_json: bool,
+    out: TextIO = sys.stdout,
+    active_profile_id: str | None = None,
+) -> None:
+    """Render the result of ``config rename``.
+
+    ``active_profile_id`` is the workspace's active profile *after* the
+    call; the text output uses it to show whether ``.active-profile``
+    followed the rename.
+    """
+    if as_json:
+        _emit_json(
+            {
+                "old_profile_id": result.old_profile_id,
+                "profile_id": result.profile_id,
+                "renamed": result.renamed,
+                "name_changed": result.name_changed,
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if not result.issues:
+        if result.renamed:
+            _emit_text(f"Renamed profile '{result.old_profile_id}' to '{result.profile_id}'.", out)
+        else:
+            _emit_text(f"Profile '{result.profile_id}' kept its directory name.", out)
+        _emit_text(f"  Display name:   {'changed' if result.name_changed else 'unchanged'}", out)
+        if active_profile_id is not None:
+            _emit_text(f"  Active profile: {active_profile_id}", out)
     for iss in result.issues:
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
 

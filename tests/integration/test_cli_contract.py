@@ -14,6 +14,7 @@ from avbpowertool.domain.models import (
     SigningAlgorithm,
 )
 from avbpowertool.infrastructure.persistence.profile_codec import encode_profile
+from avbpowertool.presentation.actions import ActionId
 from avbpowertool.presentation.cli.parser import build_parser, main
 
 
@@ -70,6 +71,14 @@ class TestParserShape:
         out = StringIO()
         try:
             code = main(["config", "edit", "--help"], out=out)
+        except SystemExit as exc:
+            code = exc.code
+        assert code == 0
+
+    def test_config_rename_help(self) -> None:
+        out = StringIO()
+        try:
+            code = main(["config", "rename", "--help"], out=out)
         except SystemExit as exc:
             code = exc.code
         assert code == 0
@@ -561,3 +570,12 @@ class TestParserBuilds:
             parser.parse_args(["image", "sign", "boot", "--profile", "device_a"]).profile
             == "device_a"
         )
+
+    def test_config_rename_parser_shape(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["config", "rename", "alpha", "gamma", "--name", "Gamma"])
+        assert args.action_id == ActionId.CONFIG_RENAME
+        assert args.old_profile_id == "alpha"
+        assert args.new_profile_id == "gamma"
+        assert args.new_name == "Gamma"
+        assert parser.parse_args(["config", "rename", "alpha", "gamma"]).new_name is None

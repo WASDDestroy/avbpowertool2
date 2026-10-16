@@ -280,6 +280,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_cfg_edit.add_argument("--json", action="store_true", help="JSON output")
     p_cfg_edit.set_defaults(action_id=ActionId.CONFIG_EDIT)
 
+    # config rename (directory id and/or display name)
+    p_cfg_rename = cfg_sub.add_parser(
+        "rename",
+        help="Rename a profile (its directory id and/or its display name)",
+    )
+    p_cfg_rename.add_argument(
+        "old_profile_id", metavar="OLD", help="Current profile ID (directory name)"
+    )
+    p_cfg_rename.add_argument(
+        "new_profile_id",
+        metavar="NEW",
+        help="New profile ID (directory name); use the same value as OLD to only set --name",
+    )
+    p_cfg_rename.add_argument(
+        "--name",
+        dest="new_name",
+        default=None,
+        help="New display name (default: keep the current one)",
+    )
+    p_cfg_rename.add_argument("--json", action="store_true", help="JSON output")
+    p_cfg_rename.set_defaults(action_id=ActionId.CONFIG_RENAME)
+
     # --- keys ---
     p_keys = sub.add_parser("keys", help="Key store operations")
     keys_sub = p_keys.add_subparsers(dest="keys_command", required=True)
