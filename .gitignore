@@ -8,6 +8,9 @@ Configs/
 Keys/
 *.zip
 
+# Tracked test fixtures (must not be swallowed by the runtime-data rules above)
+!tests/fixtures/legacy/keys/
+
 # Python
 __pycache__/
 *.py[cod]
