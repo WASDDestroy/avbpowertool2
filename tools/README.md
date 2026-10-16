@@ -1,0 +1,146 @@
+# tools/ —— testkey 打包包装脚本
+
+`make-testkey-config.cmd` / `make-testkey-config.ps1` 把「6 步 OEM 测试密钥
+（testkey）配置打包流程」封装成一次调用：按旗标表算出镜像集合 → 安装
+`for_agents/` 里的两把 testkey → 从镜像生成配置 → 写死链式分区 / flags /
+密钥 / 算法 → 剪枝内嵌描述符 → 自检 → （可选）改名 → （可选）导出 zip →
+（可选）签名 dry-run 预览。
+
+**本脚本只生成配置，不签名、不写 `Images/`。** 真正的签名要另外显式执行
+`image sign ... --execute --yes`。
+
+## 前置条件
+
+| 条件 | 说明 |
+|---|---|
+| PowerShell 7+ | 脚本头部是 `#Requires -Version 7.0`；`.cmd` 启动器用 `pwsh` 调用 |
+| `uv` 在 `PATH` 上 | 所有 CLI 调用都是 `uv run avbpowertool ...` |
+| 仓库根有 `avbtool.py` | 工作区根 = 进程 cwd，脚本会先切到 `--repo-root` |
+| 仓库根有 `Images/` | 里面放待打包的 `*.img` |
+| `for_agents/testkey_rsa4096.pem`、`for_agents/testkey_rsa2048.pem` | 会被拷进 `profiles/<id>/keys/`（覆盖同名文件） |
+
+任何一项缺失，脚本在**创建任何东西之前**以退出码 1 结束。
+
+## 用法
+
+```bat
+:: 从仓库根（或任意 cwd，脚本自己会切到 --repo-root）
+tools\make-testkey-config.cmd --core --8e
+```
+
+```powershell
+# 直接调 PowerShell 脚本（参数完全一样）
+pwsh -NoProfile -File tools\make-testkey-config.ps1 --no_prompt --no_export
+```
+
+因为 ps1 自己解析 `--flag`，`.cmd` 不做任何参数翻译，`%ERRORLEVEL%` 原样透传。
+
+## 旗标表
+
+### 镜像集合旗标（**互斥**，最多给一个；一个都不给等价于 `--no_hashtree_core`）
+
+| 旗标 | 镜像集合 |
+|---|---|
+| `--no_hashtree_core`（默认） | `boot, dtbo, init_boot, pvmfw, recovery, vendor_boot, vbmeta, vbmeta_system` |
+| `--no_hashtree_oplus` | 上面 + `vbmeta_vendor` |
+| `--core` | 上面 + `odm, product, system, system_ext, system_dlkm, vendor, vendor_dlkm`，**若 `Images/odm_dlkm.img` 存在**则再加 `odm_dlkm` |
+| `--mi` | `--core` 的集合 + `mi_ext` |
+| `--oplus` | `--core` 的集合 + `my_product, my_manifest, my_bigball, my_carrier, my_engineering, my_heytap, my_region, my_stock`，**若 `Images/my_preload.img` / `Images/my_company.img` 存在**则各自追加 |
+
+> `--8e` 可以**与上面任意一个共存**；`no_hashtree_core / no_hashtree_oplus /
+> core / mi / oplus` 之间互斥，给两个及以上 → 用法错误，退出码 2。
+
+条件项（`odm_dlkm` / `my_preload` / `my_company`）**只在镜像存在时加入**，
+缺失不算错误；非条件项缺失 → 一次性列出所有缺失镜像并退出 1，**不创建任何东西**。
+
+### 其它旗标
+
+| 旗标 | 语义 |
+|---|---|
+| `--8e` | 额外追加 `data_ext`（可与任意集合旗标共存） |
+| `--no_prompt` | 跳过第 7 步的交互改名 |
+| `--no_export` | 跳过导出 zip |
+| `--no_sign_preview` | 跳过末尾的签名 dry-run 预览 |
+| `--force` | 允许复用已存在的同名 `profiles/<id>/`（跳过创建，但继续拷密钥 / 发现 / 生成） |
+| `--id <v>` | 配置 id，默认 `<yyyyMMdd-HHmmss>_testkey`（24 小时制） |
+| `--name <v>` | 配置显示名，默认等于 id |
+| `--images a,b,c` | 显式镜像集合。**给出时忽略集合旗标**（仍做存在性检查）；名字可带或不带 `.img` |
+| `--output <dir>` | 导出目录，默认仓库根（导出到 `<dir>\<id>.zip`） |
+| `--repo-root <dir>` | 仓库根，默认**脚本所在目录的父目录**（即 `tools/` 的上一级） |
+| `-h`, `--help` | 打印用法 |
+
+`--flag value` 与 `--flag=value` 两种写法都接受。未知参数 → 用法错误 + usage，退出码 2。
+
+> **`--images` 的注意点**：第 5 步会**无条件**把 `boot:3` / `recovery:1` /
+> `vbmeta_system:2` 三条链写进 `vbmeta`，并给 `vbmeta` / `vbmeta_system` 设
+> flags 与 2048 密钥。所以 `--images` 里至少要包含 `boot`、`recovery`、
+> `vbmeta`、`vbmeta_system`；否则第 6 步自检会报
+> `config.missing_included_partition`（`vbmeta` 链到一个不在配置里的分区）并以
+> 退出码 1 结束——这是有意的：脚本宁可报错，也不产出一个链是悬空的配置。
+
+## 默认值
+
+| 项 | 默认值 |
+|---|---|
+| `--id` | `<yyyyMMdd-HHmmss>_testkey`，如 `20260101-120000_testkey` |
+| `--name` | 等于 `--id` |
+| `--repo-root` | 脚本所在目录的父目录 |
+| `--output` | `--repo-root` |
+| 镜像集合 | `--no_hashtree_core` |
+
+## 示例
+
+```bat
+:: 1) 默认：基础 8 个分区，走完改名 / 导出 / 预览
+tools\make-testkey-config.cmd
+
+:: 2) 核心 + 8e（含 odm_dlkm / data_ext），不交互、直接出 zip
+tools\make-testkey-config.cmd --core --8e --no_prompt
+
+:: 3) 只写配置，不导出、不预览（给 CI / 批处理用）
+tools\make-testkey-config.cmd --no_prompt --no_export --no_sign_preview
+
+:: 4) 复用已存在的 profile 目录（保留其密钥库，替换分区集合）
+tools\make-testkey-config.cmd --id 20260101-120000_testkey --force --no_prompt
+```
+
+## 退出码
+
+| 退出码 | 触发条件 |
+|---|---|
+| `0` | 成功 |
+| `1` | 前置条件不满足、镜像缺失、profile 目录已存在且没给 `--force`、或任意一步 CLI 返回非 0（原样透传 CLI 的退出码，通常也是 1） |
+| `2` | 用法错误：未知参数、集合旗标互斥、缺参数值 |
+
+失败时脚本会打印 CLI `--json` 输出里的 `issues[].error_code` + `message`。
+
+## 脚本做了什么（10 步）
+
+0. 前置检查（`avbtool.py` / `Images/` / `for_agents/*.pem` / `uv`）
+1. 按旗标表算镜像集合，检查存在性；profile 目录冲突检查
+2. `config create --id <id> --name <name> --allow-empty --json`（仅在目录不存在时）
+3. 把两把 PEM 拷进 `profiles/<id>/keys/` → `keys discover` → `keys ensure-public`
+4. `config create --id <id> --from-images --overwrite --images <集合> --json`（保留密钥库）
+5. `config edit`：`vbmeta` 的 `flags=1` + 三条链式分区、`vbmeta_system` 换
+   `testkey_rsa2048` / `SHA256_RSA2048`、其余分区 `key_id=testkey_rsa4096`、
+   `vbmeta` / `vbmeta_system` 的 `included_partitions` 剪枝（幂等）
+6. 自检：`config validate` + `config check-chains` 都必须退出 0
+7. （可跳过）交互改名 `config rename`，之后步骤都用新 id
+8. （可跳过）`config export <id> --output <output>\<id>.zip`
+9. （可跳过）`image sign <全部分区> --profile <id> --dry-run --json`，
+   打印每步的 `operation` / `partition_name` / `command`（**只读，不写盘**）
+10. 收尾摘要：profile id、分区数、链式条目、zip 路径、后续可用命令
+
+## 产物与副作用
+
+- `profiles/<id>/`（含 `keys/`、`profile.json`）
+- `<output>\<id>.zip`（除非 `--no_export`）
+- `Logs/`（CLI 自己的运行日志）
+
+**不写 `Images/`**，不回显密钥内容。整个流程用 `try/finally` 恢复原始工作目录。
+
+## 相关文档
+
+- [CLI 参考](../docs/zh/CLI_REFERENCE.md) —— 完整命令面、退出码与错误码
+- [密钥管理](../docs/zh/KEY_MANAGEMENT.md) —— key store、manifest 与公钥文件要求
+- [创建配置](../docs/zh/CONFIG_CREATION.md) —— 用 CLI / TUI / API 创建配置
