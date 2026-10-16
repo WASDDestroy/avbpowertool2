@@ -656,8 +656,9 @@ class KeyEnsurePublicResult:
 class PluginListItem:
     """A single installed plugin.
 
-    ``name`` is already resolved for the current language, so the
-    presentation layer never needs to look at the manifest itself.
+    ``name`` is already resolved for the language injected into the use
+    case, so the presentation layer never needs to look at the manifest
+    itself.
     """
 
     plugin_id: str = ""

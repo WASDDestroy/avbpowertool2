@@ -16,7 +16,6 @@ from avbpowertool.application.commands import (
     PluginUninstallRequest,
 )
 from avbpowertool.application.ports import PluginRunOutcome
-from avbpowertool.application.services import manage_plugins
 from avbpowertool.application.services.manage_plugins import (
     ENV_CLI,
     ENV_LANG,
@@ -112,9 +111,13 @@ class FakePluginRunner:
 
 
 @pytest.fixture
-def english(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pin the resolved language so the assertions do not depend on test order."""
-    monkeypatch.setattr(manage_plugins, "get_current_language", lambda: "en")
+def language() -> str:
+    """The language every use case is explicitly wired with.
+
+    Nothing here depends on the presentation layer's global language
+    state: the language is an ordinary input of the use case.
+    """
+    return "en"
 
 
 # ---------------------------------------------------------------------------
@@ -123,12 +126,12 @@ def english(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestPluginListUseCase:
-    def test_lists_plugins_sorted_by_id(self, tmp_path: Path, english: None) -> None:
+    def test_lists_plugins_sorted_by_id(self, tmp_path: Path, language: str) -> None:
         ws = _make_workspace(tmp_path)
         _install_plugin(ws, "zulu")
         _install_plugin(ws, "alpha", entry="go.ps1")
 
-        result = PluginListUseCase(ws).execute(PluginListRequest())
+        result = PluginListUseCase(ws, language=language).execute(PluginListRequest())
 
         assert result.issues == ()
         assert [item.plugin_id for item in result.plugins] == ["alpha", "zulu"]
@@ -136,43 +139,48 @@ class TestPluginListUseCase:
         assert result.plugins[0].name == "Demo plugin"
         assert result.plugins[0].path == str(ws.plugins / "alpha")
 
-    def test_resolves_names_for_the_current_language(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_resolves_names_for_the_injected_language(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)
         _install_plugin(ws, "demo")
-        monkeypatch.setattr(manage_plugins, "get_current_language", lambda: "zh_CN")
 
-        result = PluginListUseCase(ws).execute(PluginListRequest())
+        result = PluginListUseCase(ws, language="zh").execute(PluginListRequest())
 
         assert result.plugins[0].name == "演示插件"
 
-    def test_directory_without_manifest_is_ignored(self, tmp_path: Path, english: None) -> None:
+    def test_defaults_to_english_without_an_injected_language(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _install_plugin(ws, "demo")
+
+        result = PluginListUseCase(ws).execute(PluginListRequest())
+
+        assert result.plugins[0].name == "Demo plugin"
+
+    def test_directory_without_manifest_is_ignored(self, tmp_path: Path, language: str) -> None:
         ws = _make_workspace(tmp_path)
         (ws.plugins / "not_a_plugin").mkdir()
 
-        result = PluginListUseCase(ws).execute(PluginListRequest())
+        result = PluginListUseCase(ws, language=language).execute(PluginListRequest())
 
         assert result.plugins == ()
         assert result.issues == ()
 
-    def test_broken_manifest_is_reported_not_dropped(self, tmp_path: Path, english: None) -> None:
+    def test_broken_manifest_is_reported_not_dropped(self, tmp_path: Path, language: str) -> None:
         ws = _make_workspace(tmp_path)
         _install_plugin(ws, "demo")
         broken = ws.plugins / "broken"
         broken.mkdir()
         (broken / PLUGIN_MANIFEST_NAME).write_text("<avbpowertool_plugin>", encoding="utf-8")
 
-        result = PluginListUseCase(ws).execute(PluginListRequest())
+        result = PluginListUseCase(ws, language=language).execute(PluginListRequest())
 
         assert [item.plugin_id for item in result.plugins] == ["demo"]
         assert _codes(result) == ["plugin.manifest_invalid"]
         assert "broken" in result.issues[0].message
 
-    def test_empty_workspace_lists_nothing(self, tmp_path: Path, english: None) -> None:
+    def test_empty_workspace_lists_nothing(self, tmp_path: Path, language: str) -> None:
         ws = _make_workspace(tmp_path)
 
-        result = PluginListUseCase(ws).execute(PluginListRequest())
+        result = PluginListUseCase(ws, language=language).execute(PluginListRequest())
 
         assert result.plugins == ()
         assert result.issues == ()
@@ -307,15 +315,12 @@ class TestPluginUninstallUseCase:
 
 
 class TestPluginRunUseCase:
-    def test_exports_the_plugin_environment_and_passes_args(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_exports_the_plugin_environment_and_passes_args(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)
         plugin_dir = _install_plugin(ws, "demo", entry="run.cmd")
-        monkeypatch.setattr(manage_plugins, "get_current_language", lambda: "zh")
         runner = FakePluginRunner(PluginRunOutcome(exit_code=0, command_summary="run.cmd"))
 
-        result = PluginRunUseCase(ws, runner).execute(
+        result = PluginRunUseCase(ws, runner, language="zh").execute(
             PluginRunRequest("demo", args=("--flag", "value"))
         )
 
@@ -335,76 +340,92 @@ class TestPluginRunUseCase:
         assert env[ENV_LANG] == "zh"
         assert env[ENV_CLI] == "uv run avbpowertool"
 
-    def test_inherits_the_parent_environment(self, tmp_path: Path) -> None:
+    def test_inherits_the_parent_environment(self, tmp_path: Path, language: str) -> None:
         ws = _make_workspace(tmp_path)
         _install_plugin(ws, "demo")
         runner = FakePluginRunner()
 
-        PluginRunUseCase(ws, runner).execute(PluginRunRequest("demo"))
+        PluginRunUseCase(ws, runner, language=language).execute(PluginRunRequest("demo"))
 
         env = runner.calls[0]["env"]
         assert isinstance(env, dict)
         assert "PATH" in env
 
-    def test_non_zero_exit_is_passed_through_without_issues(self, tmp_path: Path) -> None:
+    def test_exports_the_injected_language(self, tmp_path: Path, language: str) -> None:
+        ws = _make_workspace(tmp_path)
+        _install_plugin(ws, "demo")
+        runner = FakePluginRunner()
+
+        PluginRunUseCase(ws, runner, language="zh").execute(PluginRunRequest("demo"))
+
+        env = runner.calls[0]["env"]
+        assert isinstance(env, dict)
+        assert env[ENV_LANG] == "zh"
+        # The same injected language resolves the listed names.
+        listed = PluginListUseCase(ws, language="zh").execute(PluginListRequest())
+        assert listed.plugins[0].name == "演示插件"
+
+    def test_non_zero_exit_is_passed_through_without_issues(
+        self, tmp_path: Path, language: str
+    ) -> None:
         ws = _make_workspace(tmp_path)
         _install_plugin(ws, "demo")
         runner = FakePluginRunner(PluginRunOutcome(exit_code=7, command_summary="run.cmd"))
 
-        result = PluginRunUseCase(ws, runner).execute(PluginRunRequest("demo"))
+        result = PluginRunUseCase(ws, runner, language=language).execute(PluginRunRequest("demo"))
 
         assert result.exit_code == 7
         assert result.issues == ()
         assert result.plugin_id == "demo"
 
-    def test_runner_error_becomes_run_failed(self, tmp_path: Path) -> None:
+    def test_runner_error_becomes_run_failed(self, tmp_path: Path, language: str) -> None:
         ws = _make_workspace(tmp_path)
         _install_plugin(ws, "demo")
         runner = FakePluginRunner(
             PluginRunOutcome(exit_code=-1, error="Plugin interpreter not found: pwsh")
         )
 
-        result = PluginRunUseCase(ws, runner).execute(PluginRunRequest("demo"))
+        result = PluginRunUseCase(ws, runner, language=language).execute(PluginRunRequest("demo"))
 
         assert result.exit_code == -1
         assert _codes(result) == ["plugin.run_failed"]
         assert "pwsh" in result.issues[0].message
 
-    def test_missing_plugin_is_reported(self, tmp_path: Path) -> None:
+    def test_missing_plugin_is_reported(self, tmp_path: Path, language: str) -> None:
         ws = _make_workspace(tmp_path)
         runner = FakePluginRunner()
 
-        result = PluginRunUseCase(ws, runner).execute(PluginRunRequest("nope"))
+        result = PluginRunUseCase(ws, runner, language=language).execute(PluginRunRequest("nope"))
 
         assert result.exit_code == -1
         assert _codes(result) == ["plugin.not_found"]
         assert runner.calls == []
 
-    def test_missing_entry_file_is_reported(self, tmp_path: Path) -> None:
+    def test_missing_entry_file_is_reported(self, tmp_path: Path, language: str) -> None:
         ws = _make_workspace(tmp_path)
         plugin_dir = _install_plugin(ws, "demo")
         (plugin_dir / "run.cmd").unlink()
         runner = FakePluginRunner()
 
-        result = PluginRunUseCase(ws, runner).execute(PluginRunRequest("demo"))
+        result = PluginRunUseCase(ws, runner, language=language).execute(PluginRunRequest("demo"))
 
         assert result.exit_code == -1
         assert _codes(result) == ["plugin.entry_not_found"]
         assert runner.calls == []
 
     @pytest.mark.parametrize("bad_id", ["", ".", "..", "a/b", "a\\b"])
-    def test_dangerous_ids_are_refused(self, tmp_path: Path, bad_id: str) -> None:
+    def test_dangerous_ids_are_refused(self, tmp_path: Path, language: str, bad_id: str) -> None:
         ws = _make_workspace(tmp_path)
         _install_plugin(ws, "demo")
         runner = FakePluginRunner()
 
-        result = PluginRunUseCase(ws, runner).execute(PluginRunRequest(bad_id))
+        result = PluginRunUseCase(ws, runner, language=language).execute(PluginRunRequest(bad_id))
 
         assert result.exit_code == -1
         assert _codes(result) == ["plugin.id_invalid"]
         assert runner.calls == []
 
-    def test_invalid_manifest_is_reported(self, tmp_path: Path) -> None:
+    def test_invalid_manifest_is_reported(self, tmp_path: Path, language: str) -> None:
         ws = _make_workspace(tmp_path)
         plugin_dir = _install_plugin(ws, "demo")
         (plugin_dir / PLUGIN_MANIFEST_NAME).write_bytes(
@@ -412,7 +433,7 @@ class TestPluginRunUseCase:
         )
         runner = FakePluginRunner()
 
-        result = PluginRunUseCase(ws, runner).execute(PluginRunRequest("demo"))
+        result = PluginRunUseCase(ws, runner, language=language).execute(PluginRunRequest("demo"))
 
         assert result.exit_code == -1
         assert _codes(result) == ["plugin.entry_invalid"]
@@ -425,7 +446,9 @@ class TestPluginRunUseCase:
 
 
 class TestRealPluginSubprocess:
-    def test_python_plugin_receives_the_root_and_its_exit_code(self, tmp_path: Path) -> None:
+    def test_python_plugin_receives_the_root_and_its_exit_code(
+        self, tmp_path: Path, language: str
+    ) -> None:
         ws = _make_workspace(tmp_path)
         plugin_dir = _install_plugin(ws, "probe", entry="probe.py")
         marker = plugin_dir / "marker.txt"
@@ -444,7 +467,9 @@ class TestRealPluginSubprocess:
             encoding="utf-8",
         )
 
-        result = PluginRunUseCase(ws, SubprocessPluginRunner()).execute(PluginRunRequest("probe"))
+        result = PluginRunUseCase(ws, SubprocessPluginRunner(), language=language).execute(
+            PluginRunRequest("probe")
+        )
 
         assert result.issues == ()
         assert result.exit_code == 3

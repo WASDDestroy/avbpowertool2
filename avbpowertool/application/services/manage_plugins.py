@@ -24,9 +24,11 @@ from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.infrastructure.persistence.plugin_repository import (
     PluginRepository,
 )
-from avbpowertool.presentation.i18n import get_current_language
 
 logger = logging.getLogger(__name__)
+
+#: Language used when the caller does not inject one.
+DEFAULT_LANGUAGE = "en"
 
 #: Environment contract handed to every plugin.  A plugin talks back to
 #: the tool through the CLI (``$AVBPOWERTOOL_CLI``) rather than through an
@@ -50,20 +52,25 @@ def _invalid_id_issue(plugin_id: str) -> OperationIssue:
 
 
 class PluginListUseCase:
-    """List every installed plugin, resolved for the current language."""
+    """List every installed plugin, resolved for the injected language.
 
-    def __init__(self, workspace: WorkspacePaths) -> None:
+    The language is a constructor argument rather than a lookup: the
+    application layer must not reach into the presentation layer, so the
+    caller (CLI/TUI) owns the current language and passes it down.
+    """
+
+    def __init__(self, workspace: WorkspacePaths, language: str = DEFAULT_LANGUAGE) -> None:
         self._ws = workspace
+        self._language = language
 
     def execute(self, _request: PluginListRequest) -> PluginListResult:
         repo = PluginRepository(self._ws.plugins)
         manifests, issues = repo.list_manifests()
 
-        language = get_current_language()
         items = [
             PluginListItem(
                 plugin_id=manifest.plugin_id,
-                name=manifest.name_for(language),
+                name=manifest.name_for(self._language),
                 entry=manifest.entry,
                 path=str(self._ws.resolve_plugin_dir(manifest.plugin_id)),
             )
@@ -168,12 +175,20 @@ class PluginRunUseCase:
     The plugin runs with ``cwd`` set to the workspace root and with its
     own directory exported through ``AVBPOWERTOOL_PLUGIN_DIR``, so it can
     reach both the workspace and its own files without being told where
-    either is on the command line.
+    either is on the command line.  The language exported through
+    ``AVBPOWERTOOL_LANG`` is injected by the caller, exactly as for
+    :class:`PluginListUseCase`.
     """
 
-    def __init__(self, workspace: WorkspacePaths, runner: PluginRunnerPort) -> None:
+    def __init__(
+        self,
+        workspace: WorkspacePaths,
+        runner: PluginRunnerPort,
+        language: str = DEFAULT_LANGUAGE,
+    ) -> None:
         self._ws = workspace
         self._runner = runner
+        self._language = language
 
     def execute(self, request: PluginRunRequest) -> PluginRunResult:
         plugin_id = request.plugin_id
@@ -219,7 +234,7 @@ class PluginRunUseCase:
         env[ENV_ROOT] = str(self._ws.root)
         env[ENV_PLUGIN_DIR] = str(plugin_dir)
         env[ENV_PLUGIN_ID] = plugin_id
-        env[ENV_LANG] = get_current_language()
+        env[ENV_LANG] = self._language
         env[ENV_CLI] = PLUGIN_CLI_COMMAND
 
         # 4. The workspace root is the plugin's working directory: every
