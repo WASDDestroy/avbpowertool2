@@ -331,9 +331,18 @@ class ProfileDeleteResult:
 
 @dataclass(frozen=True)
 class KeyDiscoveryRequest:
-    """Request to discover and update key manifest."""
+    """Request to discover and update key manifest.
+
+    ``merge`` (the default) keeps the manifest entries that are already
+    on disk: a discovered ``.pem`` only overwrites its own key_id, and
+    the cached ``public_key`` / ``public_key_sha1`` survive as long as
+    the entry still points at the same private-key filename.
+    ``merge=False`` restores the historical replace semantics, where the
+    manifest is rebuilt from the discovered ``.pem`` files alone.
+    """
 
     profile_id: str = "current"
+    merge: bool = True
 
 
 @dataclass(frozen=True)
@@ -343,6 +352,11 @@ class KeyDiscoveryResult:
     discovered_count: int
     manifest_entries: tuple[tuple[str, str], ...]  # (key_id, filename) pairs
     issues: tuple[OperationIssue, ...] = ()
+    # Statistics for the merge semantics; both default to 0 so the
+    # create wizard (which only reads discovered_count /
+    # manifest_entries / issues) is unaffected.
+    retained_count: int = 0
+    merged: bool = True
 
 
 @dataclass(frozen=True)
@@ -391,4 +405,26 @@ class KeyRemoveResult:
     """Result of removing a key entry."""
 
     key_id: str
+    issues: tuple[OperationIssue, ...] = ()
+
+
+@dataclass(frozen=True)
+class KeyEnsurePublicRequest:
+    """Request to extract missing public keys for a profile's key store."""
+
+    profile_id: str = "current"
+
+
+@dataclass(frozen=True)
+class KeyEnsurePublicResult:
+    """Result of ensuring public keys exist.
+
+    ``extracted`` holds ``(key_id, public_key_filename)`` pairs for the
+    public-key files that were produced (or newly registered in the
+    manifest) by this call.  ``skipped`` lists the manifest entries whose
+    private-key file is missing on disk.
+    """
+
+    extracted: tuple[tuple[str, str], ...] = ()
+    skipped: tuple[str, ...] = ()
     issues: tuple[OperationIssue, ...] = ()

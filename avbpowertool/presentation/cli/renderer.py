@@ -14,7 +14,11 @@ from avbpowertool.application.commands import (
     ConfigShowResult,
     ConfigValidateResult,
     InspectImagesResult,
+    KeyAddResult,
     KeyDiscoveryResult,
+    KeyEnsurePublicResult,
+    KeyListResult,
+    KeyRemoveResult,
     LegacyImportResult,
     ProfileActivateResult,
     ProfileListResult,
@@ -401,6 +405,8 @@ def render_key_discovery(
         _emit_json(
             {
                 "discovered_count": result.discovered_count,
+                "retained_count": result.retained_count,
+                "merged": result.merged,
                 "manifest_entries": [
                     {"key_id": k, "filename": f} for k, f in result.manifest_entries
                 ],
@@ -410,9 +416,90 @@ def render_key_discovery(
         )
         return
 
-    _emit_text(f"Discovered {result.discovered_count} key(s):", out)
+    mode = "merge" if result.merged else "replace"
+    _emit_text(f"Discovered {result.discovered_count} key(s) ({mode}):", out)
     for key_id, filename in result.manifest_entries:
         _emit_text(f"  {key_id}: {filename}", out)
+    if result.retained_count:
+        _emit_text(
+            f"  Retained {result.retained_count} manifest entry(ies) with no .pem on disk.", out
+        )
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_key_list(result: KeyListResult, as_json: bool, out: TextIO = sys.stdout) -> None:
+    if as_json:
+        _emit_json(
+            {
+                "keys": [{"key_id": k, "filename": f} for k, f in result.manifest_entries],
+                "unregistered_pem_files": list(result.pem_files_on_disk),
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if not result.manifest_entries:
+        _emit_text("No keys registered.", out)
+    for key_id, filename in result.manifest_entries:
+        _emit_text(f"  {key_id}: {filename}", out)
+    for filename in result.pem_files_on_disk:
+        _emit_text(f"  (unregistered) {filename}", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_key_ensure_public(
+    result: KeyEnsurePublicResult, as_json: bool, out: TextIO = sys.stdout
+) -> None:
+    if as_json:
+        _emit_json(
+            {
+                "extracted": [{"key_id": k, "public_key": f} for k, f in result.extracted],
+                "skipped": list(result.skipped),
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if result.extracted:
+        _emit_text(f"Extracted {len(result.extracted)} public key(s):", out)
+        for key_id, filename in result.extracted:
+            _emit_text(f"  {key_id}: {filename}", out)
+    else:
+        _emit_text("No public keys needed extraction.", out)
+    if result.skipped:
+        _emit_text(f"  Skipped {len(result.skipped)} key(s) without a private key.", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_key_add(result: KeyAddResult, as_json: bool, out: TextIO = sys.stdout) -> None:
+    if as_json:
+        _emit_json(
+            {"key_id": result.key_id, "issues": _issues_to_dicts(result.issues)},
+            out,
+        )
+        return
+
+    if not result.issues:
+        _emit_text(f"Added key: {result.key_id}", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_key_remove(result: KeyRemoveResult, as_json: bool, out: TextIO = sys.stdout) -> None:
+    if as_json:
+        _emit_json(
+            {"key_id": result.key_id, "issues": _issues_to_dicts(result.issues)},
+            out,
+        )
+        return
+
+    if not result.issues:
+        _emit_text(f"Removed key: {result.key_id}", out)
     for iss in result.issues:
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
 

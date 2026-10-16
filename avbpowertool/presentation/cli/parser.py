@@ -196,6 +196,94 @@ def build_parser() -> argparse.ArgumentParser:
     p_cfg_edit.add_argument("--json", action="store_true", help="JSON output")
     p_cfg_edit.set_defaults(action_id=ActionId.CONFIG_EDIT)
 
+    # --- keys ---
+    p_keys = sub.add_parser("keys", help="Key store operations")
+    keys_sub = p_keys.add_subparsers(dest="keys_command", required=True)
+
+    # keys list
+    p_keys_list = keys_sub.add_parser("list", help="List the keys in a profile's key store")
+    p_keys_list.add_argument(
+        "--profile",
+        default="current",
+        help="Profile ID (default: current — resolved to the active profile)",
+    )
+    p_keys_list.add_argument("--json", action="store_true", help="JSON output")
+    p_keys_list.set_defaults(action_id=ActionId.KEY_LIST)
+
+    # keys discover
+    p_keys_discover = keys_sub.add_parser(
+        "discover",
+        help="Register the .pem files in the key store in manifest.json",
+    )
+    p_keys_discover.add_argument(
+        "--profile",
+        default="current",
+        help="Profile ID (default: current — resolved to the active profile)",
+    )
+    discover_mode = p_keys_discover.add_mutually_exclusive_group()
+    discover_mode.add_argument(
+        "--merge",
+        dest="merge",
+        action="store_true",
+        default=True,
+        help=(
+            "Keep existing manifest entries and their cached public keys "
+            "(default); an entry keeps its public_key only while it still "
+            "points at the same private-key filename"
+        ),
+    )
+    discover_mode.add_argument(
+        "--replace",
+        dest="merge",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help="Rebuild manifest.json from the discovered .pem files only (drops public keys)",
+    )
+    p_keys_discover.add_argument("--json", action="store_true", help="JSON output")
+    p_keys_discover.set_defaults(action_id=ActionId.KEY_DISCOVER, merge=True)
+
+    # keys ensure-public
+    p_keys_ensure = keys_sub.add_parser(
+        "ensure-public",
+        help="Extract the missing public keys (<name>.pem.bin) and register them",
+    )
+    p_keys_ensure.add_argument(
+        "--profile",
+        default="current",
+        help="Profile ID (default: current — resolved to the active profile)",
+    )
+    p_keys_ensure.add_argument("--json", action="store_true", help="JSON output")
+    p_keys_ensure.set_defaults(action_id=ActionId.KEY_ENSURE_PUBLIC)
+
+    # keys add
+    p_keys_add = keys_sub.add_parser("add", help="Add a key entry to manifest.json")
+    p_keys_add.add_argument("key_id", help="Key ID to register")
+    p_keys_add.add_argument(
+        "--file",
+        dest="private_key_filename",
+        required=True,
+        metavar="NAME.pem",
+        help="Private-key filename inside the key store directory (not copied from elsewhere)",
+    )
+    p_keys_add.add_argument(
+        "--profile",
+        default="current",
+        help="Profile ID (default: current — resolved to the active profile)",
+    )
+    p_keys_add.add_argument("--json", action="store_true", help="JSON output")
+    p_keys_add.set_defaults(action_id=ActionId.KEY_ADD)
+
+    # keys remove
+    p_keys_remove = keys_sub.add_parser("remove", help="Remove a key entry from manifest.json")
+    p_keys_remove.add_argument("key_id", help="Key ID to remove")
+    p_keys_remove.add_argument(
+        "--profile",
+        default="current",
+        help="Profile ID (default: current — resolved to the active profile)",
+    )
+    p_keys_remove.add_argument("--json", action="store_true", help="JSON output")
+    p_keys_remove.set_defaults(action_id=ActionId.KEY_REMOVE)
+
     # --- about ---
     p_about = sub.add_parser("about", help="Show version info")
     p_about.set_defaults(action_id="about")

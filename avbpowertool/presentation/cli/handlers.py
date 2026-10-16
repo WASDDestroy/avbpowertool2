@@ -14,6 +14,11 @@ from avbpowertool.application.commands import (
     ConfigShowRequest,
     ConfigValidateRequest,
     InspectImagesRequest,
+    KeyAddRequest,
+    KeyDiscoveryRequest,
+    KeyEnsurePublicRequest,
+    KeyListRequest,
+    KeyRemoveRequest,
     LegacyImportRequest,
     ProfileActivateRequest,
     ProfileListRequest,
@@ -28,6 +33,13 @@ from avbpowertool.application.services.manage_configs import (
     ConfigShowUseCase,
     ConfigValidateUseCase,
     LegacyConfigImportUseCase,
+)
+from avbpowertool.application.services.manage_keys import (
+    KeyAddUseCase,
+    KeyDiscoveryUseCase,
+    KeyEnsurePublicUseCase,
+    KeyListUseCase,
+    KeyRemoveUseCase,
 )
 from avbpowertool.application.services.manage_profiles import (
     ProfileActivateUseCase,
@@ -47,6 +59,11 @@ from avbpowertool.presentation.cli.renderer import (
     render_export,
     render_import,
     render_inspect,
+    render_key_add,
+    render_key_discovery,
+    render_key_ensure_public,
+    render_key_list,
+    render_key_remove,
     render_legacy_import,
     render_profile_activate,
     render_profile_list,
@@ -89,6 +106,11 @@ def dispatch(args: Namespace, out: TextIO = sys.stdout) -> int:
         ActionId.CONFIG_EXPORT: _handle_config_export,
         ActionId.CONFIG_MIGRATE: _handle_config_migrate,
         ActionId.CONFIG_EDIT: _handle_config_edit,
+        ActionId.KEY_LIST: _handle_key_list,
+        ActionId.KEY_DISCOVER: _handle_key_discover,
+        ActionId.KEY_ENSURE_PUBLIC: _handle_key_ensure_public,
+        ActionId.KEY_ADD: _handle_key_add,
+        ActionId.KEY_REMOVE: _handle_key_remove,
     }
 
     handler = handler_map.get(action_id)
@@ -304,4 +326,60 @@ def _handle_config_edit(
     )
     result = uc.execute(request)
     render_config_edit(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_key_list(args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO) -> int:
+    uc = KeyListUseCase(workspace)
+    request = KeyListRequest(profile_id=getattr(args, "profile", "current"))
+    result = uc.execute(request)
+    render_key_list(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_key_discover(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    uc = KeyDiscoveryUseCase(workspace)
+    request = KeyDiscoveryRequest(
+        profile_id=getattr(args, "profile", "current"),
+        merge=getattr(args, "merge", True),
+    )
+    result = uc.execute(request)
+    render_key_discovery(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_key_ensure_public(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    uc = KeyEnsurePublicUseCase(workspace, _create_avb_tool(workspace))
+    request = KeyEnsurePublicRequest(profile_id=getattr(args, "profile", "current"))
+    result = uc.execute(request)
+    render_key_ensure_public(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_key_add(args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO) -> int:
+    uc = KeyAddUseCase(workspace)
+    request = KeyAddRequest(
+        profile_id=getattr(args, "profile", "current"),
+        key_id=args.key_id,
+        private_key_filename=args.private_key_filename,
+    )
+    result = uc.execute(request)
+    render_key_add(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_key_remove(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    uc = KeyRemoveUseCase(workspace)
+    request = KeyRemoveRequest(
+        profile_id=getattr(args, "profile", "current"),
+        key_id=args.key_id,
+    )
+    result = uc.execute(request)
+    render_key_remove(result, as_json, out)
     return exit_code_from_issues(result.issues)
