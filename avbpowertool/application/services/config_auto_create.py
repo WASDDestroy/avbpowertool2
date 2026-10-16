@@ -259,7 +259,14 @@ class ConfigCreateFromImagesUseCase:
                 overwrite=request.overwrite,
             )
         )
-        issues.extend(create_result.issues)
+        # A partition whose key is not in the store yet does not fail the
+        # creation either: ``missing_keys`` below reports it, exactly as
+        # ``allow_empty`` keeps ``config.no_partitions`` out of the result.
+        # (Without this filter a keyless store would surface the domain
+        # validator's ``config.key_missing`` and flip the exit code to 1.)
+        issues.extend(
+            issue for issue in create_result.issues if issue.error_code != "config.key_missing"
+        )
 
         chain_count = sum(len(partition.chain_partitions) for partition in auto.partitions)
 
@@ -288,10 +295,18 @@ class ConfigCreateFromImagesUseCase:
 
         The key store is read as-is: a brand-new profile has none, while an
         overwrite reuses the keys already sitting next to the old profile.
+
+        The default is only ever a key that really exists in the manifest:
+        with exactly one candidate it is that key, otherwise it is empty.
+        Several keys give no principled way to pick one, and inventing an
+        id (the historical ``"default"``) wrote a key_id no store holds.
+        An empty default is harmless: it is legal for unsigned partitions,
+        and signed ones still get their key from the size match in
+        :func:`select_key_for_algorithm`.
         """
         manifest = KeyRepository(self._ws.resolve_key_dir(profile_id)).load_manifest()
         keys = tuple(manifest)
-        return keys, keys[0] if len(keys) == 1 else "default"
+        return keys, keys[0] if len(keys) == 1 else ""
 
 
 def _scan_images(image_dir: Path, image_names: tuple[str, ...]) -> tuple[str, ...]:

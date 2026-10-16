@@ -137,6 +137,14 @@ class ConfigValidateUseCase:
             if not image_path.exists():
                 missing_images.append(name)
 
+            # An unsigned (NONE) partition needs no key at all, so its
+            # key_id is irrelevant -- even a stale one is not a problem.
+            # This mirrors domain.validate_partition, which only requires
+            # a key_id when the algorithm is not NONE.  Signed partitions
+            # keep the full check below.
+            if config.algorithm == SigningAlgorithm.NONE:
+                continue
+
             # Check key exists
             key_dir = self._ws.resolve_key_dir(profile_id)
             manifest_path = key_dir / "manifest.json"

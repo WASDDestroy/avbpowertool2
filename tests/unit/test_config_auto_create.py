@@ -12,6 +12,7 @@ from avbpowertool.application.commands import (
     ConfigAutoCreateRequest,
     ConfigCreateFromImagesRequest,
     ConfigCreateFromImagesResult,
+    ConfigValidateRequest,
 )
 from avbpowertool.application.ports import AvbToolResult
 from avbpowertool.application.services.config_auto_create import (
@@ -22,6 +23,7 @@ from avbpowertool.application.services.config_auto_create import (
     finalize_vbmeta_includes,
     select_key_for_algorithm,
 )
+from avbpowertool.application.services.manage_configs import ConfigValidateUseCase
 from avbpowertool.domain.models import (
     ChainDescriptor,
     DescriptorType,
@@ -737,9 +739,12 @@ class TestConfigCreateFromImagesUseCase:
         assert not ws.resolve_profile_dir("dev").exists()
 
     def test_missing_keys_are_reported_without_failing(self, tmp_path: Path) -> None:
+        """A signed partition whose key is absent is reported, not fatal
+        (the fixture is signed on purpose: an unsigned partition needs no
+        key, so it would never be reported here)."""
         ws = _make_workspace(tmp_path)
-        (ws.images / "boot.img").write_bytes(b"x" * 4096)
-        avb = PerImageFakeAvbTool({"boot": _ok(SAMPLE_HASH)})
+        (ws.images / "init_boot.img").write_bytes(b"x" * 4096)
+        avb = PerImageFakeAvbTool({"init_boot": _ok(SIGNED_INIT_BOOT)})
 
         result = _create_from_images(ws, avb, key_id="testkey_rsa4096")
 
@@ -829,3 +834,112 @@ class TestConfigCreateFromImagesUseCase:
         assert result.created is True
         assert result.scanned_images == ("boot",)
         assert set(ProfileRepository(ws).load("dev").partitions) == {"boot"}
+
+
+# ---------------------------------------------------------------------------
+# Key selection: only keys that really exist may be written into a profile
+# ---------------------------------------------------------------------------
+
+
+def _hash_output(partition: str, algorithm: str) -> str:
+    """The hash fixture, re-labelled for *partition* and *algorithm*."""
+    return SAMPLE_HASH.replace(
+        "Partition Name:        boot", f"Partition Name:        {partition}"
+    ).replace("Algorithm:                NONE", f"Algorithm:                {algorithm}")
+
+
+UNSIGNED_DTBO = _hash_output("dtbo", "NONE")
+SIGNED_INIT_BOOT = _hash_output("init_boot", "SHA256_RSA4096")
+
+
+def _seed_key_store(ws: WorkspacePaths, profile_id: str, key_ids: tuple[str, ...]) -> None:
+    """Create the profile's key store holding *key_ids* (with real files)."""
+    key_dir = ws.resolve_key_dir(profile_id)
+    key_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {key_id: {"private_key": f"{key_id}.pem"} for key_id in key_ids}
+    for entry in manifest.values():
+        (key_dir / entry["private_key"]).write_text("fake key", encoding="utf-8")
+    (key_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
+class TestConfigCreateFromImagesKeySelection:
+    """The generated key_ids must all exist in the profile's key store."""
+
+    def _images(self, ws: WorkspacePaths, *names: str) -> PerImageFakeAvbTool:
+        outputs = {"dtbo": UNSIGNED_DTBO, "init_boot": SIGNED_INIT_BOOT}
+        for name in names:
+            (ws.images / f"{name}.img").write_bytes(b"x" * 4096)
+        return PerImageFakeAvbTool({name: _ok(outputs[name]) for name in names})
+
+    def _two_images(self, ws: WorkspacePaths) -> PerImageFakeAvbTool:
+        return self._images(ws, "dtbo", "init_boot")
+
+    def test_multiple_keys_leave_unsigned_partitions_keyless(self, tmp_path: Path) -> None:
+        """Two keys give no principled default: unsigned partitions get an
+        empty key_id, signed ones get their size match."""
+        ws = _make_workspace(tmp_path)
+        _seed_key_store(ws, "dev", ("testkey_rsa2048", "testkey_rsa4096"))
+        avb = self._two_images(ws)
+
+        result = _create_from_images(ws, avb, overwrite=True)
+
+        assert result.created is True
+        partitions = ProfileRepository(ws).load("dev").partitions
+        assert partitions["dtbo"].algorithm == SigningAlgorithm.NONE
+        assert partitions["dtbo"].key_id == ""
+        assert partitions["init_boot"].algorithm == SigningAlgorithm.SHA256_RSA4096
+        assert partitions["init_boot"].key_id == "testkey_rsa4096"
+        # No invented key id anywhere.
+        assert "default" not in {p.key_id for p in partitions.values()}
+
+    def test_single_key_is_used_for_every_partition(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _seed_key_store(ws, "dev", ("testkey_rsa4096",))
+        avb = self._two_images(ws)
+
+        result = _create_from_images(ws, avb, overwrite=True)
+
+        assert result.created is True
+        partitions = ProfileRepository(ws).load("dev").partitions
+        assert {p.key_id for p in partitions.values()} == {"testkey_rsa4096"}
+
+    def test_empty_key_store_never_invents_a_default(self, tmp_path: Path) -> None:
+        """No key in the store: every partition gets an empty key_id (never
+        an invented ``"default"``).  Creation still succeeds -- missing keys
+        are informational -- and only the signed partition is reported."""
+        ws = _make_workspace(tmp_path)
+        avb = self._two_images(ws)
+
+        result = _create_from_images(ws, avb)
+
+        assert result.created is True
+        partitions = ProfileRepository(ws).load("dev").partitions
+        assert {p.key_id for p in partitions.values()} == {""}
+        assert result.issues == ()
+        assert result.missing_keys == ("",)
+
+    def test_explicit_key_id_override_wins_over_the_key_store(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _seed_key_store(ws, "dev", ("testkey_rsa2048", "testkey_rsa4096"))
+        avb = self._two_images(ws)
+
+        result = _create_from_images(ws, avb, key_id="X", overwrite=True)
+
+        assert result.created is True
+        partitions = ProfileRepository(ws).load("dev").partitions
+        assert {p.key_id for p in partitions.values()} == {"X"}
+
+    def test_created_profile_validates_without_missing_keys(self, tmp_path: Path) -> None:
+        """End-to-end regression: a profile created from images must not
+        report keys it never referenced (the invented ``"default"``)."""
+        ws = _make_workspace(tmp_path)
+        _seed_key_store(ws, "dev", ("testkey_rsa2048", "testkey_rsa4096"))
+        avb = self._two_images(ws)
+
+        created = _create_from_images(ws, avb, overwrite=True)
+        validated = ConfigValidateUseCase(ws).execute(ConfigValidateRequest(profile_id="dev"))
+
+        assert created.created is True
+        assert created.missing_keys == ()
+        assert validated.missing_images == ()
+        assert validated.missing_keys == ()

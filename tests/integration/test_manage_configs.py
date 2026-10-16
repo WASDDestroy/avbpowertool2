@@ -77,6 +77,51 @@ class TestConfigShowUseCase:
         assert any(i.error_code == "config.not_found" for i in result.issues)
 
 
+def _partition(name: str, algorithm: SigningAlgorithm, key_id: str) -> PartitionConfig:
+    return PartitionConfig(
+        image=f"{name}.img",
+        descriptor=DescriptorType.HASH,
+        algorithm=algorithm,
+        key_id=key_id,
+        partition_name=name,
+        partition_size=4096,
+    )
+
+
+def _setup_profile_with_partitions(
+    tmp_path: Path, partitions: dict[str, PartitionConfig]
+) -> WorkspacePaths:
+    """Write a profile holding *partitions* and a one-key store.
+
+    The store really holds ``testkey_rsa4096``, so a partition reported as
+    missing is missing for its own reason — not because the store is absent.
+    """
+    ws = _setup_profile(tmp_path)
+    profile_dir = ws.resolve_profile_dir("test")
+    (profile_dir / "profile.json").write_text(
+        json.dumps(
+            encode_profile(
+                AvbProfile(
+                    id="test",
+                    name="Test Profile",
+                    key_store_path="keys",
+                    partitions=partitions,
+                )
+            )
+        ),
+        encoding="utf-8",
+    )
+    key_dir = profile_dir / "keys"
+    (key_dir / "testkey_rsa4096.pem").write_text("fake key", encoding="utf-8")
+    (key_dir / "manifest.json").write_text(
+        json.dumps({"testkey_rsa4096": {"private_key": "testkey_rsa4096.pem"}}),
+        encoding="utf-8",
+    )
+    for config in partitions.values():
+        (ws.images / config.image).write_bytes(b"x" * 4096)
+    return ws
+
+
 class TestConfigValidateUseCase:
     def test_validate_missing_images(self, tmp_path: Path) -> None:
         ws = _setup_profile(tmp_path)
@@ -84,6 +129,52 @@ class TestConfigValidateUseCase:
         result = uc.execute(ConfigValidateRequest(profile_id="test"))
         # No images exist, no partitions defined, so no missing images
         assert result.config_name == "test"
+
+    def test_unsigned_partition_with_empty_key_is_not_missing(self, tmp_path: Path) -> None:
+        ws = _setup_profile_with_partitions(
+            tmp_path, {"dtbo": _partition("dtbo", SigningAlgorithm.NONE, "")}
+        )
+
+        result = ConfigValidateUseCase(ws).execute(ConfigValidateRequest(profile_id="test"))
+
+        assert result.missing_images == ()
+        assert result.missing_keys == ()
+
+    def test_unsigned_partition_with_unknown_key_is_not_missing(self, tmp_path: Path) -> None:
+        """An unsigned partition is not checked against the manifest at all,
+        so even a stale key_id is not reported."""
+        ws = _setup_profile_with_partitions(
+            tmp_path, {"dtbo": _partition("dtbo", SigningAlgorithm.NONE, "nonexistent")}
+        )
+
+        result = ConfigValidateUseCase(ws).execute(ConfigValidateRequest(profile_id="test"))
+
+        assert result.missing_images == ()
+        assert result.missing_keys == ()
+
+    def test_signed_partition_with_unknown_key_is_missing(self, tmp_path: Path) -> None:
+        ws = _setup_profile_with_partitions(
+            tmp_path,
+            {"boot": _partition("boot", SigningAlgorithm.SHA256_RSA4096, "ghost")},
+        )
+
+        result = ConfigValidateUseCase(ws).execute(ConfigValidateRequest(profile_id="test"))
+
+        assert result.missing_images == ()
+        assert result.missing_keys == ("ghost",)
+
+    def test_signed_partition_with_empty_key_is_missing(self, tmp_path: Path) -> None:
+        """Signing with no key is still an error: the NONE exemption must not
+        widen into a blanket "empty key_id is fine" rule."""
+        ws = _setup_profile_with_partitions(
+            tmp_path,
+            {"boot": _partition("boot", SigningAlgorithm.SHA256_RSA4096, "")},
+        )
+
+        result = ConfigValidateUseCase(ws).execute(ConfigValidateRequest(profile_id="test"))
+
+        assert result.missing_images == ()
+        assert result.missing_keys == ("",)
 
 
 class TestConfigImportExportUseCase:

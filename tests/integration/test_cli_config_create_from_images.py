@@ -117,7 +117,9 @@ class TestConfigCreateFromImagesCli:
         assert data["chain_count"] == 0
         assert data["scanned_images"] == ["boot", "vbmeta"]
         assert data["skipped_images"] == []
-        assert data["missing_keys"] == ["default"]
+        # The store is empty, so nothing is invented for the unsigned boot
+        # partition; the signed vbmeta keeps its (empty) key_id reported.
+        assert data["missing_keys"] == [""]
         assert data["issues"] == []
         assert set(_partitions(tmp_path, "dev")) == {"boot", "vbmeta"}
 
@@ -134,7 +136,8 @@ class TestConfigCreateFromImagesCli:
         assert code == 0
         assert "Created profile 'dev' with 1 partition(s) and 0 chain entr(ies)." in output
         assert "Scanned images: boot" in output
-        assert "Missing keys:   default" in output
+        # The only partition is unsigned, so it needs no key at all.
+        assert "Missing keys:" not in output
 
     def test_explicit_image_directory(self, tmp_path: Path) -> None:
         old_cwd = os.getcwd()
@@ -240,7 +243,10 @@ class TestConfigCreateFromImagesCli:
             os.chdir(old_cwd)
 
         assert code == 0
-        assert json.loads(output)["missing_keys"] == ["testkey_rsa4096"]
+        # boot.img is unsigned (algorithm NONE), so no key is required and
+        # nothing is reported as missing -- the override still lands in the
+        # profile below.
+        assert json.loads(output)["missing_keys"] == []
         assert _partitions(tmp_path, "dev")["boot"]["key_id"] == "testkey_rsa4096"
 
     def test_from_images_and_allow_empty_are_mutually_exclusive(self, tmp_path: Path) -> None:
