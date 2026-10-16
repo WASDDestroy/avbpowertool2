@@ -6,7 +6,7 @@
 .DESCRIPTION
     组合 AVBPowerTool2 的 CLI 子命令，生成一个「testkey 打包」配置：
 
-      0. 前置检查（avbtool.py / Images/ / for_agents/*.pem / uv）
+      0. 前置检查（avbtool.py / Images/ / testkey 密钥 / uv）
       1. 按旗标表算出镜像集合并检查存在性
       2. config create --allow-empty（仅在目录不存在时）
       3. 拷贝 testkey PEM 到 profiles/<id>/keys/ + keys discover + keys ensure-public
@@ -114,7 +114,10 @@ function Write-Usage {
         '  --name <v>           配置显示名（默认等于 id）',
         '  --images a,b,c       显式镜像集合（给出时忽略集合旗标；名字可带或不带 .img）',
         '  --output <dir>       导出目录（默认仓库根）',
-        '  --repo-root <dir>    仓库根（默认脚本所在目录的父目录）',
+        '  --repo-root <dir>    仓库根。默认从脚本所在目录逐级向上查找，取第一个同时含',
+        '                       avbtool.py 与 profiles/ 的目录；显式给出时该目录必须含 avbtool.py',
+        '  --key-dir <dir>      存放 testkey_rsa4096.pem / testkey_rsa2048.pem 的目录。',
+        '                       默认依次探测 <脚本目录>/keys、<脚本目录>、<仓库根>/for_agents',
         '  -h, --help           显示本帮助',
         '',
         '退出码: 0 成功 / 1 运行时失败（含前置检查与镜像缺失）/ 2 用法错误'
@@ -239,6 +242,104 @@ function Invoke-AvbCliChecked {
 }
 
 # ---------------------------------------------------------------------------
+# 仓库根 / 密钥目录定位
+# ---------------------------------------------------------------------------
+
+function Resolve-RepoRoot {
+    <#
+        定位仓库根：
+          - 显式给出时：规范化后该目录必须含 avbtool.py，否则退出 1；
+          - 否则：从 -StartDir 逐级向上，取第一个同时含 avbtool.py 与 profiles/ 的目录，
+            找不到则退出 1（提示可用 --repo-root 指定）。
+        这样脚本可以从 plugins/<id>/ 移到任意位置，也能在任意 cwd 下被调用。
+    #>
+    param(
+        [string] $Explicit = '',
+        [Parameter(Mandatory = $true)]
+        [string] $StartDir
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($Explicit)) {
+        $candidate = [System.IO.Path]::GetFullPath($Explicit)
+        if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
+            Stop-Script 1 "仓库根目录不存在: $candidate"
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $candidate 'avbtool.py') -PathType Leaf)) {
+            Stop-Script 1 "--repo-root 指向的目录里没有 avbtool.py: $candidate"
+        }
+        return $candidate
+    }
+
+    $current = [System.IO.Path]::GetFullPath($StartDir)
+    while (-not [string]::IsNullOrWhiteSpace($current)) {
+        $hasAvbTool = Test-Path -LiteralPath (Join-Path $current 'avbtool.py') -PathType Leaf
+        $hasProfiles = Test-Path -LiteralPath (Join-Path $current 'profiles') -PathType Container
+        if ($hasAvbTool -and $hasProfiles) { return $current }
+        $parent = Split-Path -Parent $current
+        if ([string]::IsNullOrWhiteSpace($parent) -or $parent -eq $current) { break }
+        $current = $parent
+    }
+
+    Write-Err "从脚本所在目录向上找不到仓库根（需要同时含 avbtool.py 与 profiles/）: $StartDir"
+    Write-Note '可用 --repo-root <dir> 显式指定仓库根。'
+    exit 1
+}
+
+function Resolve-KeyDir {
+    <#
+        定位 testkey 密钥目录：
+          - 显式 --key-dir：必须存在且同时含两把 PEM，否则退出 1；
+          - 否则按顺序探测 <脚本目录>/keys、<脚本目录>、<仓库根>/for_agents
+            （最后一项是迁移前的旧位置，保留向后兼容），
+            取第一个同时含两把 PEM 的目录；都找不到则退出 1。
+    #>
+    param(
+        [string] $Explicit = '',
+        [Parameter(Mandatory = $true)]
+        [string] $ScriptDir,
+        [Parameter(Mandatory = $true)]
+        [string] $RepoRoot
+    )
+
+    $keyNames = @('testkey_rsa4096.pem', 'testkey_rsa2048.pem')
+
+    if (-not [string]::IsNullOrWhiteSpace($Explicit)) {
+        $candidate = [System.IO.Path]::GetFullPath($Explicit)
+        if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
+            Stop-Script 1 "--key-dir 指向的目录不存在: $candidate"
+        }
+        $missing = @($keyNames | Where-Object {
+            -not (Test-Path -LiteralPath (Join-Path $candidate $_) -PathType Leaf)
+        })
+        if ($missing.Count -gt 0) {
+            Stop-Script 1 ("--key-dir 目录里缺少 " + ($missing -join ', ') + ": $candidate")
+        }
+        return $candidate
+    }
+
+    $candidates = @(
+        (Join-Path $ScriptDir 'keys'),
+        $ScriptDir,
+        (Join-Path $RepoRoot 'for_agents')
+    )
+    foreach ($candidate in $candidates) {
+        $complete = $true
+        foreach ($keyName in $keyNames) {
+            if (-not (Test-Path -LiteralPath (Join-Path $candidate $keyName) -PathType Leaf)) {
+                $complete = $false
+                break
+            }
+        }
+        if ($complete) { return [System.IO.Path]::GetFullPath($candidate) }
+    }
+
+    Write-Err '找不到同时含 testkey_rsa4096.pem 与 testkey_rsa2048.pem 的密钥目录'
+    foreach ($candidate in $candidates) { Write-Note "已探测: $candidate" }
+    Write-Note '可用 --key-dir <dir> 显式指定密钥目录。'
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
 # 参数解析
 # ---------------------------------------------------------------------------
 
@@ -256,6 +357,7 @@ $options = @{
     Images        = $null
     Output        = $null
     RepoRoot      = $null
+    KeyDir        = $null
 }
 
 $index = 0
@@ -288,7 +390,7 @@ while ($index -lt $RemainingArgs.Count) {
     } elseif ($name -in @('--help', '-h')) {
         Write-Usage
         exit 0
-    } elseif ($name -in @('--id', '--name', '--images', '--output', '--repo-root')) {
+    } elseif ($name -in @('--id', '--name', '--images', '--output', '--repo-root', '--key-dir')) {
         $value = $inlineValue
         if ($null -eq $value) {
             if ($index -ge $RemainingArgs.Count) {
@@ -303,6 +405,7 @@ while ($index -lt $RemainingArgs.Count) {
             '--images' { 'Images' }
             '--output' { 'Output' }
             '--repo-root' { 'RepoRoot' }
+            '--key-dir' { 'KeyDir' }
         }
         $options[$optionKey] = $value
     } else {
@@ -325,11 +428,7 @@ if ([string]::IsNullOrWhiteSpace($scriptDir)) {
     $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 }
 
-$repoRoot = if ($options['RepoRoot']) {
-    [System.IO.Path]::GetFullPath([string] $options['RepoRoot'])
-} else {
-    [System.IO.Path]::GetFullPath((Split-Path -Parent $scriptDir))
-}
+$repoRoot = Resolve-RepoRoot -Explicit ([string] $options['RepoRoot']) -StartDir $scriptDir
 
 $profileId = if ($options['Id']) { [string] $options['Id'] } else { (Get-Date).ToString('yyyyMMdd-HHmmss') + '_testkey' }
 $profileName = if ($options['Name']) { [string] $options['Name'] } else { $profileId }
@@ -375,21 +474,20 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'Images') -PathType Container)) {
         $missingPrereqs.Add('Images/')
     }
-    foreach ($pem in @('for_agents/testkey_rsa4096.pem', 'for_agents/testkey_rsa2048.pem')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $pem) -PathType Leaf)) {
-            $missingPrereqs.Add($pem)
-        }
-    }
     if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
         $missingPrereqs.Add('uv（不在 PATH 上）')
     }
     if ($missingPrereqs.Count -gt 0) {
         Stop-Script 1 ('前置条件不满足，缺少: ' + ($missingPrereqs -join ', '))
     }
-    Write-Ok 'avbtool.py / Images/ / for_agents/*.pem / uv 均已就绪'
+
+    # 密钥目录解析失败会自行以退出码 1 结束（含缺失清单与 --key-dir 提示）。
+    $keyDir = Resolve-KeyDir -Explicit ([string] $options['KeyDir']) -ScriptDir $scriptDir -RepoRoot $repoRoot
+
+    Write-Ok 'avbtool.py / Images/ / testkey 密钥 / uv 均已就绪'
+    Write-Note "密钥目录: $keyDir"
 
     $imagesDir = Join-Path $repoRoot 'Images'
-    $forAgentsDir = Join-Path $repoRoot 'for_agents'
 
     # -----------------------------------------------------------------
     # 步骤 1：镜像集合检查
@@ -496,7 +594,7 @@ try {
         $null = New-Item -ItemType Directory -Path $keysDir -Force
     }
     foreach ($pem in @('testkey_rsa4096.pem', 'testkey_rsa2048.pem')) {
-        Copy-Item -LiteralPath (Join-Path $forAgentsDir $pem) -Destination (Join-Path $keysDir $pem) -Force
+        Copy-Item -LiteralPath (Join-Path $keyDir $pem) -Destination (Join-Path $keysDir $pem) -Force
     }
     Write-Ok '已拷贝 testkey_rsa4096.pem / testkey_rsa2048.pem 到 profiles/<id>/keys/'
 

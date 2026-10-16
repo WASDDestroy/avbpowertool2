@@ -1,13 +1,21 @@
-# tools/ —— testkey 打包包装脚本
+# plugins/testkey_config_gen/ —— testkey 打包包装脚本（插件）
 
 `make-testkey-config.cmd` / `make-testkey-config.ps1` 把「6 步 OEM 测试密钥
 （testkey）配置打包流程」封装成一次调用：按旗标表算出镜像集合 → 安装
-`for_agents/` 里的两把 testkey → 从镜像生成配置 → 写死链式分区 / flags /
-密钥 / 算法 → 剪枝内嵌描述符 → 自检 → （可选）改名 → （可选）导出 zip →
+本插件自带的 / `--key-dir` 指定的两把 testkey → 从镜像生成配置 → 写死链式分区 /
+flags / 密钥 / 算法 → 剪枝内嵌描述符 → 自检 → （可选）改名 → （可选）导出 zip →
 （可选）签名 dry-run 预览。
 
 **本脚本只生成配置，不签名、不写 `Images/`。** 真正的签名要另外显式执行
 `image sign ... --execute --yes`。
+
+> **本目录同时是插件安装位置。** 插件按 `plugins/<id>/` 布局安装（本插件
+> `id = testkey_config_gen`），清单见 `avbpowertool_plugin_config.xml`，
+> `entry` 指向 `make-testkey-config.cmd`。因此脚本不能假设「自己的父目录就是仓库根」，
+> 仓库根与密钥目录都靠下面的**定位规则**解析。
+>
+> `keys/` 里的 testkey PEM 是本地密钥材料，被 `.gitignore` 的
+> `plugins/*/keys/` 规则排除，**不入库**；清单 XML、两个脚本与本文档都在版本控制内。
 
 ## 前置条件
 
@@ -15,22 +23,57 @@
 |---|---|
 | PowerShell 7+ | 脚本头部是 `#Requires -Version 7.0`；`.cmd` 启动器用 `pwsh` 调用 |
 | `uv` 在 `PATH` 上 | 所有 CLI 调用都是 `uv run avbpowertool ...` |
-| 仓库根有 `avbtool.py` | 工作区根 = 进程 cwd，脚本会先切到 `--repo-root` |
+| 能定位仓库根 | 见下「仓库根定位」；仓库根要有 `avbtool.py` 与 `profiles/` |
 | 仓库根有 `Images/` | 里面放待打包的 `*.img` |
-| `for_agents/testkey_rsa4096.pem`、`for_agents/testkey_rsa2048.pem` | 会被拷进 `profiles/<id>/keys/`（覆盖同名文件） |
+| 能定位密钥目录 | 见下「密钥目录定位」；目录里要有 `testkey_rsa4096.pem` 与 `testkey_rsa2048.pem`，会被拷进 `profiles/<id>/keys/`（覆盖同名文件） |
 
 任何一项缺失，脚本在**创建任何东西之前**以退出码 1 结束。
+
+## 仓库根定位
+
+脚本在 `plugins/testkey_config_gen/` 下，`tools/` 时代那种「脚本目录的父目录 = 仓库根」
+的假设已经不成立，因此改为：
+
+1. 显式给了 `--repo-root <dir>`：规范化该路径，**要求目录里存在 `avbtool.py`**，
+   否则报错并以退出码 1 结束；
+2. 没给：**从脚本所在目录逐级向上查找**，取第一个**同时含 `avbtool.py` 与 `profiles/`**
+   的目录作为仓库根；
+3. 一路查到盘符根都没有 → 报错并以退出码 1 结束，提示用 `--repo-root` 指定。
+
+所以脚本可以在**任意 cwd**（含 `%TEMP%`）下用绝对路径调用，不必先 `cd` 到仓库根。
+
+## 密钥目录定位
+
+1. 显式给了 `--key-dir <dir>`：要求该目录存在且**同时含两把 PEM**，否则报错退出 1；
+2. 没给：按顺序探测，取第一个同时含 `testkey_rsa4096.pem` 与 `testkey_rsa2048.pem`
+   的目录：
+
+   | 顺序 | 目录 | 说明 |
+   |---|---|---|
+   | 1 | `<脚本目录>/keys` | 本插件的密钥目录（默认命中） |
+   | 2 | `<脚本目录>` | 密钥直接放在插件根 |
+   | 3 | `<仓库根>/for_agents` | 迁移前的旧位置，保留向后兼容 |
+
+3. 三个都没有 → 报错并以退出码 1 结束，提示用 `--key-dir` 指定。
+
+解析结果同时用于第 0 步前置检查与第 3 步的拷贝。
 
 ## 用法
 
 ```bat
-:: 从仓库根（或任意 cwd，脚本自己会切到 --repo-root）
-tools\make-testkey-config.cmd --core --8e
+:: 从仓库根（或任意 cwd，脚本自己会定位仓库根）
+plugins\testkey_config_gen\make-testkey-config.cmd --core --8e
 ```
 
 ```powershell
 # 直接调 PowerShell 脚本（参数完全一样）
-pwsh -NoProfile -File tools\make-testkey-config.ps1 --no_prompt --no_export
+pwsh -NoProfile -File plugins\testkey_config_gen\make-testkey-config.ps1 --no_prompt --no_export
+
+# 任意 cwd + 绝对路径也可以
+pwsh -NoProfile -File F:\GitHub\avbpowertool2\plugins\testkey_config_gen\make-testkey-config.ps1 --no_prompt
+
+# 显式指定密钥目录
+pwsh -NoProfile -File plugins\testkey_config_gen\make-testkey-config.ps1 --key-dir D:\testkeys
 ```
 
 因为 ps1 自己解析 `--flag`，`.cmd` 不做任何参数翻译，`%ERRORLEVEL%` 原样透传。
@@ -66,7 +109,8 @@ pwsh -NoProfile -File tools\make-testkey-config.ps1 --no_prompt --no_export
 | `--name <v>` | 配置显示名，默认等于 id |
 | `--images a,b,c` | 显式镜像集合。**给出时忽略集合旗标**（仍做存在性检查）；名字可带或不带 `.img` |
 | `--output <dir>` | 导出目录，默认仓库根（导出到 `<dir>\<id>.zip`） |
-| `--repo-root <dir>` | 仓库根，默认**脚本所在目录的父目录**（即 `tools/` 的上一级） |
+| `--repo-root <dir>` | 仓库根。显式给出时必须含 `avbtool.py`；不给则从脚本目录向上查找（见上） |
+| `--key-dir <dir>` | 存放两把 testkey PEM 的目录。不给则按 `<脚本目录>/keys` → `<脚本目录>` → `<仓库根>/for_agents` 顺序探测（见上） |
 | `-h`, `--help` | 打印用法 |
 
 `--flag value` 与 `--flag=value` 两种写法都接受。未知参数 → 用法错误 + usage，退出码 2。
@@ -89,7 +133,8 @@ pwsh -NoProfile -File tools\make-testkey-config.ps1 --no_prompt --no_export
 |---|---|
 | `--id` | `<yyyyMMdd-HHmmss>_testkey`，如 `20260101-120000_testkey` |
 | `--name` | 等于 `--id` |
-| `--repo-root` | 脚本所在目录的父目录 |
+| `--repo-root` | 从脚本所在目录向上找到的第一个同时含 `avbtool.py` 与 `profiles/` 的目录 |
+| `--key-dir` | 第一个同时含两把 PEM 的目录：`<脚本目录>/keys` → `<脚本目录>` → `<仓库根>/for_agents` |
 | `--output` | `--repo-root` |
 | 镜像集合 | `--no_hashtree_core` |
 
@@ -97,16 +142,19 @@ pwsh -NoProfile -File tools\make-testkey-config.ps1 --no_prompt --no_export
 
 ```bat
 :: 1) 默认：基础 8 个分区，走完改名 / 导出 / 预览
-tools\make-testkey-config.cmd
+plugins\testkey_config_gen\make-testkey-config.cmd
 
 :: 2) 核心 + 8e（含 odm_dlkm / data_ext），不交互、直接出 zip
-tools\make-testkey-config.cmd --core --8e --no_prompt
+plugins\testkey_config_gen\make-testkey-config.cmd --core --8e --no_prompt
 
 :: 3) 只写配置，不导出、不预览（给 CI / 批处理用）
-tools\make-testkey-config.cmd --no_prompt --no_export --no_sign_preview
+plugins\testkey_config_gen\make-testkey-config.cmd --no_prompt --no_export --no_sign_preview
 
 :: 4) 复用已存在的 profile 目录（保留其密钥库，替换分区集合）
-tools\make-testkey-config.cmd --id 20260101-120000_testkey --force --no_prompt
+plugins\testkey_config_gen\make-testkey-config.cmd --id 20260101-120000_testkey --force --no_prompt
+
+:: 5) 显式指定密钥目录
+plugins\testkey_config_gen\make-testkey-config.cmd --key-dir D:\testkeys --no_prompt
 ```
 
 ## 退出码
@@ -114,17 +162,17 @@ tools\make-testkey-config.cmd --id 20260101-120000_testkey --force --no_prompt
 | 退出码 | 触发条件 |
 |---|---|
 | `0` | 成功 |
-| `1` | 前置条件不满足、镜像缺失、profile 目录已存在且没给 `--force`、或任意一步 CLI 返回非 0（原样透传 CLI 的退出码，通常也是 1） |
+| `1` | 前置条件不满足（含定位不到仓库根 / 密钥目录）、镜像缺失、profile 目录已存在且没给 `--force`、或任意一步 CLI 返回非 0（原样透传 CLI 的退出码，通常也是 1） |
 | `2` | 用法错误：未知参数、集合旗标互斥、缺参数值 |
 
 失败时脚本会打印 CLI `--json` 输出里的 `issues[].error_code` + `message`。
 
 ## 脚本做了什么（10 步）
 
-0. 前置检查（`avbtool.py` / `Images/` / `for_agents/*.pem` / `uv`）
+0. 前置检查（`avbtool.py` / `Images/` / testkey 密钥目录 / `uv`），并解析仓库根与密钥目录
 1. 按旗标表算镜像集合，检查存在性；profile 目录冲突检查
 2. `config create --id <id> --name <name> --allow-empty --json`（仅在目录不存在时）
-3. 把两把 PEM 拷进 `profiles/<id>/keys/` → `keys discover` → `keys ensure-public`
+3. 把两把 PEM 从解析出的密钥目录拷进 `profiles/<id>/keys/` → `keys discover` → `keys ensure-public`
 4. `config create --id <id> --from-images --overwrite --images <集合> --json`（保留密钥库；
    解析不到的链式公钥只记入 `chain_issues`，信息性、不影响退出码，脚本打印一条 `[提示]`）
 5. `config edit`：`vbmeta` 的 `flags=1` + 三条链式分区、`vbmeta_system` 换
@@ -147,6 +195,6 @@ tools\make-testkey-config.cmd --id 20260101-120000_testkey --force --no_prompt
 
 ## 相关文档
 
-- [CLI 参考](../docs/zh/CLI_REFERENCE.md) —— 完整命令面、退出码与错误码
-- [密钥管理](../docs/zh/KEY_MANAGEMENT.md) —— key store、manifest 与公钥文件要求
-- [创建配置](../docs/zh/CONFIG_CREATION.md) —— 用 CLI / TUI / API 创建配置
+- [CLI 参考](../../docs/zh/CLI_REFERENCE.md) —— 完整命令面、退出码与错误码
+- [密钥管理](../../docs/zh/KEY_MANAGEMENT.md) —— key store、manifest 与公钥文件要求
+- [创建配置](../../docs/zh/CONFIG_CREATION.md) —— 用 CLI / TUI / API 创建配置

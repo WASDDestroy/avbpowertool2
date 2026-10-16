@@ -8,6 +8,9 @@ Configs/
 Keys/
 *.zip
 
+# Plugin key material stays local (the plugin itself is tracked)
+plugins/*/keys/
+
 # Tracked test fixtures (must not be swallowed by the runtime-data rules above)
 !tests/fixtures/legacy/keys/
 

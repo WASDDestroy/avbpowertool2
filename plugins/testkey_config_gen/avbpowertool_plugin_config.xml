@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<avbpowertool_plugin schema_version="1">
+  <id>testkey_config_gen</id>
+  <entry>make-testkey-config.cmd</entry>
+  <names>
+    <name lang="en">Test-key config generator</name>
+    <name lang="zh">测试密钥配置生成</name>
+  </names>
+  <description lang="zh">按旗标表生成 testkey 打包配置并导出 zip</description>
+  <description lang="en">Generate a testkey packaging config from the selected image set and export it as a zip</description>
+</avbpowertool_plugin>

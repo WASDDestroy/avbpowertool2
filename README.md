@@ -144,15 +144,19 @@ table, and error-code list: [CLI Reference](docs/en/CLI_REFERENCE.md).
 
 ### Test-key Packaging Script (Windows)
 
-`tools\make-testkey-config.cmd` wraps the whole 6-step OEM test-key profile
-packaging flow (image-set flags → copy `for_agents/*.pem` → `config edit`
-chain/flags/keys → self-check → export → signing dry-run) into a single
-PowerShell 7 invocation. It only *generates* the profile — it never signs and
-never writes `Images/`. Flag table, defaults, exit codes, and examples:
-[tools/README.md](tools/README.md) (Chinese).
+`plugins\testkey_config_gen\make-testkey-config.cmd` wraps the whole 6-step OEM
+test-key profile packaging flow (image-set flags → install the plugin's
+`keys/*.pem` → `config edit` chain/flags/keys → self-check → export → signing
+dry-run) into a single PowerShell 7 invocation. It only *generates* the profile —
+it never signs and never writes `Images/`. It locates the repository root by
+walking up from its own directory (first ancestor containing both `avbtool.py`
+and `profiles/`), so it works from any cwd; override with `--repo-root`. Flag
+table, defaults, exit codes, and examples:
+[plugins/testkey_config_gen/README.md](plugins/testkey_config_gen/README.md)
+(Chinese).
 
 ```bat
-tools\make-testkey-config.cmd --core --8e --no_prompt
+plugins\testkey_config_gen\make-testkey-config.cmd --core --8e --no_prompt
 ```
 
 ### TUI Usage
