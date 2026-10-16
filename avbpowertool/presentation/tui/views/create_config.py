@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import contextlib
 import curses
-from dataclasses import replace
 from pathlib import Path
 
 from avbpowertool.application.commands import (
-    ChainKeyResolution,
+    ConfigAutoCreateRequest,
     ConfigCreateRequest,
 )
 from avbpowertool.application.ports import AvbToolPort
+from avbpowertool.application.services.config_auto_create import (
+    ConfigAutoCreateUseCase,
+)
 from avbpowertool.application.services.manage_configs import ConfigCreateUseCase
 from avbpowertool.domain.models import (
-    ChainDescriptor,
     DescriptorType,
-    ImageInspection,
     PartitionConfig,
     SigningAlgorithm,
 )
@@ -216,9 +216,6 @@ def _collect_partitions_auto(
 ) -> list[PartitionConfig] | None:
     """Auto-generate config from images in a directory."""
 
-    from avbpowertool.application.commands import InspectImagesRequest
-    from avbpowertool.application.services.inspect_images import InspectImagesUseCase
-
     # When keys were prepared, pick the default key_id for the generated
     # partitions (single key -> use it; several -> let the user choose).
     default_key_id = "default"
@@ -243,75 +240,41 @@ def _collect_partitions_auto(
         message_screen(stdscr, _("app.error_title"), [_("config.wizard.auto_dir_not_found")])
         return None
 
-    # Scan for .img files
-    image_names: list[str] = []
-    for f in sorted(image_dir.iterdir()):
-        if f.suffix == ".img" and f.is_file():
-            image_names.append(f.stem)
+    # Scan, inspect and turn every image into a partition config.  The
+    # default key is only a fallback for the per-image key selection, so
+    # ``key_id`` stays unset here.
+    result = ConfigAutoCreateUseCase(ws, avb).execute(
+        ConfigAutoCreateRequest(
+            image_dir=image_dir,
+            available_keys=tuple(available_keys),
+            default_key_id=default_key_id,
+            profile_id=profile_id,
+        )
+    )
 
-    if not image_names:
+    if not result.scanned_images:
         message_screen(stdscr, _("app.error_title"), [_("config.wizard.auto_no_images")])
         return None
 
     # Show found images
-    found_lines = [_("config.wizard.auto_found", count=len(image_names))]
-    for name in image_names:
+    found_lines = [_("config.wizard.auto_found", count=len(result.scanned_images))]
+    for name in result.scanned_images:
         found_lines.append(f"  - {name}")
     message_screen(stdscr, _("config.wizard.auto_scanning"), found_lines)
 
-    # Inspect images
-    uc = InspectImagesUseCase(ws, avb)
-    result = uc.execute(InspectImagesRequest(image_names=tuple(image_names)))
+    partitions = list(result.partitions)
 
-    # Build (image -> PartitionConfig) keyed by FILE so later images can
-    # never overwrite an earlier partition's entry (a vbmeta image embeds
-    # descriptors for other partitions and must not clobber their configs).
-    by_image: dict[str, PartitionConfig] = {}
-    included_by_image: dict[str, tuple[str, ...]] = {}
-    chain_descriptors_by_image: dict[str, tuple[ChainDescriptor, ...]] = {}
-    chain_issues: list[str] = []
-    size_notes: list[str] = []
-    meta_lines: list[str] = []
-    for img in result.images:
-        key_id = _key_for_algorithm(img.algorithm, available_keys, default_key_id)
-        config = _build_auto_partition(img, image_dir, key_id=key_id)
-        if config is None:
-            continue
-        by_image[config.image] = config
-        included_by_image[config.image] = img.included_partitions
-        if config.descriptor == DescriptorType.VBMETA and img.chain_descriptors:
-            chain_descriptors_by_image[config.image] = img.chain_descriptors
-
-        if config.partition_size > 0:
-            size_notes.append(f"{config.partition_name}: {config.partition_size}")
-
-        # Summary of the metadata read back from the image.
-        meta = (
-            f"{config.partition_name}: {config.descriptor.value} "
-            f"alg={config.algorithm.value} rbi={config.rollback_index} "
-            f"rbl={config.rollback_index_location} flags={config.flags} "
-            f"props={len(config.props)} hash={config.hash_algorithm}"
-        )
-        meta_lines.append(meta)
-
-    # Restore chain partitions read from the vbmeta images: resolve each
-    # chain descriptor's public-key SHA1 to a key file in the key store.
-    if chain_descriptors_by_image:
-        from avbpowertool.application.commands import ResolveChainKeysRequest
-        from avbpowertool.application.services.resolve_chains import (
-            ResolveChainKeysUseCase,
-        )
-
-        all_chains = tuple(c for descs in chain_descriptors_by_image.values() for c in descs)
-        chain_result = ResolveChainKeysUseCase(ws, avb).execute(
-            ResolveChainKeysRequest(profile_id=profile_id, chains=all_chains)
-        )
-        by_image = _apply_chain_resolutions(
-            by_image, chain_descriptors_by_image, chain_result.resolutions
-        )
-        chain_issues = [f"  [{iss.error_code}] {iss.message}" for iss in chain_result.issues]
-
-    partitions = _finalize_vbmeta_includes(by_image, included_by_image)
+    # Metadata read back from the images, in scan order.
+    meta_lines = [
+        f"{p.partition_name}: {p.descriptor.value} "
+        f"alg={p.algorithm.value} rbi={p.rollback_index} "
+        f"rbl={p.rollback_index_location} flags={p.flags} "
+        f"props={len(p.props)} hash={p.hash_algorithm}"
+        for p in partitions
+    ]
+    size_notes = [
+        f"{p.partition_name}: {p.partition_size}" for p in partitions if p.partition_size > 0
+    ]
 
     # Show results
     result_lines = [_("config.wizard.auto_result", count=len(partitions))]
@@ -329,146 +292,14 @@ def _collect_partitions_auto(
             result_lines.append(f"    {note}")
     for iss in result.issues:
         result_lines.append(f"  [{iss.error_code}] {iss.message}")
-    if chain_issues:
+    if result.chain_issues:
         result_lines.append("")
         result_lines.append(_("config.wizard.auto_chain_note"))
-        result_lines.extend(chain_issues)
+        for iss in result.chain_issues:
+            result_lines.append(f"  [{iss.error_code}] {iss.message}")
 
     message_screen(stdscr, _("config.wizard.auto_result_title"), result_lines)
     return partitions
-
-
-_VALID_HASH_ALGORITHMS = ("sha1", "sha256", "sha512")
-
-
-def _key_for_algorithm(algorithm: str | None, available: list[str], default: str) -> str:
-    """Select an RSA key matching the inspected image algorithm size."""
-    if algorithm:
-        upper = algorithm.upper()
-        size = "2048" if "2048" in upper else "4096" if "4096" in upper else ""
-        if size:
-            for key_id in available:
-                if size in key_id:
-                    return key_id
-    return default
-
-
-def _build_auto_partition(
-    img: ImageInspection,
-    image_dir: Path,
-    key_id: str = "default",
-) -> PartitionConfig | None:
-    """Build a PartitionConfig from an ImageInspection (auto mode).
-
-    Reads back the image's footer metadata — rollback index, rollback
-    index location, salt, flags (incl. flag-bit shortcuts), props and
-    hash algorithm — with safe defaults when the image has none.
-    """
-    if img.descriptor is None:
-        return None
-
-    descriptor = img.descriptor
-
-    # Signing algorithm (vbmeta header ``Algorithm`` line, e.g. NONE or
-    # SHA256_RSA4096); falls back to the default when unparseable.
-    algorithm = SigningAlgorithm.SHA256_RSA4096
-    if img.algorithm:
-        with contextlib.suppress(ValueError):
-            algorithm = SigningAlgorithm.from_str(img.algorithm)
-
-    # Flags integer plus the two flag-bit shortcuts (VBMeta image flags:
-    # 1 = HASHTREE_DISABLED, 2 = VERIFICATION_DISABLED).
-    flags = 0
-    if img.flags:
-        with contextlib.suppress(ValueError):
-            flags = int(img.flags)
-
-    rollback_index = int(img.rollback_index) if img.rollback_index else 0
-    rollback_index_location = 0
-    if img.rollback_index_location:
-        with contextlib.suppress(ValueError):
-            rollback_index_location = int(img.rollback_index_location)
-
-    hash_algorithm = "sha256"
-    if descriptor != DescriptorType.VBMETA:
-        candidate = (img.hash_algorithm or "sha256").strip().lower()
-        if candidate in _VALID_HASH_ALGORITHMS:
-            hash_algorithm = candidate
-
-    # Hash footers require partition_size (or dynamic_partition_size):
-    # default to the image file size rounded up to the 4096 block size,
-    # which is the smallest valid value avbtool accepts.
-    partition_size = 0
-    if descriptor == DescriptorType.HASH:
-        image_file = image_dir / f"{img.image_name}.img"
-        with contextlib.suppress(OSError):
-            if image_file.is_file():
-                partition_size = (int(image_file.stat().st_size) + 4095) // 4096 * 4096
-
-    return PartitionConfig(
-        image=f"{img.image_name}.img",
-        descriptor=descriptor,
-        algorithm=algorithm,
-        key_id=key_id,
-        partition_name=img.partition_name or img.image_name,
-        rollback_index=rollback_index,
-        rollback_index_location=rollback_index_location,
-        salt=img.salt or "",
-        flags=flags,
-        set_hashtree_disabled_flag=bool(flags & 1),
-        set_verification_disabled_flag=bool(flags & 2),
-        props=img.props if img.props else (),
-        hash_algorithm=hash_algorithm,
-        partition_size=partition_size,
-    )
-
-
-def _finalize_vbmeta_includes(
-    by_image: dict[str, PartitionConfig],
-    included_by_image: dict[str, tuple[str, ...]],
-) -> list[PartitionConfig]:
-    """Fill vbmeta ``included_partitions`` and return the final config list.
-
-    Prefers the descriptors really embedded in the vbmeta image (limited
-    to partitions present in the scan); falls back to every other scanned
-    non-vbmeta partition when the image carries no descriptors.
-    """
-    scanned_names = {c.partition_name for c in by_image.values()}
-    for image_name, config in by_image.items():
-        if config.descriptor != DescriptorType.VBMETA:
-            continue
-        real = included_by_image.get(image_name, ())
-        included = tuple(n for n in real if n in scanned_names)
-        if not included:
-            included = tuple(
-                c.partition_name
-                for c in by_image.values()
-                if c.image != image_name and c.descriptor != DescriptorType.VBMETA
-            )
-        by_image[image_name] = replace(config, included_partitions=included)
-    return list(by_image.values())
-
-
-def _apply_chain_resolutions(
-    by_image: dict[str, PartitionConfig],
-    chain_descriptors: dict[str, tuple[ChainDescriptor, ...]],
-    resolutions: tuple[ChainKeyResolution, ...],
-) -> dict[str, PartitionConfig]:
-    """Write resolved ``PART:SLOT:KEY_FILE`` entries into vbmeta configs.
-
-    ``resolutions`` is parallel to the flattened chain descriptors (in
-    the insertion order of ``chain_descriptors``); entries that were not
-    resolved (empty) are skipped so the config stays signable.
-    """
-    idx = 0
-    for image_name, descriptors in chain_descriptors.items():
-        entries: list[str] = []
-        for _descriptor in descriptors:
-            if idx < len(resolutions) and resolutions[idx].entry:
-                entries.append(resolutions[idx].entry)
-            idx += 1
-        by_image[image_name] = replace(by_image[image_name], chain_partitions=tuple(entries))
-    return by_image
 
 
 def _collect_partition(stdscr: curses.window, available_keys: list[str]) -> PartitionConfig | None:

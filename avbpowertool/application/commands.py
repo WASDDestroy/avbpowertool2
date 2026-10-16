@@ -6,6 +6,7 @@ All request/result types are frozen dataclasses for immutability.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from avbpowertool.domain.models import (
     ChainDescriptor,
@@ -165,6 +166,49 @@ class ConfigCreateResult:
 
     profile_id: str
     created: bool = False  # True when the profile directory was written
+    issues: tuple[OperationIssue, ...] = ()
+
+
+# ---------------------------------------------------------------------------
+# Config Auto Create (from images)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ConfigAutoCreateRequest:
+    """Request to build partition configs from the images in a directory.
+
+    ``image_dir`` is scanned for ``*.img`` files (sorted by name); when
+    ``image_names`` is non-empty only those stems are inspected.  The
+    ``key_id`` override wins over the automatic key selection, which
+    otherwise picks from ``available_keys`` (defaulting to
+    ``default_key_id``) based on the image's signing algorithm.
+    """
+
+    image_dir: Path
+    image_names: tuple[str, ...] = ()
+    key_id: str | None = None  # explicit override of the automatic choice
+    available_keys: tuple[str, ...] = ()  # candidates for select_key_for_algorithm
+    default_key_id: str = "default"
+    profile_id: str = "current"  # used for chain-key resolution
+    resolve_chains: bool = True
+    allow_fallback: bool = True
+
+
+@dataclass(frozen=True)
+class ConfigAutoCreateResult:
+    """Result of generating partition configs from images.
+
+    ``issues`` carries the inspection issues (e.g. ``image.not_found`` /
+    ``image.no_vbmeta_structure``); chain-resolution problems are kept
+    separate in ``chain_issues`` so callers can render them in their own
+    section, exactly as the create wizard does.
+    """
+
+    partitions: tuple[PartitionConfig, ...] = ()
+    scanned_images: tuple[str, ...] = ()  # scanned image stems (sorted)
+    skipped_images: tuple[str, ...] = ()  # descriptor is None -> skipped
+    chain_issues: tuple[OperationIssue, ...] = ()
     issues: tuple[OperationIssue, ...] = ()
 
 
