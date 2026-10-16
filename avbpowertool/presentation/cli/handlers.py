@@ -251,21 +251,56 @@ def _handle_config_migrate(
     return exit_code_from_issues(result.issues)
 
 
+def _split_field_item(flag: str, item: str) -> tuple[str, str] | None:
+    """Split a ``FIELD=ITEM`` argument, reporting malformed input on stderr."""
+    field_name, separator, value = item.partition("=")
+    field_name = field_name.strip()
+    if not separator or not field_name:
+        print(f"error: {flag} expects FIELD=ITEM, got {item!r}", file=sys.stderr)
+        return None
+    return field_name, value
+
+
 def _handle_config_edit(
     args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
 ) -> int:
     updates: dict[str, str] = {}
     for item in getattr(args, "updates", []):
-        if "=" not in item:
-            print(f"error: --set expects FIELD=VALUE, got {item!r}", file=sys.stderr)
+        pair = _split_field_item("--set", item)
+        if pair is None:
             return 2
-        field, value = item.split("=", 1)
-        updates[field.strip()] = value
+        updates[pair[0]] = pair[1]
+
+    unset: list[str] = []
+    for item in getattr(args, "unsets", []):
+        field_name = item.strip()
+        if not field_name:
+            print(f"error: --unset expects FIELD, got {item!r}", file=sys.stderr)
+            return 2
+        unset.append(field_name)
+
+    appends: list[tuple[str, str]] = []
+    for item in getattr(args, "appends", []):
+        pair = _split_field_item("--append", item)
+        if pair is None:
+            return 2
+        appends.append(pair)
+
+    removes: list[tuple[str, str]] = []
+    for item in getattr(args, "removes", []):
+        pair = _split_field_item("--remove", item)
+        if pair is None:
+            return 2
+        removes.append(pair)
+
     uc = ConfigEditUseCase(workspace)
     request = ConfigEditRequest(
         profile_id=getattr(args, "profile", "current"),
         partition_name=args.partition,
         updates=updates,
+        unset=tuple(unset),
+        appends=tuple(appends),
+        removes=tuple(removes),
     )
     result = uc.execute(request)
     render_config_edit(result, as_json, out)

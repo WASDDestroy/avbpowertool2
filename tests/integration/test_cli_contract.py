@@ -66,6 +66,14 @@ class TestParserShape:
             code = exc.code
         assert code == 0
 
+    def test_config_edit_help(self) -> None:
+        out = StringIO()
+        try:
+            code = main(["config", "edit", "--help"], out=out)
+        except SystemExit as exc:
+            code = exc.code
+        assert code == 0
+
 
 class TestAboutCommand:
     def test_about_outputs_version(self) -> None:
@@ -348,6 +356,151 @@ class TestProfileResolutionCli:
         assert data["issues"] == []
         assert data["plan"]["profile_id"] == "device_a"
         assert [s["operation"] for s in data["plan"]["steps"]] == ["add_hash_footer"]
+
+
+class TestConfigEditCli:
+    """End-to-end ``config edit --append`` / ``--remove`` wiring."""
+
+    def _write_vbmeta_profile(self, root: Path) -> None:
+        _write_profile(
+            root,
+            "device_a",
+            partitions={
+                "vbmeta": PartitionConfig(
+                    image="vbmeta.img",
+                    descriptor=DescriptorType.VBMETA,
+                    algorithm=SigningAlgorithm.SHA256_RSA4096,
+                    key_id="testkey_rsa4096",
+                    partition_name="vbmeta",
+                    chain_partitions=("boot:3:old_boot.pem.bin",),
+                    included_partitions=("boot", "odm"),
+                ),
+            },
+        )
+
+    def test_config_edit_append_and_remove_json(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            self._write_vbmeta_profile(tmp_path)
+            os.chdir(tmp_path)
+
+            out = StringIO()
+            code = main(
+                [
+                    "config",
+                    "edit",
+                    "vbmeta",
+                    "--profile",
+                    "device_a",
+                    "--append",
+                    "chain_partitions=boot:4:new_boot.pem.bin",
+                    "--append",
+                    "included_partitions=dtbo",
+                    "--remove",
+                    "included_partitions=odm",
+                    "--json",
+                ],
+                out=out,
+            )
+            on_disk = json.loads(
+                (tmp_path / "profiles" / "device_a" / "profile.json").read_text(encoding="utf-8")
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        data = json.loads(out.getvalue())
+        assert code == 0
+        assert data["issues"] == []
+        assert data["profile_id"] == "device_a"
+        assert data["partition_name"] == "vbmeta"
+
+        vbmeta = on_disk["partitions"]["vbmeta"]
+        assert vbmeta["chain_partitions"] == ["boot:4:new_boot.pem.bin"]
+        assert vbmeta["included_partitions"] == ["boot", "dtbo"]
+
+    def test_config_edit_unset_and_set_json(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            self._write_vbmeta_profile(tmp_path)
+            os.chdir(tmp_path)
+
+            out = StringIO()
+            code = main(
+                [
+                    "config",
+                    "edit",
+                    "vbmeta",
+                    "--profile",
+                    "device_a",
+                    "--set",
+                    "algorithm=SHA256_RSA2048",
+                    "--unset",
+                    "included_partitions",
+                    "--json",
+                ],
+                out=out,
+            )
+            on_disk = json.loads(
+                (tmp_path / "profiles" / "device_a" / "profile.json").read_text(encoding="utf-8")
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        data = json.loads(out.getvalue())
+        assert code == 0
+        assert data["issues"] == []
+        vbmeta = on_disk["partitions"]["vbmeta"]
+        assert vbmeta["algorithm"] == "SHA256_RSA2048"
+        assert "included_partitions" not in vbmeta
+
+    def test_config_edit_conflicting_forms_exit_1(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            self._write_vbmeta_profile(tmp_path)
+            os.chdir(tmp_path)
+
+            out = StringIO()
+            code = main(
+                [
+                    "config",
+                    "edit",
+                    "vbmeta",
+                    "--profile",
+                    "device_a",
+                    "--set",
+                    "included_partitions=boot",
+                    "--append",
+                    "included_partitions=dtbo",
+                    "--json",
+                ],
+                out=out,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        data = json.loads(out.getvalue())
+        assert code == 1
+        assert data["issues"][0]["error_code"] == "config.invalid_option_combination"
+
+    def test_config_edit_malformed_append_exits_2(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            self._write_vbmeta_profile(tmp_path)
+            os.chdir(tmp_path)
+
+            out = StringIO()
+            code = main(
+                ["config", "edit", "vbmeta", "--append", "chain_partitions"],
+                out=out,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert code == 2
 
 
 class TestParserBuilds:

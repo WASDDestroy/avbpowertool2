@@ -184,14 +184,20 @@ class ConfigMigrateResult:
 class ConfigEditRequest:
     """Request to update a single partition's config fields.
 
-    ``updates`` maps PartitionConfig field names to string values; only
-    whitelisted scalar/tuple fields are accepted (see
-    ``ConfigEditUseCase``).
+    ``updates`` maps PartitionConfig field names to string values and
+    replaces the whole field (``--set``); only whitelisted scalar/tuple
+    fields are accepted (see ``ConfigEditUseCase``).  ``unset`` names
+    fields to reset to their empty value, while ``appends`` / ``removes``
+    carry ordered ``(field, item)`` pairs for tuple fields (``--append`` /
+    ``--remove``).
     """
 
     profile_id: str = "current"
     partition_name: str = ""
     updates: dict[str, str] = field(default_factory=dict[str, str])
+    unset: tuple[str, ...] = ()
+    appends: tuple[tuple[str, str], ...] = ()
+    removes: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

@@ -29,7 +29,12 @@ from avbpowertool.application.commands import (
     LegacyImportResult,
 )
 from avbpowertool.domain.errors import ConfigError
-from avbpowertool.domain.models import AvbProfile, OperationIssue
+from avbpowertool.domain.models import (
+    AvbProfile,
+    OperationIssue,
+    PartitionConfig,
+    SigningAlgorithm,
+)
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.infrastructure.persistence.archive_repository import (
     ArchiveRepository,
@@ -554,8 +559,15 @@ _STR_FIELDS = frozenset(
         "signing_helper_with_files",
         "public_key_metadata",
         "append_to_release_string",
+        "key_id",
     }
 )
+#: fields whose value is parsed through ``SigningAlgorithm.from_str``
+_ALGORITHM_FIELDS = frozenset({"algorithm"})
+#: fields whose value must name an image file (``*.img``)
+_IMAGE_FIELDS = frozenset({"image"})
+#: tuple fields whose items are ``KEY:VALUE`` pairs
+_PAIR_FIELDS = frozenset({"props", "prop_from_file"})
 _TUPLE_FIELDS = frozenset(
     {
         "kernel_cmdlines",
@@ -563,15 +575,29 @@ _TUPLE_FIELDS = frozenset(
         "chain_partitions_do_not_use_ab",
         "included_partitions",
         "include_descriptors_from_image",
+        "props",
+        "prop_from_file",
     }
+)
+#: tuple fields whose items are ``PARTITION:SLOT:KEY_FILE`` triples
+_CHAIN_FIELDS = frozenset({"chain_partitions", "chain_partitions_do_not_use_ab"})
+#: every field accepted by ``config edit`` (``--set`` / ``--unset``)
+_EDITABLE_FIELDS = (
+    _INT_FIELDS | _BOOL_FIELDS | _STR_FIELDS | _ALGORITHM_FIELDS | _IMAGE_FIELDS | _TUPLE_FIELDS
 )
 
 
 class ConfigEditUseCase:
     """Update individual fields of one partition config.
 
-    ``updates`` values are strings; they are parsed according to the
-    field's type.  Unknown or unsupported fields produce issues.
+    ``updates`` values are strings parsed according to the field's type.
+    ``unset`` names fields to reset to their empty value (str -> ``""``,
+    int -> ``0``, bool -> ``False``, tuple -> ``()``), while ``appends``
+    and ``removes`` carry ``(field, item)`` pairs for tuple fields only;
+    both are applied in the order they were given, removes before
+    appends.  Unknown fields, invalid values, and ambiguous ``--set`` /
+    ``--unset`` / ``--append`` / ``--remove`` combinations produce issues
+    and the profile on disk is left untouched.
     """
 
     def __init__(self, workspace: WorkspacePaths) -> None:
@@ -615,18 +641,41 @@ class ConfigEditUseCase:
                 issues=tuple(issues),
             )
 
+        conflict = _conflict_message(request)
+        if conflict is not None:
+            issues.append(OperationIssue("config.invalid_option_combination", conflict))
+            return ConfigEditResult(
+                profile_id=profile_id,
+                partition_name=request.partition_name,
+                issues=tuple(issues),
+            )
+
         parsed: dict[str, Any] = {}
         for field_name, raw_value in request.updates.items():
-            parsed_value = self._parse_field(field_name, raw_value)
-            if parsed_value is _UNSUPPORTED:
+            value, error_code, message = self._parse_value(field_name, raw_value)
+            if error_code:
+                issues.append(OperationIssue(error_code, message))
+            else:
+                parsed[field_name] = value
+
+        for field_name in request.unset:
+            value, error_code, _message = self._parse_value(
+                field_name, _empty_raw_value(field_name)
+            )
+            if error_code:
                 issues.append(
                     OperationIssue(
-                        "config.invalid_field",
-                        f"Field {field_name!r} is not editable via config edit",
+                        error_code,
+                        f"Field {field_name!r} cannot be unset (invalid empty value)",
                     )
                 )
             else:
-                parsed[field_name] = parsed_value
+                parsed[field_name] = value
+
+        for field_name, item in request.removes:
+            self._apply_tuple_item(parsed, issues, config, field_name, item, append=False)
+        for field_name, item in request.appends:
+            self._apply_tuple_item(parsed, issues, config, field_name, item, append=True)
 
         if issues:
             return ConfigEditResult(
@@ -653,7 +702,11 @@ class ConfigEditUseCase:
 
     @staticmethod
     def _parse_field(field_name: str, raw_value: str) -> Any:
-        """Parse a raw string value for a known field."""
+        """Parse a raw string value for a known field.
+
+        Returns :data:`_UNSUPPORTED` for unknown fields or invalid values,
+        and :data:`_INVALID_ALGORITHM` for an unparsable ``algorithm``.
+        """
         if field_name in _INT_FIELDS:
             try:
                 return int(raw_value)
@@ -661,13 +714,223 @@ class ConfigEditUseCase:
                 return _UNSUPPORTED
         if field_name in _BOOL_FIELDS:
             return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+        if field_name in _ALGORITHM_FIELDS:
+            try:
+                return SigningAlgorithm.from_str(raw_value)
+            except ValueError:
+                return _INVALID_ALGORITHM
+        if field_name in _IMAGE_FIELDS:
+            return raw_value if raw_value.endswith(".img") else _UNSUPPORTED
         if field_name in _STR_FIELDS:
             return raw_value
+        if field_name in _PAIR_FIELDS:
+            pairs = _parse_pairs(raw_value)
+            return _UNSUPPORTED if pairs is None else pairs
         if field_name in _TUPLE_FIELDS:
             items = [item.strip() for item in raw_value.split(",") if item.strip()]
             return tuple(items)
         return _UNSUPPORTED
 
+    @staticmethod
+    def _parse_value(field_name: str, raw_value: str) -> tuple[Any, str, str]:
+        """Parse *raw_value* into ``(value, error_code, message)``.
+
+        ``error_code`` is empty on success; ``value`` is then the parsed
+        value, otherwise it is meaningless.
+        """
+        parsed_value = ConfigEditUseCase._parse_field(field_name, raw_value)
+        if parsed_value is _INVALID_ALGORITHM:
+            return (
+                None,
+                "config.invalid_algorithm",
+                f"Invalid signing algorithm: {raw_value!r}",
+            )
+        if parsed_value is _UNSUPPORTED:
+            if field_name not in _EDITABLE_FIELDS:
+                return (
+                    None,
+                    "config.invalid_field",
+                    f"Field {field_name!r} is not editable via config edit",
+                )
+            return (
+                None,
+                "config.invalid_field",
+                f"Invalid value for field {field_name!r}: {raw_value!r}",
+            )
+        return parsed_value, "", ""
+
+    @staticmethod
+    def _apply_tuple_item(
+        parsed: dict[str, Any],
+        issues: list[OperationIssue],
+        config: PartitionConfig,
+        field_name: str,
+        item: str,
+        *,
+        append: bool,
+    ) -> None:
+        """Append or remove one *item* of a tuple field."""
+        flag = "--append" if append else "--remove"
+        if field_name not in _TUPLE_FIELDS:
+            issues.append(
+                OperationIssue(
+                    "config.invalid_field",
+                    f"{flag} only applies to tuple fields; {field_name!r} is not one",
+                )
+            )
+            return
+
+        current = _tuple_value(config, parsed, field_name)
+        updated = (
+            _append_item(field_name, current, item)
+            if append
+            else _remove_item(field_name, current, item)
+        )
+        if updated is None:
+            issues.append(
+                OperationIssue(
+                    "config.invalid_field",
+                    f"Invalid {flag} item for field {field_name!r}: {item!r}",
+                )
+            )
+            return
+        parsed[field_name] = updated
+
 
 #: sentinel returned when a field cannot be parsed / is not editable
 _UNSUPPORTED = object()
+
+#: sentinel returned when an ``algorithm`` value is not a known algorithm
+_INVALID_ALGORITHM = object()
+
+
+def _empty_raw_value(field_name: str) -> str:
+    """Raw value that resets *field_name* to its empty/neutral state."""
+    if field_name in _INT_FIELDS:
+        return "0"
+    if field_name in _BOOL_FIELDS:
+        return "false"
+    return ""
+
+
+def _conflict_message(request: ConfigEditRequest) -> str | None:
+    """Describe an ambiguous field combination, or ``None`` when clean.
+
+    ``--set``/``--unset`` replace a whole field while ``--append``/
+    ``--remove`` edit it item by item; combining both forms for the same
+    field is rejected instead of silently picking one.
+    """
+    set_fields = set(request.updates)
+    unset_fields = set(request.unset)
+    append_fields = {field_name for field_name, _item in request.appends}
+    remove_fields = {field_name for field_name, _item in request.removes}
+
+    both_forms = sorted(set_fields & unset_fields)
+    if both_forms:
+        return (
+            f"Field(s) {', '.join(both_forms)} given in both --set and --unset; "
+            "use one form per field"
+        )
+
+    mixed = sorted((set_fields | unset_fields) & (append_fields | remove_fields))
+    if mixed:
+        return (
+            f"Field(s) {', '.join(mixed)} given in both --set/--unset and --append/--remove; "
+            "use one form per field"
+        )
+    return None
+
+
+def _tuple_value(
+    config: PartitionConfig, parsed: dict[str, Any], field_name: str
+) -> tuple[Any, ...]:
+    """Current tuple value of *field_name*, including earlier edits."""
+    raw: object = parsed[field_name] if field_name in parsed else getattr(config, field_name, ())
+    return cast("tuple[Any, ...]", raw) if isinstance(raw, tuple) else ()
+
+
+def _chain_partition_of(item: str) -> str:
+    """Partition name of a chain item (the segment before the first ``:``)."""
+    return item.split(":", 1)[0].strip()
+
+
+def _parse_pairs(raw_value: str) -> tuple[tuple[str, str], ...] | None:
+    """Parse ``KEY:VALUE,KEY2:VALUE2`` into pairs.
+
+    Values may contain ``:`` (only the first one separates key and value);
+    an empty key or a missing separator makes the whole value invalid and
+    ``None`` is returned.
+    """
+    pairs: list[tuple[str, str]] = []
+    for entry in raw_value.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        key, separator, value = entry.partition(":")
+        key = key.strip()
+        if not separator or not key:
+            return None
+        pairs.append((key, value))
+    return tuple(pairs)
+
+
+def _parse_single_pair(item: str) -> tuple[str, str] | None:
+    """Parse exactly one ``KEY:VALUE`` pair, or ``None`` when malformed."""
+    pairs = _parse_pairs(item)
+    if pairs is None or len(pairs) != 1:
+        return None
+    return pairs[0]
+
+
+def _append_item(field_name: str, items: tuple[Any, ...], item: str) -> tuple[Any, ...] | None:
+    """Append *item* to *items*, or ``None`` when the item is malformed.
+
+    Chain fields merge by partition name: an item for a partition that is
+    already chained replaces that entry in place (keeping its position)
+    instead of adding a duplicate.
+    """
+    if field_name in _PAIR_FIELDS:
+        pair = _parse_single_pair(item)
+        return None if pair is None else (*items, pair)
+
+    entry = item.strip()
+    if not entry:
+        return None
+
+    if field_name in _CHAIN_FIELDS:
+        partition = _chain_partition_of(entry)
+        if not partition:
+            return None
+        for index, existing in enumerate(items):
+            if _chain_partition_of(str(existing)) == partition:
+                replaced = list(items)
+                replaced[index] = entry
+                return tuple(replaced)
+    return (*items, entry)
+
+
+def _remove_item(field_name: str, items: tuple[Any, ...], item: str) -> tuple[Any, ...] | None:
+    """Remove matching entries from *items*, or ``None`` when malformed.
+
+    Chain fields match by partition name (a bare partition name or a full
+    ``PARTITION:SLOT:KEY_FILE`` triple both work); every other tuple field
+    matches the whole item.
+    """
+    if field_name in _PAIR_FIELDS:
+        pair = _parse_single_pair(item)
+        if pair is None:
+            return None
+        return tuple(existing for existing in items if existing != pair)
+
+    entry = item.strip()
+    if not entry:
+        return None
+
+    if field_name in _CHAIN_FIELDS:
+        partition = _chain_partition_of(entry)
+        if not partition:
+            return None
+        return tuple(
+            existing for existing in items if _chain_partition_of(str(existing)) != partition
+        )
+    return tuple(existing for existing in items if existing != entry)

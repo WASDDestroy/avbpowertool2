@@ -149,7 +149,47 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help=(
             "Set a field, e.g. partition_size=67108864, block_size=4096, "
-            "kernel_cmdlines=a,b (repeatable; booleans: true/false)"
+            "key_id=testkey_rsa4096, algorithm=SHA256_RSA2048, image=boot.img, "
+            "kernel_cmdlines=a,b or props=key:value,key2:value2 "
+            "(repeatable; replaces the whole field; booleans: true/false)"
+        ),
+    )
+    p_cfg_edit.add_argument(
+        "--unset",
+        dest="unsets",
+        action="append",
+        metavar="FIELD",
+        default=[],
+        help=(
+            "Reset a field to its empty value: str -> '', int -> 0, bool -> false, "
+            "tuple -> empty (repeatable; fields that reject empty values, such as "
+            "image and algorithm, report their normal error)"
+        ),
+    )
+    p_cfg_edit.add_argument(
+        "--append",
+        dest="appends",
+        action="append",
+        metavar="FIELD=ITEM",
+        default=[],
+        help=(
+            "Append ITEM to a tuple field (repeatable, tuple fields only: "
+            "kernel_cmdlines, chain_partitions, chain_partitions_do_not_use_ab, "
+            "included_partitions, include_descriptors_from_image, props, "
+            "prop_from_file). For the chain fields an ITEM for an already-chained "
+            "partition (same name before the first ':') replaces that entry in place"
+        ),
+    )
+    p_cfg_edit.add_argument(
+        "--remove",
+        dest="removes",
+        action="append",
+        metavar="FIELD=ITEM",
+        default=[],
+        help=(
+            "Remove ITEM from a tuple field (repeatable, tuple fields only). The "
+            "chain fields match by partition name (bare name or full triple); other "
+            "tuple fields match the whole item"
         ),
     )
     p_cfg_edit.add_argument("--json", action="store_true", help="JSON output")

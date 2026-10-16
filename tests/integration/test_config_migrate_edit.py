@@ -189,3 +189,361 @@ class TestConfigEditUseCase:
             ConfigEditRequest(partition_name="boot", updates={"flags": "not-an-int"})
         )
         assert any(i.error_code == "config.invalid_field" for i in result.issues)
+
+    # ------------------------------------------------------------------
+    # P0-2: key_id / algorithm / image / props
+    # ------------------------------------------------------------------
+
+    def _profile_with_tuple_fields(self) -> AvbProfile:
+        return AvbProfile(
+            id="current",
+            name="Current",
+            partitions={
+                "vbmeta": PartitionConfig(
+                    image="vbmeta.img",
+                    descriptor=DescriptorType.VBMETA,
+                    algorithm=SigningAlgorithm.SHA256_RSA4096,
+                    key_id="testkey_rsa4096",
+                    partition_name="vbmeta",
+                    flags=1,
+                    salt="a1b2c3d4",
+                    use_persistent_digest=True,
+                    chain_partitions=("boot:3:old_boot.pem.bin", "recovery:1:rec.pem.bin"),
+                    included_partitions=("boot", "odm"),
+                ),
+            },
+        )
+
+    def _profile_json_path(self, ws: WorkspacePaths) -> Path:
+        return ws.resolve_profile_dir("current") / "profile.json"
+
+    def test_set_key_id_and_algorithm(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_partitions())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="boot",
+                updates={"key_id": "testkey_rsa2048", "algorithm": "SHA256_RSA2048"},
+            )
+        )
+        assert result.issues == ()
+
+        boot = ProfileRepository(ws).load("current").partitions["boot"]
+        assert boot.key_id == "testkey_rsa2048"
+        assert boot.algorithm is SigningAlgorithm.SHA256_RSA2048
+
+    def test_set_key_id_to_empty_string(self, tmp_path: Path) -> None:
+        """``NONE`` partitions need no key, so an empty key_id is legal."""
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_partitions())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(partition_name="boot", updates={"key_id": "", "algorithm": "NONE"})
+        )
+        assert result.issues == ()
+
+        boot = ProfileRepository(ws).load("current").partitions["boot"]
+        assert boot.key_id == ""
+        assert boot.algorithm is SigningAlgorithm.NONE
+
+    def test_invalid_algorithm_rejected_without_writing(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_partitions())
+        profile_path = self._profile_json_path(ws)
+        before = profile_path.read_bytes()
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(partition_name="boot", updates={"algorithm": "SHA256_MD5"})
+        )
+        assert any(i.error_code == "config.invalid_algorithm" for i in result.issues)
+        assert profile_path.read_bytes() == before
+
+    def test_image_must_end_with_img(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_partitions())
+        profile_path = self._profile_json_path(ws)
+        before = profile_path.read_bytes()
+
+        uc = ConfigEditUseCase(ws)
+        rejected = uc.execute(
+            ConfigEditRequest(partition_name="boot", updates={"image": "boot.bin"})
+        )
+        assert any(i.error_code == "config.invalid_field" for i in rejected.issues)
+        assert profile_path.read_bytes() == before
+
+        accepted = uc.execute(
+            ConfigEditRequest(partition_name="boot", updates={"image": "boot_new.img"})
+        )
+        assert accepted.issues == ()
+        assert ProfileRepository(ws).load("current").partitions["boot"].image == "boot_new.img"
+
+    def test_set_props_splits_on_first_colon(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_partitions())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="boot",
+                updates={"props": "KEY:VALUE,KEY2:VALUE:WITH:COLON"},
+            )
+        )
+        assert result.issues == ()
+
+        boot = ProfileRepository(ws).load("current").partitions["boot"]
+        assert boot.props == (("KEY", "VALUE"), ("KEY2", "VALUE:WITH:COLON"))
+
+    def test_set_props_with_empty_key_rejected(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_partitions())
+        profile_path = self._profile_json_path(ws)
+        before = profile_path.read_bytes()
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(partition_name="boot", updates={"props": ":VALUE"})
+        )
+        assert any(i.error_code == "config.invalid_field" for i in result.issues)
+        assert profile_path.read_bytes() == before
+
+    # ------------------------------------------------------------------
+    # P0-2: --unset
+    # ------------------------------------------------------------------
+
+    def test_unset_resets_each_field_type(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="vbmeta",
+                unset=("salt", "flags", "use_persistent_digest", "included_partitions"),
+            )
+        )
+        assert result.issues == ()
+
+        vbmeta = ProfileRepository(ws).load("current").partitions["vbmeta"]
+        assert vbmeta.salt == ""  # str -> ""
+        assert vbmeta.flags == 0  # int -> 0
+        assert vbmeta.use_persistent_digest is False  # bool -> False
+        assert vbmeta.included_partitions == ()  # tuple -> ()
+
+    def test_unset_unknown_field_rejected(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_partitions())
+        profile_path = self._profile_json_path(ws)
+        before = profile_path.read_bytes()
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(ConfigEditRequest(partition_name="boot", unset=("nonexistent",)))
+        assert any(i.error_code == "config.invalid_field" for i in result.issues)
+        assert profile_path.read_bytes() == before
+
+    # ------------------------------------------------------------------
+    # P0-2: --append / --remove
+    # ------------------------------------------------------------------
+
+    def test_append_included_partitions_accumulates_in_order(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="vbmeta",
+                appends=(("included_partitions", "dtbo"), ("included_partitions", "vendor_boot")),
+            )
+        )
+        assert result.issues == ()
+
+        vbmeta = ProfileRepository(ws).load("current").partitions["vbmeta"]
+        assert vbmeta.included_partitions == ("boot", "odm", "dtbo", "vendor_boot")
+
+    def test_append_chain_partition_replaces_same_name_in_place(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="vbmeta",
+                appends=(("chain_partitions", "boot:4:new_boot.pem.bin"),),
+            )
+        )
+        assert result.issues == ()
+
+        chains = ProfileRepository(ws).load("current").partitions["vbmeta"].chain_partitions
+        assert len(chains) == 2  # replaced, not duplicated
+        assert chains[0] == "boot:4:new_boot.pem.bin"  # position preserved
+        assert chains[1] == "recovery:1:rec.pem.bin"
+
+    def test_append_chain_partition_appends_new_name(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="vbmeta",
+                appends=(("chain_partitions", "vbmeta_system:2:sys.pem.bin"),),
+            )
+        )
+        assert result.issues == ()
+
+        chains = ProfileRepository(ws).load("current").partitions["vbmeta"].chain_partitions
+        assert chains == (
+            "boot:3:old_boot.pem.bin",
+            "recovery:1:rec.pem.bin",
+            "vbmeta_system:2:sys.pem.bin",
+        )
+
+    def test_append_props_single_pair(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_partitions())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="boot",
+                appends=(("props", "android.boot.vbmeta.digest:abc:def"),),
+            )
+        )
+        assert result.issues == ()
+
+        boot = ProfileRepository(ws).load("current").partitions["boot"]
+        assert boot.props == (("android.boot.vbmeta.digest", "abc:def"),)
+
+    def test_remove_chain_partition_by_bare_name(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(partition_name="vbmeta", removes=(("chain_partitions", "boot"),))
+        )
+        assert result.issues == ()
+
+        vbmeta = ProfileRepository(ws).load("current").partitions["vbmeta"]
+        assert vbmeta.chain_partitions == ("recovery:1:rec.pem.bin",)
+
+    def test_remove_chain_partition_by_full_triple(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="vbmeta",
+                removes=(("chain_partitions", "recovery:1:rec.pem.bin"),),
+            )
+        )
+        assert result.issues == ()
+
+        vbmeta = ProfileRepository(ws).load("current").partitions["vbmeta"]
+        assert vbmeta.chain_partitions == ("boot:3:old_boot.pem.bin",)
+
+    def test_remove_included_partition_by_full_value(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(partition_name="vbmeta", removes=(("included_partitions", "odm"),))
+        )
+        assert result.issues == ()
+
+        vbmeta = ProfileRepository(ws).load("current").partitions["vbmeta"]
+        assert vbmeta.included_partitions == ("boot",)
+
+    def test_remove_then_append_same_field(self, tmp_path: Path) -> None:
+        """Removes are applied before appends within one request."""
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="vbmeta",
+                removes=(("chain_partitions", "recovery"),),
+                appends=(("chain_partitions", "vbmeta_system:2:sys.pem.bin"),),
+            )
+        )
+        assert result.issues == ()
+
+        chains = ProfileRepository(ws).load("current").partitions["vbmeta"].chain_partitions
+        assert chains == ("boot:3:old_boot.pem.bin", "vbmeta_system:2:sys.pem.bin")
+
+    def test_set_and_append_same_field_conflict(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+        profile_path = self._profile_json_path(ws)
+        before = profile_path.read_bytes()
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="vbmeta",
+                updates={"included_partitions": "boot"},
+                appends=(("included_partitions", "dtbo"),),
+            )
+        )
+        assert any(i.error_code == "config.invalid_option_combination" for i in result.issues)
+        assert profile_path.read_bytes() == before
+
+    def test_unset_and_remove_same_field_conflict(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+        profile_path = self._profile_json_path(ws)
+        before = profile_path.read_bytes()
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="vbmeta",
+                unset=("chain_partitions",),
+                removes=(("chain_partitions", "boot"),),
+            )
+        )
+        assert any(i.error_code == "config.invalid_option_combination" for i in result.issues)
+        assert profile_path.read_bytes() == before
+
+    def test_append_on_scalar_field_rejected(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+        profile_path = self._profile_json_path(ws)
+        before = profile_path.read_bytes()
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(partition_name="vbmeta", appends=(("flags", "1"),))
+        )
+        assert any(i.error_code == "config.invalid_field" for i in result.issues)
+        assert profile_path.read_bytes() == before
+
+    def test_remove_on_scalar_field_rejected(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(partition_name="vbmeta", removes=(("key_id", "testkey_rsa4096"),))
+        )
+        assert any(i.error_code == "config.invalid_field" for i in result.issues)
+
+    def test_append_invalid_chain_item_rejected(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+        profile_path = self._profile_json_path(ws)
+        before = profile_path.read_bytes()
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(partition_name="vbmeta", appends=(("chain_partitions", "   "),))
+        )
+        assert any(i.error_code == "config.invalid_field" for i in result.issues)
+        assert profile_path.read_bytes() == before
