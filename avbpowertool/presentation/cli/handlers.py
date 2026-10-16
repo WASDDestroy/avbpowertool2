@@ -25,6 +25,7 @@ from avbpowertool.application.commands import (
     KeyRemoveRequest,
     LegacyImportRequest,
     ProfileActivateRequest,
+    ProfileDeleteRequest,
     ProfileListRequest,
     ProfileRenameRequest,
     SignImagesRequest,
@@ -53,6 +54,7 @@ from avbpowertool.application.services.manage_keys import (
 )
 from avbpowertool.application.services.manage_profiles import (
     ProfileActivateUseCase,
+    ProfileDeleteUseCase,
     ProfileListUseCase,
     ProfileRenameUseCase,
 )
@@ -67,6 +69,7 @@ from avbpowertool.presentation.cli.renderer import (
     render_config_check_chains,
     render_config_create,
     render_config_create_from_images,
+    render_config_delete,
     render_config_edit,
     render_config_migrate,
     render_config_rename,
@@ -125,6 +128,7 @@ def dispatch(args: Namespace, out: TextIO = sys.stdout) -> int:
         ActionId.CONFIG_EDIT: _handle_config_edit,
         ActionId.CONFIG_RENAME: _handle_config_rename,
         ActionId.CONFIG_CHECK_CHAINS: _handle_config_check_chains,
+        ActionId.CONFIG_DELETE: _handle_config_delete,
         ActionId.KEY_LIST: _handle_key_list,
         ActionId.KEY_DISCOVER: _handle_key_discover,
         ActionId.KEY_ENSURE_PUBLIC: _handle_key_ensure_public,
@@ -437,6 +441,28 @@ def _handle_config_rename(
         out,
         active_profile_id=ProfileRepository(workspace).get_active_profile_id(),
     )
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_config_delete(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    # Deleting a profile destroys its private keys, so --yes is a hard gate:
+    # without it nothing is touched and no use case is even built.
+    if not getattr(args, "yes", False):
+        print(
+            "This deletes the profile directory including its private keys. Use --yes to confirm.",
+            file=sys.stderr,
+        )
+        return 1
+
+    uc = ProfileDeleteUseCase(workspace)
+    request = ProfileDeleteRequest(
+        profile_id=args.profile,
+        force=getattr(args, "force", False),
+    )
+    result = uc.execute(request)
+    render_config_delete(result, as_json, out)
     return exit_code_from_issues(result.issues)
 
 

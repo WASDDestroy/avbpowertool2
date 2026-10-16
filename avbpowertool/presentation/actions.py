@@ -27,6 +27,7 @@ class ActionId(StrEnum):
     CONFIG_EDIT = "config.edit"
     CONFIG_RENAME = "config.rename"
     CONFIG_CHECK_CHAINS = "config.check_chains"
+    CONFIG_DELETE = "config.delete"
     KEY_LIST = "keys.list"
     KEY_DISCOVER = "keys.discover"
     KEY_ENSURE_PUBLIC = "keys.ensure_public"

@@ -316,6 +316,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_cfg_rename.add_argument("--json", action="store_true", help="JSON output")
     p_cfg_rename.set_defaults(action_id=ActionId.CONFIG_RENAME)
 
+    # config delete (destructive; --yes is a hard gate)
+    p_cfg_delete = cfg_sub.add_parser(
+        "delete",
+        help="Delete a profile (its directory, including its keys)",
+    )
+    p_cfg_delete.add_argument("profile", help="Profile ID to delete")
+    p_cfg_delete.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm the deletion (required; without it nothing is removed)",
+    )
+    p_cfg_delete.add_argument(
+        "--force",
+        action="store_true",
+        help="Also delete the active profile and clear .active-profile",
+    )
+    p_cfg_delete.add_argument("--json", action="store_true", help="JSON output")
+    p_cfg_delete.set_defaults(action_id=ActionId.CONFIG_DELETE)
+
     # --- keys ---
     p_keys = sub.add_parser("keys", help="Key store operations")
     keys_sub = p_keys.add_subparsers(dest="keys_command", required=True)

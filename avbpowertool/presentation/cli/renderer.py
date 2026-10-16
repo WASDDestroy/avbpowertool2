@@ -24,6 +24,7 @@ from avbpowertool.application.commands import (
     KeyRemoveResult,
     LegacyImportResult,
     ProfileActivateResult,
+    ProfileDeleteResult,
     ProfileListResult,
     ProfileRenameResult,
     SignImagesResult,
@@ -451,6 +452,35 @@ def render_config_rename(
         _emit_text(f"  Display name:   {'changed' if result.name_changed else 'unchanged'}", out)
         if active_profile_id is not None:
             _emit_text(f"  Active profile: {active_profile_id}", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_config_delete(
+    result: ProfileDeleteResult, as_json: bool, out: TextIO = sys.stdout
+) -> None:
+    """Render the result of ``config delete``.
+
+    The JSON contract is exactly ``profile_id`` / ``deleted`` /
+    ``deleted_files`` / ``deleted_bytes`` / ``issues``.
+    """
+    if as_json:
+        _emit_json(
+            {
+                "profile_id": result.profile_id,
+                "deleted": result.deleted,
+                "deleted_files": result.deleted_files,
+                "deleted_bytes": result.deleted_bytes,
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if not result.issues:
+        _emit_text(f"Deleted profile: {result.profile_id}", out)
+        _emit_text(f"  Files: {result.deleted_files}", out)
+        _emit_text(f"  Bytes: {result.deleted_bytes}", out)
     for iss in result.issues:
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
 

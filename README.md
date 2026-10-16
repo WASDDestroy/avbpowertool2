@@ -114,6 +114,10 @@ avbpowertool config check-chains --profile myprofile --json
 # Rename a profile (directory id and/or display name)
 avbpowertool config rename myprofile my_device_rom --name "My Device ROM"
 
+# Delete a profile (its directory and keys; --yes is mandatory,
+# --force also allows deleting the active profile)
+avbpowertool config delete my_device_rom --yes --json
+
 # Key store
 avbpowertool keys list          --profile myprofile
 avbpowertool keys discover      --profile myprofile            # --replace drops cached public keys

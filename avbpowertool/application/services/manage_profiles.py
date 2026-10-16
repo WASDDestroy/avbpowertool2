@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
+from pathlib import Path
 
 from avbpowertool.application.commands import (
     ProfileActivateRequest,
@@ -111,39 +112,142 @@ class ProfileActivateUseCase:
 
 
 class ProfileDeleteUseCase:
-    """Delete a profile, refusing to remove the active profile."""
+    """Delete a profile directory, refusing the active one unless forced.
+
+    Order of operations — every failure returns before anything is removed:
+
+    1. the id must be a plain directory name: empty, ``.``, ``..`` or
+       anything containing ``/`` / ``\\`` is rejected with
+       ``config.invalid_profile_id``, and so is a value whose resolved
+       directory is not a *direct* child of ``profiles/`` (defence in depth
+       against a path that escapes the profile root);
+    2. ``profiles/<id>/profile.json`` must exist (a bare directory does not
+       count), otherwise ``config.not_found``;
+    3. the active profile is refused with ``config.active_delete_forbidden``
+       unless ``force`` is set;
+    4. the files under the directory are counted *before* the removal, so
+       ``deleted_files`` / ``deleted_bytes`` describe what was there;
+    5. the directory is removed; an ``OSError`` (a locked file on Windows,
+       for instance) reports ``config.delete_failed``;
+    6. with ``force``, ``.active-profile`` is unlinked when it still pointed
+       at the deleted id (a missing file is ignored).
+    """
 
     def __init__(self, workspace: WorkspacePaths) -> None:
         self._ws = workspace
 
     def execute(self, request: ProfileDeleteRequest) -> ProfileDeleteResult:
-        repo = ProfileRepository(self._ws)
-        if request.profile_id not in repo.list_profiles():
-            logger.warning("Cannot delete missing profile %r", request.profile_id)
+        profile_id = request.profile_id
+
+        # 1. Never let an id address anything but one directory under
+        # profiles/: a separator or a dot-dot would make rmtree escape.
+        if not profile_id or profile_id in (".", "..") or "/" in profile_id or "\\" in profile_id:
+            logger.warning("Refused to delete invalid profile id %r", profile_id)
             return ProfileDeleteResult(
-                request.profile_id,
-                (OperationIssue("config.not_found", f"Profile not found: {request.profile_id}"),),
+                profile_id,
+                (
+                    OperationIssue(
+                        "config.invalid_profile_id",
+                        f"Invalid profile id: {profile_id!r} "
+                        "(must be a single directory name under profiles/)",
+                    ),
+                ),
             )
-        if repo.get_active_profile_id() == request.profile_id:
-            logger.warning("Refused to delete active profile %r", request.profile_id)
+
+        profile_dir = self._ws.resolve_profile_dir(profile_id)
+        if profile_dir.resolve().parent != self._ws.profiles.resolve():
+            logger.warning("Refused to delete profile id outside profiles/: %r", profile_id)
             return ProfileDeleteResult(
-                request.profile_id,
+                profile_id,
+                (
+                    OperationIssue(
+                        "config.invalid_profile_id",
+                        f"Invalid profile id: {profile_id!r} "
+                        "(must be a single directory name under profiles/)",
+                    ),
+                ),
+            )
+
+        repo = ProfileRepository(self._ws)
+
+        # 2. A directory without profile.json is not a profile.
+        if not (profile_dir / "profile.json").is_file():
+            logger.warning("Cannot delete missing profile %r", profile_id)
+            return ProfileDeleteResult(
+                profile_id,
+                (OperationIssue("config.not_found", f"Profile not found: {profile_id}"),),
+            )
+
+        # 3. The active profile is protected unless the caller forces it.
+        active_id = repo.get_active_profile_id()
+        if active_id == profile_id and not request.force:
+            logger.warning("Refused to delete active profile %r", profile_id)
+            return ProfileDeleteResult(
+                profile_id,
                 (
                     OperationIssue(
                         "config.active_delete_forbidden", "Cannot delete the active profile"
                     ),
                 ),
             )
+
+        # 4. Count what is about to go away (rmtree destroys the evidence).
+        deleted_files, deleted_bytes = _count_regular_files(profile_dir)
+
+        # 5. Remove the directory.
         try:
-            repo.delete(request.profile_id)
-            logger.info("Deleted profile %r", request.profile_id)
-        except Exception as exc:
-            logger.error("Failed to delete profile %r: %s", request.profile_id, exc)
+            repo.delete(profile_id)
+        except (OSError, ConfigError) as exc:
+            logger.error("Failed to delete profile %r: %s", profile_id, exc)
             return ProfileDeleteResult(
-                request.profile_id,
+                profile_id,
                 (OperationIssue("config.delete_failed", f"Failed to delete profile: {exc}"),),
             )
-        return ProfileDeleteResult(request.profile_id)
+
+        # 6. A forced delete of the active profile must not leave a dangling
+        # pointer behind; another profile's pointer is left alone.
+        if active_id == profile_id:
+            try:
+                self._clear_active_pointer(profile_id)
+            except OSError as exc:
+                logger.error("Failed to clear .active-profile for %r: %s", profile_id, exc)
+
+        logger.info(
+            "Deleted profile %r (%d files, %d bytes)", profile_id, deleted_files, deleted_bytes
+        )
+        return ProfileDeleteResult(
+            profile_id,
+            deleted=True,
+            deleted_files=deleted_files,
+            deleted_bytes=deleted_bytes,
+        )
+
+    def _clear_active_pointer(self, profile_id: str) -> None:
+        """Unlink ``.active-profile`` when it still names *profile_id*."""
+        active_path = self._ws.root / ".active-profile"
+        if not active_path.exists():
+            return
+        if active_path.read_text(encoding="utf-8").strip() != profile_id:
+            return
+        active_path.unlink()
+        logger.info("Cleared .active-profile after deleting %r", profile_id)
+
+
+def _count_regular_files(directory: Path) -> tuple[int, int]:
+    """Return ``(file_count, total_bytes)`` of the regular files under *directory*."""
+    files = 0
+    total = 0
+    for path in directory.rglob("*"):
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+            total += path.stat().st_size
+        except OSError:
+            # A file that cannot be stat'ed simply does not contribute; the
+            # removal below decides whether the delete itself fails.
+            continue
+        files += 1
+    return files, total
 
 
 class ProfileRenameUseCase:

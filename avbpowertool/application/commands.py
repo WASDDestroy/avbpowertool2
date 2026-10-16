@@ -471,17 +471,32 @@ class ProfileActivateResult:
 
 @dataclass(frozen=True)
 class ProfileDeleteRequest:
-    """Request to delete a profile."""
+    """Request to delete a profile.
+
+    ``force`` allows deleting the *active* profile: the directory is removed
+    and ``.active-profile`` is cleared when it pointed at the deleted id.
+    Without it, deleting the active profile is refused with
+    ``config.active_delete_forbidden``.
+    """
 
     profile_id: str
+    force: bool = False
 
 
 @dataclass(frozen=True)
 class ProfileDeleteResult:
-    """Result of deleting a profile."""
+    """Result of deleting a profile.
+
+    ``deleted`` is True only when the directory was really removed;
+    ``deleted_files`` / ``deleted_bytes`` describe the regular files that
+    were counted just before the removal.
+    """
 
     profile_id: str
     issues: tuple[OperationIssue, ...] = ()
+    deleted: bool = False
+    deleted_files: int = 0
+    deleted_bytes: int = 0
 
 
 @dataclass(frozen=True)

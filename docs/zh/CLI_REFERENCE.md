@@ -18,6 +18,7 @@ AVBPowerTool2 命令行的完整参考：命令面、参数语义、退出码与
   - [`config edit`](#config-edit)
   - [`config check-chains`](#config-check-chains)
   - [`config rename`](#config-rename)
+  - [`config delete`](#config-delete)
   - [`config import` / `config import-legacy` / `config export` / `config migrate`](#config-import--config-import-legacy--config-export--config-migrate)
   - [`keys list` / `keys discover` / `keys ensure-public` / `keys add` / `keys remove`](#keys-子命令)
   - [`about`](#about)
@@ -48,8 +49,8 @@ avbpowertool                             # 不带参数 -> TUI
   `boot` 与 `boot.img`（`.img` 后缀会被去掉，重复项只保留第一次出现的位置）。
 - **只读与写盘**：`config show` / `config validate` / `config check-chains` /
   `image inspect` / `keys list` / 所有 `--help` 都是只读的，不会改写任何文件。
-  `config edit` / `config create` / `config rename` / `keys ...` 会写盘。
-  注意：**任何 `save` 都会用 `encode_profile` 重排并省略默认值地重写整个
+  `config edit` / `config create` / `config rename` / `config delete` /
+  `keys ...` 会写盘。注意：**任何 `save` 都会用 `encode_profile` 重排并省略默认值地重写整个
   `profile.json`**，手工排版会丢失。
 - **已弃用别名**：`read` / `sign` / `get_all_config` / `check_l10n` 仍然接受，
   但会打印弃用警告后转发到新命令，行为不再单独保证。
@@ -61,7 +62,7 @@ avbpowertool                             # 不带参数 -> TUI
 | 退出码 | 触发条件 |
 |---|---|
 | `0` | 成功。也用于「错误码前缀不在下表任何一类」的 issue —— 未知前缀不会把成功变成失败 |
-| `1` | issue 中出现 `config.*` / `keys.*` / `image.*` / `chain.*` 前缀；另外两种显式情况：`config validate` 报告了 `missing_images` / `missing_keys`；`image sign --execute` 没有同时给 `--yes`（stderr 打印 `This will modify image files. Use --yes to confirm.`） |
+| `1` | issue 中出现 `config.*` / `keys.*` / `image.*` / `chain.*` 前缀；另外两种显式情况：`config validate` 报告了 `missing_images` / `missing_keys`；`image sign --execute` / `config delete` 没有同时给 `--yes`（stderr 分别打印 `This will modify image files. Use --yes to confirm.` 与 `This deletes the profile directory including its private keys. Use --yes to confirm.`） |
 | `2` | argparse 用法错误：未知命令或旗标、缺少必填参数、互斥旗标同时给出（`--from-images` + `--allow-empty`、`--activate` + `--no-activate`、`--merge` + `--replace`），以及 `config create --overwrite` 没给 `--from-images` |
 | `3` | issue 中出现 `tool.*` / `signing.*` 前缀（avbtool 子进程失败、签名步骤失败） |
 
@@ -126,8 +127,8 @@ if ($LASTEXITCODE -ne 0) { throw "chain check failed" }
 - `config edit` / `config migrate` 的 `--profile` 默认值也是 `current`，同样走
   上面的严格解析（无活动配置时 `config.no_active_profile`）。它们的 `--help`
   文案只写了 `(default: current)`，行为与上表一致。
-- `config export` / `config rename` / `config import-legacy` **不接受** `--profile`：
-  它们用位置参数显式指定 id（脚本始终知道 id）。
+- `config export` / `config rename` / `config delete` / `config import-legacy`
+  **不接受** `--profile`：它们用位置参数显式指定 id（脚本始终知道 id）。
 
 ---
 
@@ -426,6 +427,50 @@ avbpowertool config rename [-h] [--name NEW_NAME] [--json] OLD NEW
 
 `--json` 顶层键：`old_profile_id`、`profile_id`、`renamed`、`name_changed`、`issues[]`。
 
+### `config delete`
+
+```
+avbpowertool config delete [-h] [--yes] [--force] [--json] profile
+```
+
+**破坏性命令**：删除 `profiles/<profile>/` **整个目录**，包括 `keys/` 下的私钥。
+没有回收站、没有软删除、没有「按前缀/时间戳批量清理」——一次只删一个显式 id。
+
+| 参数 | 说明 |
+|---|---|
+| `profile`（必填） | 要删除的配置 id（目录名） |
+| `--yes` | **硬门槛**：不给时什么都不删，stderr 打印 `This deletes the profile directory including its private keys. Use --yes to confirm.` 并返回退出码 `1` |
+| `--force` | 允许删除**活动配置**；删除后会清掉指向它的 `.active-profile` |
+| `--json` | JSON 输出 |
+
+判定顺序（每步失败都在删除任何东西之前返回）：
+
+1. **`--yes` 门槛**：缺 `--yes` → stderr 提示 + 退出码 `1`，连用例都不会构造；
+2. **id 安全校验**：id 为空、为 `.` / `..`、或含路径分隔符（`/`、`\`）
+   → `config.invalid_profile_id`；随后再确认
+   `profiles/<id>` 解析后**正好是 `profiles/` 的直接子目录**，否则同样报
+   `config.invalid_profile_id`（防止 `rmtree` 越界到工作区甚至更上层）；
+3. `profiles/<profile>/profile.json` 必须存在（只有目录不算）→ 否则 `config.not_found`；
+4. 目标是**活动配置**且未给 `--force` → `config.active_delete_forbidden`，目录保持原样；
+5. **统计**目录下的普通文件数与字节数（在 `rmtree` **之前**统计，所以 `deleted_files` /
+   `deleted_bytes` 描述的是「删掉了什么」）；
+6. 删除目录；`OSError`（例如 Windows 上文件被占用）→ `config.delete_failed`，
+   此时 `deleted` 为 `false`；
+7. 第 4 步用了 `--force` 且 `.active-profile` 内容**正好**是被删 id 时，unlink 该文件
+   （文件不存在则忽略）；指向**别的**配置时不动它。
+
+`--json` 顶层键：`profile_id`、`deleted`、`deleted_files`、`deleted_bytes`、`issues[]`。
+成功时 `deleted` 为 `true`；文本模式形如：
+
+```
+Deleted profile: my_testkey_config
+  Files: 12
+  Bytes: 40960
+```
+
+> 与 TUI 一致：TUI 的配置管理器删除活动配置同样被拒绝
+> （`config.active_delete_forbidden`），`--force` 只存在于 CLI。
+
 ### `config import` / `config import-legacy` / `config export` / `config migrate`
 
 ```
@@ -515,9 +560,9 @@ avbpowertool about [-h]
 
 | 错误码 | 含义 |
 |---|---|
-| `config.not_found` | 配置（或归档）不存在 |
+| `config.not_found` | 配置（或归档）不存在（`config delete` 也用它表示目标不存在） |
 | `config.no_active_profile` | 请求 `current`/空，但没有活动配置 |
-| `config.invalid_profile_id` | id 含非法字符（只允许字母、数字、`_`、`-`、`.`） |
+| `config.invalid_profile_id` | id 含非法字符（只允许字母、数字、`_`、`-`、`.`）；`config delete` 还会拒绝空、`.`、`..`、含路径分隔符、或解析后不是 `profiles/` 直接子目录的 id |
 | `config.profile_exists` | 同名配置已存在 |
 | `config.no_partitions` | 配置没有任何分区 |
 | `config.invalid_field` | `config edit` 字段不在白名单，或值非法 |
@@ -545,9 +590,9 @@ avbpowertool about [-h]
 | `config.parse_error` | `profile.json` 无法解析 |
 | `config.invalid_archive` | 归档格式非法 |
 | `config.import_failed` / `config.export_failed` | 导入 / 导出失败 |
-| `config.create_failed` / `config.save_failed` / `config.migrate_failed` / `config.rename_failed` / `config.activate_failed` / `config.delete_failed` | 对应写盘操作失败 |
+| `config.create_failed` / `config.save_failed` / `config.migrate_failed` / `config.rename_failed` / `config.activate_failed` / `config.delete_failed` | 对应写盘操作失败（`config.delete_failed` 是 `config delete` 的 `rmtree` 失败，此时 `deleted` 为 `false`） |
 | `config.load_error` | 读取配置失败 |
-| `config.active_delete_forbidden` | 拒绝删除活动配置 |
+| `config.active_delete_forbidden` | 拒绝删除活动配置（`config delete` 加 `--force` 才允许） |
 | `config.unsupported_descriptor` | 签名计划遇到不支持的描述符类型 |
 
 ### `keys.*` → 退出码 1
@@ -643,6 +688,9 @@ avbpowertool config export my_testkey_config --output my_testkey_config.zip --js
 # 8) 之后可以按需激活并试跑签名计划
 avbpowertool config activate my_testkey_config
 avbpowertool image sign boot vbmeta --dry-run --json
+
+# 9) 清理：删除配置（破坏性，必须显式 --yes；活动配置还要 --force）
+avbpowertool config delete my_testkey_config --yes --force --json
 ```
 
 每一步都可以用退出码做门禁：

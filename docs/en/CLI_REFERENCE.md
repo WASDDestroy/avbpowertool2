@@ -21,6 +21,7 @@ argument semantics, exit codes, and error codes.
   - [`config edit`](#config-edit)
   - [`config check-chains`](#config-check-chains)
   - [`config rename`](#config-rename)
+  - [`config delete`](#config-delete)
   - [`config import` / `config import-legacy` / `config export` / `config migrate`](#config-import--config-import-legacy--config-export--config-migrate)
   - [`keys` subcommands](#keys-subcommands)
   - [`about`](#about)
@@ -57,9 +58,10 @@ avbpowertool                             # no arguments   -> TUI
 - **Read-only vs. writing**: `config show` / `config validate` /
   `config check-chains` / `image inspect` / `keys list` and every `--help` are
   read-only and never rewrite a file. `config edit` / `config create` /
-  `config rename` / `keys ...` write to disk. Note that **every `save` rewrites
-  the whole `profile.json` through `encode_profile`, reordering it and omitting
-  default values**, so hand-formatted JSON is not preserved.
+  `config rename` / `config delete` / `keys ...` write to disk. Note that
+  **every `save` rewrites the whole `profile.json` through `encode_profile`,
+  reordering it and omitting default values**, so hand-formatted JSON is not
+  preserved.
 - **Deprecated aliases**: `read` / `sign` / `get_all_config` / `check_l10n` are
   still accepted, but they print a deprecation warning and forward to the new
   command; their behaviour is no longer guaranteed separately.
@@ -71,7 +73,7 @@ avbpowertool                             # no arguments   -> TUI
 | Exit code | Triggered by |
 |---|---|
 | `0` | Success. Also used for issues whose error-code prefix is in none of the classes below — an unknown prefix never turns a success into a failure |
-| `1` | Any issue prefixed `config.*` / `keys.*` / `image.*` / `chain.*`; plus two explicit cases: `config validate` reporting `missing_images` / `missing_keys`, and `image sign --execute` without `--yes` (which prints `This will modify image files. Use --yes to confirm.` to stderr) |
+| `1` | Any issue prefixed `config.*` / `keys.*` / `image.*` / `chain.*`; plus three explicit cases: `config validate` reporting `missing_images` / `missing_keys`; `image sign --execute` without `--yes` (stderr: `This will modify image files. Use --yes to confirm.`); `config delete` without `--yes` (stderr: `This deletes the profile directory including its private keys. Use --yes to confirm.`) |
 | `2` | argparse usage error: unknown command or flag, missing required argument, mutually exclusive flags given together (`--from-images` + `--allow-empty`, `--activate` + `--no-activate`, `--merge` + `--replace`), and `config create --overwrite` without `--from-images` |
 | `3` | Any issue prefixed `tool.*` / `signing.*` (an avbtool subprocess failure, a failed signing step) |
 
@@ -141,9 +143,9 @@ Key points:
   the strict resolution above (`config.no_active_profile` when there is no
   active profile). Their `--help` text only says `(default: current)`; the
   behaviour matches the table.
-- `config export` / `config rename` / `config import-legacy` do **not** accept
-  `--profile`: they take the id as a positional argument (a script always knows
-  the id).
+- `config export` / `config rename` / `config delete` / `config import-legacy`
+  do **not** accept `--profile`: they take the id as a positional argument (a
+  script always knows the id).
 
 ---
 
@@ -478,6 +480,59 @@ directory.
 Top-level `--json` keys: `old_profile_id`, `profile_id`, `renamed`,
 `name_changed`, `issues[]`.
 
+### `config delete`
+
+```
+avbpowertool config delete [-h] [--yes] [--force] [--json] profile
+```
+
+A **destructive** command: it removes the whole `profiles/<profile>/`
+directory, **including the private keys** under `keys/`. There is no recycle
+bin, no soft delete, and no "clean up by prefix/timestamp" batching — one
+explicit id per invocation.
+
+| Argument | Meaning |
+|---|---|
+| `profile` (required) | Profile id (directory name) to delete |
+| `--yes` | **Hard gate**: without it nothing is deleted; it prints `This deletes the profile directory including its private keys. Use --yes to confirm.` to stderr and returns exit code `1` |
+| `--force` | Allow deleting the **active** profile; `.active-profile` is cleared afterwards when it pointed at the deleted id |
+| `--json` | JSON output |
+
+Order of operations (every failure returns before anything is removed):
+
+1. **the `--yes` gate**: without it the message above goes to stderr with exit
+   code `1`, and no use case is even constructed;
+2. **id safety check**: an empty id, `.` / `..`, or an id containing a path
+   separator (`/`, `\`) gives `config.invalid_profile_id`; it then confirms that
+   `profiles/<id>` resolves to a **direct** child of `profiles/`, and otherwise
+   reports `config.invalid_profile_id` too (this keeps `rmtree` from escaping
+   into the workspace or above it);
+3. `profiles/<profile>/profile.json` must exist (a bare directory does not
+   count), otherwise `config.not_found`;
+4. the **active** profile is refused with `config.active_delete_forbidden`
+   unless `--force` is given, and the directory stays untouched;
+5. the regular files and bytes under the directory are **counted before the
+   removal**, so `deleted_files` / `deleted_bytes` describe what was deleted;
+6. the directory is removed; an `OSError` (a locked file on Windows, for
+   instance) reports `config.delete_failed`, with `deleted` staying `false`;
+7. when step 4 was forced and `.active-profile` holds **exactly** the deleted
+   id, that file is unlinked (a missing file is ignored); a pointer to
+   **another** profile is left alone.
+
+Top-level `--json` keys: `profile_id`, `deleted`, `deleted_files`,
+`deleted_bytes`, `issues[]`. On success `deleted` is `true`; the text mode
+looks like:
+
+```
+Deleted profile: my_testkey_config
+  Files: 12
+  Bytes: 40960
+```
+
+> The TUI agrees with the default: its config manager refuses to delete the
+> active profile too (`config.active_delete_forbidden`). `--force` exists in
+> the CLI only.
+
 ### `config import` / `config import-legacy` / `config export` / `config migrate`
 
 ```
@@ -581,9 +636,9 @@ result of the `exit_code_from_issues` mapping.
 
 | Error code | Meaning |
 |---|---|
-| `config.not_found` | Profile (or archive) not found |
+| `config.not_found` | Profile (or archive) not found (`config delete` reports it for a missing target too) |
 | `config.no_active_profile` | `current`/empty was requested but nothing is active |
-| `config.invalid_profile_id` | The id contains illegal characters (only letters, digits, `_`, `-`, `.` are allowed) |
+| `config.invalid_profile_id` | The id contains illegal characters (only letters, digits, `_`, `-`, `.` are allowed); `config delete` also rejects an empty id, `.`, `..`, any path separator, and an id that does not resolve to a direct child of `profiles/` |
 | `config.profile_exists` | A profile with that name already exists |
 | `config.no_partitions` | The profile has no partitions |
 | `config.invalid_field` | A `config edit` field is not whitelisted, or its value is invalid |
@@ -611,9 +666,9 @@ result of the `exit_code_from_issues` mapping.
 | `config.parse_error` | `profile.json` cannot be parsed |
 | `config.invalid_archive` | Invalid archive format |
 | `config.import_failed` / `config.export_failed` | Import / export failed |
-| `config.create_failed` / `config.save_failed` / `config.migrate_failed` / `config.rename_failed` / `config.activate_failed` / `config.delete_failed` | The corresponding write operation failed |
+| `config.create_failed` / `config.save_failed` / `config.migrate_failed` / `config.rename_failed` / `config.activate_failed` / `config.delete_failed` | The corresponding write operation failed (`config.delete_failed` is a failing `rmtree` in `config delete`, which leaves `deleted` at `false`) |
 | `config.load_error` | Reading the profile failed |
-| `config.active_delete_forbidden` | Refused to delete the active profile |
+| `config.active_delete_forbidden` | Refused to delete the active profile (`config delete` needs `--force` for that) |
 | `config.unsupported_descriptor` | The signing plan met an unsupported descriptor type |
 
 ### `keys.*` → exit code 1
@@ -711,6 +766,10 @@ avbpowertool config export my_testkey_config --output my_testkey_config.zip --js
 # 8) Activate it and preview the signing plan
 avbpowertool config activate my_testkey_config
 avbpowertool image sign boot vbmeta --dry-run --json
+
+# 9) Clean up: delete the profile (destructive, --yes is mandatory;
+#    an active profile additionally needs --force)
+avbpowertool config delete my_testkey_config --yes --force --json
 ```
 
 Every step can be gated on the exit code:

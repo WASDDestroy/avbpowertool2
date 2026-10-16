@@ -6,15 +6,19 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from avbpowertool.application.commands import (
     ConfigEditRequest,
     ProfileActivateRequest,
+    ProfileDeleteRequest,
     ProfileListRequest,
     ProfileRenameRequest,
 )
 from avbpowertool.application.services.manage_configs import ConfigEditUseCase
 from avbpowertool.application.services.manage_profiles import (
     ProfileActivateUseCase,
+    ProfileDeleteUseCase,
     ProfileListUseCase,
     ProfileRenameUseCase,
 )
@@ -162,6 +166,118 @@ class TestProfileActivateUseCase:
 
         repo = ProfileRepository(ws)
         assert repo.get_active_profile_id() == "beta"
+
+
+class TestProfileDeleteUseCase:
+    def test_delete_removes_directory_and_keys_with_stats(self, tmp_path: Path) -> None:
+        ws = _setup_ws(tmp_path)
+        profile_dir = _write_profile(ws, "alpha", name="Alpha")
+        _write_profile(ws, "beta", name="Beta")
+        beta_before = (ws.resolve_profile_dir("beta") / "profile.json").read_bytes()
+        expected_files = sum(1 for p in profile_dir.rglob("*") if p.is_file())
+        expected_bytes = sum(p.stat().st_size for p in profile_dir.rglob("*") if p.is_file())
+
+        result = ProfileDeleteUseCase(ws).execute(ProfileDeleteRequest(profile_id="alpha"))
+
+        assert result.issues == ()
+        assert result.profile_id == "alpha"
+        assert result.deleted is True
+        assert result.deleted_files == expected_files
+        assert result.deleted_bytes == expected_bytes
+        assert result.deleted_files > 0
+        assert result.deleted_bytes > 0
+
+        assert not ws.resolve_profile_dir("alpha").exists()
+        # The private keys went away with the directory.
+        assert not (ws.profiles / "alpha" / "keys" / "testkey_rsa4096.pem").exists()
+        # Another profile is untouched.
+        assert ProfileRepository(ws).list_profiles() == ("beta",)
+        assert (ws.resolve_profile_dir("beta") / "profile.json").read_bytes() == beta_before
+
+    def test_missing_profile_is_not_found(self, tmp_path: Path) -> None:
+        ws = _setup_ws(tmp_path)
+
+        result = ProfileDeleteUseCase(ws).execute(ProfileDeleteRequest(profile_id="missing"))
+
+        assert [i.error_code for i in result.issues] == ["config.not_found"]
+        assert result.deleted is False
+        assert result.deleted_files == 0
+        assert result.deleted_bytes == 0
+
+    def test_directory_without_profile_json_is_not_found(self, tmp_path: Path) -> None:
+        ws = _setup_ws(tmp_path)
+        ws.resolve_profile_dir("ghost").mkdir(parents=True)
+
+        result = ProfileDeleteUseCase(ws).execute(ProfileDeleteRequest(profile_id="ghost"))
+
+        assert [i.error_code for i in result.issues] == ["config.not_found"]
+        assert result.deleted is False
+        assert ws.resolve_profile_dir("ghost").is_dir()
+
+    def test_active_profile_is_forbidden_without_force(self, tmp_path: Path) -> None:
+        ws = _setup_ws(tmp_path)
+        _write_profile(ws, "alpha", name="Alpha")
+        repo = ProfileRepository(ws)
+        repo.activate("alpha")
+
+        result = ProfileDeleteUseCase(ws).execute(ProfileDeleteRequest(profile_id="alpha"))
+
+        assert [i.error_code for i in result.issues] == ["config.active_delete_forbidden"]
+        assert result.deleted is False
+        assert ws.resolve_profile_dir("alpha").is_dir()
+        assert (ws.resolve_profile_dir("alpha") / "profile.json").is_file()
+        assert repo.get_active_profile_id() == "alpha"
+
+    def test_force_deletes_active_profile_and_clears_pointer(self, tmp_path: Path) -> None:
+        ws = _setup_ws(tmp_path)
+        _write_profile(ws, "alpha", name="Alpha")
+        ProfileRepository(ws).activate("alpha")
+
+        result = ProfileDeleteUseCase(ws).execute(
+            ProfileDeleteRequest(profile_id="alpha", force=True)
+        )
+
+        assert result.issues == ()
+        assert result.deleted is True
+        assert not ws.resolve_profile_dir("alpha").exists()
+        active_path = ws.root / ".active-profile"
+        assert not active_path.exists() or active_path.read_text(encoding="utf-8").strip() == ""
+
+    def test_force_keeps_a_pointer_to_another_profile(self, tmp_path: Path) -> None:
+        ws = _setup_ws(tmp_path)
+        _write_profile(ws, "alpha", name="Alpha")
+        _write_profile(ws, "beta", name="Beta")
+        repo = ProfileRepository(ws)
+        repo.activate("beta")
+
+        result = ProfileDeleteUseCase(ws).execute(
+            ProfileDeleteRequest(profile_id="alpha", force=True)
+        )
+
+        assert result.issues == ()
+        assert result.deleted is True
+        assert repo.get_active_profile_id() == "beta"
+
+    @pytest.mark.parametrize("bad_id", ["..", "a/b", "a\\b", ".", ""])
+    def test_dangerous_ids_never_touch_the_filesystem(self, tmp_path: Path, bad_id: str) -> None:
+        """A path-ish id must not make ``rmtree`` escape ``profiles/``."""
+        ws = _setup_ws(tmp_path)
+        _write_profile(ws, "alpha", name="Alpha")
+        root_before = sorted(p.name for p in tmp_path.iterdir())
+
+        result = ProfileDeleteUseCase(ws).execute(
+            ProfileDeleteRequest(profile_id=bad_id, force=True)
+        )
+
+        assert [i.error_code for i in result.issues] == ["config.invalid_profile_id"]
+        assert result.deleted is False
+        assert result.deleted_files == 0
+        # The workspace root, profiles/ and the profiles themselves survive.
+        assert ws.root.is_dir()
+        assert ws.profiles.is_dir()
+        assert ws.resolve_profile_dir("alpha").is_dir()
+        assert (ws.resolve_profile_dir("alpha") / "profile.json").is_file()
+        assert sorted(p.name for p in tmp_path.iterdir()) == root_before
 
 
 class TestProfileRenameUseCase:
