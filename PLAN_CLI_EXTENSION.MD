@@ -424,12 +424,12 @@ avbpowertool config export my_testkey_config --output my_testkey_config.zip --js
 
 ## 8. 未决问题（实现前需确认）
 
-| # | 问题 | 影响 |
-|---|---|---|
-| Q1 | 镜像头部算法为 `NONE` 的分区（实测 `dtbo`/`init_boot`/`pvmfw`/`vendor_boot`），步骤 4 的"换 key"是否应同时把 `algorithm` 改为 `SHA256_RSA4096`？ | 决定包装脚本是"只改 key_id"（NONE 下是空操作）还是"key+algorithm 一起改" |
-| Q2 | "剪掉 `--include_descriptors_from_image` 条目"指配置里的 `included_partitions`（分区名，签名时转成该参数），还是字面字段 `include_descriptors_from_image`（镜像文件名，目前无生产者自动填）？ | 决定 P1-2/P0-2 的剪枝实现位置 |
-| Q3 | `chain_partitions` 硬编码三条是"整组替换"还是"按分区名合并（保留镜像读回的其它链）"？ | 决定 `--append` 语义是否够用，或需要 `--set` 替换语义 |
-| Q4 | `--core/--mi/--oplus` 的 hashtree 分区是否需要还原原始 `partition_size`？`info_image` 无法读出该值 | 决定是否要新增 `--partition-size PART=SIZE` 之类的外部输入通道 |
+| # | 问题 | 影响 | 作答 |
+|---|---|---|---|
+| Q1 | 镜像头部算法为 `NONE` 的分区（实测 `dtbo`/`init_boot`/`pvmfw`/`vendor_boot`），步骤 4 的"换 key"是否应同时把 `algorithm` 改为 `SHA256_RSA4096`？ | 决定包装脚本是"只改 key_id"（NONE 下是空操作）还是"key+algorithm 一起改" | 这些分区的算法保持 NONE |
+| Q2 | "剪掉 `--include_descriptors_from_image` 条目"指配置里的 `included_partitions`（分区名，签名时转成该参数），还是字面字段 `include_descriptors_from_image`（镜像文件名，目前无生产者自动填）？ | 决定 P1-2/P0-2 的剪枝实现位置 | 剪掉 `included_partitions` |
+| Q3 | `chain_partitions` 硬编码三条是"整组替换"还是"按分区名合并（保留镜像读回的其它链）"？ | 决定 `--append` 语义是否够用，或需要 `--set` 替换语义 | 按照分区名合并 |
+| Q4 | `--core/--mi/--oplus` 的 hashtree 分区是否需要还原原始 `partition_size`？`info_image` 无法读出该值 | 决定是否要新增 `--partition-size PART=SIZE` 之类的外部输入通道 | 不需要还原原始分区大小 |
 
 ---
 
