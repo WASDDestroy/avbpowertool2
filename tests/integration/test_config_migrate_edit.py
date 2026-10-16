@@ -304,9 +304,7 @@ class TestConfigEditUseCase:
         before = profile_path.read_bytes()
 
         uc = ConfigEditUseCase(ws)
-        result = uc.execute(
-            ConfigEditRequest(partition_name="boot", updates={"props": ":VALUE"})
-        )
+        result = uc.execute(ConfigEditRequest(partition_name="boot", updates={"props": ":VALUE"}))
         assert any(i.error_code == "config.invalid_field" for i in result.issues)
         assert profile_path.read_bytes() == before
 
@@ -519,9 +517,7 @@ class TestConfigEditUseCase:
         before = profile_path.read_bytes()
 
         uc = ConfigEditUseCase(ws)
-        result = uc.execute(
-            ConfigEditRequest(partition_name="vbmeta", appends=(("flags", "1"),))
-        )
+        result = uc.execute(ConfigEditRequest(partition_name="vbmeta", appends=(("flags", "1"),)))
         assert any(i.error_code == "config.invalid_field" for i in result.issues)
         assert profile_path.read_bytes() == before
 
