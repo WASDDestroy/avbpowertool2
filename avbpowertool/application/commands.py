@@ -645,3 +645,108 @@ class KeyEnsurePublicResult:
     extracted: tuple[tuple[str, str], ...] = ()
     skipped: tuple[str, ...] = ()
     issues: tuple[OperationIssue, ...] = ()
+
+
+# ---------------------------------------------------------------------------
+# Plugin Management
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PluginListItem:
+    """A single installed plugin.
+
+    ``name`` is already resolved for the current language, so the
+    presentation layer never needs to look at the manifest itself.
+    """
+
+    plugin_id: str = ""
+    name: str = ""
+    entry: str = ""
+    path: str = ""
+
+
+@dataclass(frozen=True)
+class PluginListRequest:
+    """Request to list the plugins installed under ``plugins/``."""
+
+
+@dataclass(frozen=True)
+class PluginListResult:
+    """Result of listing plugins.
+
+    ``issues`` reports the directories that hold a manifest which could
+    not be parsed: they are *not* silently dropped from the report.
+    """
+
+    plugins: tuple[PluginListItem, ...] = ()
+    issues: tuple[OperationIssue, ...] = ()
+
+
+@dataclass(frozen=True)
+class PluginInstallRequest:
+    """Request to install a plugin from a directory or a zip archive."""
+
+    source_path: str = ""
+    force: bool = False
+
+
+@dataclass(frozen=True)
+class PluginInstallResult:
+    """Result of installing a plugin.
+
+    ``plugin_id`` is the id declared by the installed manifest;
+    ``file_count`` counts the regular files that ended up in
+    ``plugins/<plugin_id>/``.
+    """
+
+    plugin_id: str = ""
+    installed: bool = False
+    file_count: int = 0
+    issues: tuple[OperationIssue, ...] = ()
+
+
+@dataclass(frozen=True)
+class PluginUninstallRequest:
+    """Request to remove an installed plugin."""
+
+    plugin_id: str = ""
+
+
+@dataclass(frozen=True)
+class PluginUninstallResult:
+    """Result of removing a plugin.
+
+    ``removed_files`` / ``removed_bytes`` describe the regular files that
+    were counted just before the directory was removed.
+    """
+
+    plugin_id: str = ""
+    removed: bool = False
+    removed_files: int = 0
+    removed_bytes: int = 0
+    issues: tuple[OperationIssue, ...] = ()
+
+
+@dataclass(frozen=True)
+class PluginRunRequest:
+    """Request to run an installed plugin's entry script."""
+
+    plugin_id: str = ""
+    args: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class PluginRunResult:
+    """Result of running a plugin.
+
+    A non-zero ``exit_code`` is *not* an error: the plugin ran and chose
+    that status, and the CLI returns it to its caller as-is.  ``exit_code``
+    is ``-1`` only when the plugin never started, which always comes with
+    a ``plugin.run_failed`` (or ``plugin.not_found`` /
+    ``plugin.entry_not_found``) issue in ``issues``.
+    """
+
+    plugin_id: str = ""
+    exit_code: int = 0
+    issues: tuple[OperationIssue, ...] = ()

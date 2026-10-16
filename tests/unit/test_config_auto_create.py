@@ -345,6 +345,7 @@ def _make_workspace(tmp_path: Path) -> WorkspacePaths:
         root=tmp_path,
         images=tmp_path / "Images",
         profiles=tmp_path / "profiles",
+        plugins=tmp_path / "plugins",
         logs=tmp_path / "Logs",
         staging=tmp_path / ".avbpowertool-staging",
         avbtool_script=tmp_path / "avbtool.py",

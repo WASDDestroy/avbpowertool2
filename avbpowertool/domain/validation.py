@@ -1,10 +1,11 @@
-"""Domain validation for profiles, partitions, and key manifests.
+"""Domain validation for profiles, partitions, key manifests, and plugins.
 
 Validators return lists of OperationIssue — never raise.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .models import (
@@ -14,6 +15,7 @@ from .models import (
     PartitionConfig,
     SigningAlgorithm,
 )
+from .plugin import PluginManifest
 
 # Algorithms valid for each descriptor type.
 # NONE is valid: avbtool produces an unsigned footer/vbmeta (no --algorithm/--key).
@@ -34,6 +36,14 @@ _IMAGE_BLOCK_SIZE = 4096
 #: FEC roots accepted by the fec encoder (2..255).
 _MIN_FEC_NUM_ROOTS = 2
 _MAX_FEC_NUM_ROOTS = 255
+
+#: The only plugin manifest schema this build understands.
+_PLUGIN_SCHEMA_VERSION = 1
+
+#: A plugin id becomes a directory name under ``plugins/``: it must be a
+#: single, plain path component.  ``.`` / ``..`` match the pattern too and
+#: are rejected separately.
+_PLUGIN_ID_PATTERN = re.compile(r"[A-Za-z0-9_.-]+")
 
 
 def validate_profile(profile: AvbProfile) -> list[OperationIssue]:
@@ -283,5 +293,57 @@ def validate_key_manifest(manifest: dict[str, Any]) -> list[OperationIssue]:
                     f"Key {key_id!r}: 'private_key' is empty",
                 )
             )
+
+    return issues
+
+
+def validate_plugin_manifest(manifest: PluginManifest) -> list[OperationIssue]:
+    """Validate a plugin manifest. Returns issues found.
+
+    Only *correctness* is checked — the manifest is never trusted with
+    signatures or permissions (there is no security check by design):
+
+    * ``schema_version`` must be the one this build knows;
+    * the id must be a single, plain directory name under ``plugins/``;
+    * the entry must be a bare file name *inside* the plugin directory, so
+      a manifest can never address a script outside its own package;
+    * at least one name must be declared (the display name is what the
+      CLI/TUI show, and ``name_for`` falls back to the id without it).
+    """
+    issues: list[OperationIssue] = []
+
+    if manifest.schema_version != _PLUGIN_SCHEMA_VERSION:
+        issues.append(
+            OperationIssue(
+                "plugin.manifest_invalid",
+                f"Expected plugin schema_version {_PLUGIN_SCHEMA_VERSION}, "
+                f"got {manifest.schema_version}",
+            )
+        )
+
+    if not manifest.plugin_id:
+        issues.append(OperationIssue("plugin.manifest_invalid", "Plugin id is empty"))
+    elif manifest.plugin_id in (".", "..") or not _PLUGIN_ID_PATTERN.fullmatch(manifest.plugin_id):
+        issues.append(
+            OperationIssue(
+                "plugin.id_invalid",
+                f"Invalid plugin id: {manifest.plugin_id!r} "
+                "(use letters, digits, '_', '-', '.' only)",
+            )
+        )
+
+    if not manifest.entry:
+        issues.append(OperationIssue("plugin.entry_missing", "Plugin entry is empty"))
+    elif manifest.entry in (".", "..") or "/" in manifest.entry or "\\" in manifest.entry:
+        issues.append(
+            OperationIssue(
+                "plugin.entry_invalid",
+                f"Invalid plugin entry: {manifest.entry!r} "
+                "(must be a bare file name inside the plugin directory)",
+            )
+        )
+
+    if not manifest.names:
+        issues.append(OperationIssue("plugin.manifest_invalid", "Plugin declares no names"))
 
     return issues

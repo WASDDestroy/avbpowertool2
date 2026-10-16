@@ -310,7 +310,7 @@ def render_config_create_from_images(
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
     if result.chain_issues:
         # Informational only: the chains can be hardcoded later (that is what
-        # tools/make-testkey-config does), so these never fail the command.
+        # plugins/testkey_config_gen/make-testkey-config does), so these never fail the command.
         _emit_text("Chain keys not resolved (informational):", out)
         for iss in result.chain_issues:
             _emit_text(f"  [{iss.error_code}] {iss.message}", out)

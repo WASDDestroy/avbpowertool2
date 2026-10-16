@@ -7,6 +7,7 @@ Tests supply fakes; production wires the real adapters.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -91,6 +92,43 @@ class AvbToolPort(Protocol):
 
     def extract_public_key(self, key_path: Path, output_path: Path) -> AvbToolResult:
         """Run avbtool.py extract_public_key."""
+        ...
+
+
+@dataclass(frozen=True)
+class PluginRunOutcome:
+    """Result of handing a plugin entry script to its interpreter.
+
+    ``exit_code`` is the interpreter's exit status, or ``-1`` when the
+    plugin never started.  A non-empty ``error`` means exactly that: the
+    process could not be launched (missing interpreter, unreadable
+    script), *not* that the plugin itself reported a failure.  A plugin
+    exiting non-zero is a perfectly normal outcome and is passed through
+    untouched in ``exit_code``.
+    """
+
+    exit_code: int
+    command_summary: str = ""
+    error: str = ""
+
+
+@runtime_checkable
+class PluginRunnerPort(Protocol):
+    """Contract for executing a plugin entry script."""
+
+    def run(
+        self,
+        entry: Path,
+        *,
+        cwd: Path,
+        env: Mapping[str, str],
+        args: Sequence[str],
+    ) -> PluginRunOutcome:
+        """Run *entry* in *cwd* with *env* plus *args*.
+
+        The plugin inherits the caller's stdio: plugins may be
+        interactive, so their output must never be captured.
+        """
         ...
 
 

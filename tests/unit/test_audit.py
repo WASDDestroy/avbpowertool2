@@ -88,6 +88,7 @@ class TestSetupLogging:
             root=root,
             images=root / "Images",
             profiles=root / "profiles",
+            plugins=root / "plugins",
             logs=root / "Logs",
             staging=root / ".staging",
             avbtool_script=root / "avbtool.py",

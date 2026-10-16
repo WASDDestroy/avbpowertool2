@@ -25,6 +25,7 @@ class WorkspacePaths:
     root: Path  # project root
     images: Path  # Images/ — workspace-level image working directory
     profiles: Path  # profiles/
+    plugins: Path  # plugins/ — one directory per plugin (dev == install location)
     logs: Path  # Logs/
     staging: Path  # .avbpowertool-staging/
     avbtool_script: Path  # avbtool.py (vendored AOSP)
@@ -47,6 +48,7 @@ class WorkspacePaths:
             root=root_path,
             images=root_path / "Images",
             profiles=root_path / "profiles",
+            plugins=root_path / "plugins",
             logs=root_path / "Logs",
             staging=root_path / ".avbpowertool-staging",
             avbtool_script=root_path / "avbtool.py",
@@ -55,6 +57,14 @@ class WorkspacePaths:
     def resolve_profile_dir(self, profile_id: str) -> Path:
         """Return the directory for a given profile."""
         return self.profiles / profile_id
+
+    def resolve_plugin_dir(self, plugin_id: str) -> Path:
+        """Return the directory of a given plugin.
+
+        The same directory is both the development and the installation
+        location, so this is the single place a plugin lives.
+        """
+        return self.plugins / plugin_id
 
     def resolve_key_dir(self, profile_id: str) -> Path:
         """Return the key store directory for a given profile."""
@@ -82,5 +92,6 @@ class WorkspacePaths:
         """Create runtime directories that must exist."""
         self.images.mkdir(parents=True, exist_ok=True)
         self.profiles.mkdir(parents=True, exist_ok=True)
+        self.plugins.mkdir(parents=True, exist_ok=True)
         self.logs.mkdir(parents=True, exist_ok=True)
         self.staging.mkdir(parents=True, exist_ok=True)

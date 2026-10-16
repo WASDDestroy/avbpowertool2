@@ -16,6 +16,7 @@ class TestWorkspacePathsDiscover:
         assert ws.root == tmp_path.resolve()
         assert ws.images == tmp_path / "Images"
         assert ws.profiles == tmp_path / "profiles"
+        assert ws.plugins == tmp_path / "plugins"
         assert ws.logs == tmp_path / "Logs"
         assert ws.staging == tmp_path / ".avbpowertool-staging"
         assert ws.avbtool_script == tmp_path / "avbtool.py"
@@ -38,6 +39,10 @@ class TestWorkspacePathsHelpers:
     def test_resolve_key_dir(self, tmp_path: Path) -> None:
         ws = WorkspacePaths.discover(tmp_path)
         assert ws.resolve_key_dir("myprofile") == tmp_path / "profiles" / "myprofile" / "keys"
+
+    def test_resolve_plugin_dir(self, tmp_path: Path) -> None:
+        ws = WorkspacePaths.discover(tmp_path)
+        assert ws.resolve_plugin_dir("myplugin") == tmp_path / "plugins" / "myplugin"
 
     def test_resolve_image_path(self, tmp_path: Path) -> None:
         ws = WorkspacePaths.discover(tmp_path)
@@ -68,5 +73,6 @@ class TestWorkspacePathsEnsureDirs:
         ws.ensure_dirs()
         assert ws.images.exists()
         assert ws.profiles.exists()
+        assert ws.plugins.exists()
         assert ws.logs.exists()
         assert ws.staging.exists()
