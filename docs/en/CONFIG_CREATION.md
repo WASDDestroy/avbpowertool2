@@ -115,8 +115,12 @@ Behaviour and failure policy (the order is fixed and every early return
 | An image has no AVB structure | Fatal by default: `image.no_vbmeta_structure`, the profile is not created; only `--skip-non-avb` skips it, listing it in the result's `skipped_images` |
 | No partition could be generated at all | `config.no_partitions` (use `--allow-empty` when you really want an empty profile) |
 | `profiles/<id>/` already exists | `config.profile_exists`; only `--overwrite` reuses it (keeping its `keys/`, replacing the partitions) |
-| A chain partition's key cannot be resolved | `chain.key_not_found` (exit code 1) but creation is **not blocked** — `created` stays `true` |
+| A chain partition's key cannot be resolved (e.g. a vendor/OEM-signed image) | Recorded in the result's `chain_issues` (`chain.key_not_found`, **informational**); it **does not influence the exit code** — `created` stays `true`, the command still exits 0, and the note is printed in full in both the text and `--json` output |
 | Missing keys | Only reported in the result's `missing_keys`; they **never fail the creation** |
+
+> In the `--from-images` `--json` output, chain-resolution problems appear only
+> in `chain_issues[]` and are **never** mixed into `issues[]` (which keeps only
+> the inspection-stage problems and the genuinely fatal errors).
 
 `--images` only filters the scanned set (a wrapper script normally computes the
 image set from its own flag table); `--key KEY_ID` forces one key_id for every
@@ -283,8 +287,10 @@ When auto-creating a config by scanning a directory of images:
   by matching the descriptor's `Public key (sha1)` against each key store
   entry's `avbtool extract_public_key` output (SHA1). When no key
   matches, the chain is **not** written to the config and a
-  `chain.key_not_found` issue is shown (fill it in later with
-  `config edit --set chain_partitions=...`).
+  `chain.key_not_found` note is shown (fill it in later with
+  `config edit --set chain_partitions=...`). The CLI's
+  `config create --from-images` reports such notes in `chain_issues`
+  (**informational — they never influence the exit code**).
 - **Props**: props read back from images stay in the generated config
   (reviewable, editable), but by default are **not** written into a
   generated vbmeta at signing time — the signing page asks first (see

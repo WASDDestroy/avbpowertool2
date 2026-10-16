@@ -296,7 +296,8 @@ result.chain_count      # int
 result.scanned_images   # tuple[str, ...]
 result.skipped_images   # tuple[str, ...]
 result.missing_keys     # tuple[str, ...]  informational only, never fails the call
-result.issues           # tuple[OperationIssue, ...]
+result.chain_issues     # tuple[OperationIssue, ...]  chain-resolution problems (informational, never fails the call)
+result.issues           # tuple[OperationIssue, ...]  inspection problems + genuinely fatal errors
 ```
 
 `ConfigCreateUseCase` covers the empty-profile path; its request additionally has

@@ -264,6 +264,12 @@ class ConfigCreateFromImagesResult:
     influences ``created`` or the exit code (keys may be dropped in
     later).  ``chain_count`` is the total number of ``chain_partitions``
     entries written across all vbmeta partitions.
+
+    ``chain_issues`` (e.g. ``chain.key_not_found`` for a vbmeta signed by
+    a vendor key that is not in the store) is informational in exactly the
+    same way: the chains can be hardcoded afterwards, so a failed chain
+    resolution is reported here instead of in ``issues`` and never
+    influences ``created`` or the exit code.
     """
 
     profile_id: str
@@ -274,6 +280,7 @@ class ConfigCreateFromImagesResult:
     skipped_images: tuple[str, ...] = ()
     missing_keys: tuple[str, ...] = ()
     issues: tuple[OperationIssue, ...] = ()
+    chain_issues: tuple[OperationIssue, ...] = ()
 
 
 # ---------------------------------------------------------------------------

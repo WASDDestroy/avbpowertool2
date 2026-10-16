@@ -39,6 +39,24 @@ Descriptors:
       Flags:                 0
 """
 
+#: The real OEM scenario: a vendor-signed vbmeta that embeds ``boot`` plus two
+#: chain descriptors whose public-key SHA1s match no key in the store.
+VBMETA_VENDOR_SIGNED = (
+    VBMETA_EMBEDDING_BOOT
+    + """\
+    Chain Partition descriptor:
+      Partition Name:          recovery
+      Rollback Index Location: 1
+      Public key (sha1):       bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      Flags:                   0
+    Chain Partition descriptor:
+      Partition Name:          vbmeta_system
+      Rollback Index Location: 2
+      Public key (sha1):       aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      Flags:                   0
+"""
+)
+
 
 def _ok(stdout: str) -> AvbToolResult:
     return AvbToolResult(0, stdout, "", "info_image")
@@ -121,7 +139,51 @@ class TestConfigCreateFromImagesCli:
         # partition; the signed vbmeta keeps its (empty) key_id reported.
         assert data["missing_keys"] == [""]
         assert data["issues"] == []
+        assert data["chain_issues"] == []
         assert set(_partitions(tmp_path, "dev")) == {"boot", "vbmeta"}
+
+    def test_unresolved_chain_keys_do_not_fail_the_command(self, tmp_path: Path) -> None:
+        """Regression for the real workspace bug: an OEM-signed vbmeta whose
+        chain public keys are absent from the store must **not** turn into a
+        failure (``chain.*`` maps to exit code 1 in ``exit_code_from_issues``,
+        so the code must stay out of ``issues``)."""
+        old_cwd = os.getcwd()
+        try:
+            _enter_workspace(tmp_path)
+            (tmp_path / "Images" / "boot.img").write_bytes(b"x" * 8192)
+            (tmp_path / "Images" / "vbmeta.img").write_bytes(b"x" * 4096)
+            with _stub_avb_tool({"boot": _ok(SAMPLE_HASH), "vbmeta": _ok(VBMETA_VENDOR_SIGNED)}):
+                code, output = _run(["config", "create", "--id", "dev", "--from-images", "--json"])
+        finally:
+            os.chdir(old_cwd)
+
+        assert code == 0
+        data = json.loads(output)
+        assert data["created"] is True
+        assert data["issues"] == []
+        assert [i["error_code"] for i in data["chain_issues"]] == [
+            "chain.key_not_found",
+            "chain.key_not_found",
+        ]
+        assert data["chain_count"] == 0
+        assert _partitions(tmp_path, "dev")["vbmeta"].get("chain_partitions", []) == []
+
+    def test_unresolved_chain_keys_are_rendered_in_their_own_section(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _enter_workspace(tmp_path)
+            (tmp_path / "Images" / "boot.img").write_bytes(b"x" * 8192)
+            (tmp_path / "Images" / "vbmeta.img").write_bytes(b"x" * 4096)
+            with _stub_avb_tool({"boot": _ok(SAMPLE_HASH), "vbmeta": _ok(VBMETA_VENDOR_SIGNED)}):
+                code, output = _run(["config", "create", "--id", "dev", "--from-images"])
+        finally:
+            os.chdir(old_cwd)
+
+        assert code == 0
+        assert "Created profile 'dev'" in output
+        assert "Chain keys not resolved (informational):" in output
+        assert "[chain.key_not_found]" in output
+        assert "do not affect the creation result" in output
 
     def test_from_images_text_output(self, tmp_path: Path) -> None:
         old_cwd = os.getcwd()

@@ -293,7 +293,8 @@ result.chain_count      # int
 result.scanned_images   # tuple[str, ...]
 result.skipped_images   # tuple[str, ...]
 result.missing_keys     # tuple[str, ...]  仅供参考，不影响成功
-result.issues           # tuple[OperationIssue, ...]
+result.chain_issues     # tuple[OperationIssue, ...]  链解析问题（信息性，不影响成功）
+result.issues           # tuple[OperationIssue, ...]  inspect 阶段的问题 + 真正致命的错误
 ```
 
 `ConfigCreateUseCase` 对应空配置路径，其请求多了

@@ -292,9 +292,10 @@ and every early return **leaves the workspace untouched**:
 6. if no partition could be generated at all, `config.no_partitions` (use
    `--allow-empty` when you really want an empty profile);
 7. the profile is written (`--overwrite` keeps the existing `keys/`); a chain
-   resolution failure **does not block creation**, but is recorded as
-   `chain.key_not_found` in the issues (so the exit code is 1 while `created`
-   stays `true`);
+   resolution failure **does not block creation**: when the chain public keys
+   cannot be found in the key store they are recorded in `chain_issues`
+   (informational), which **does not influence the exit code** — `created`
+   stays `true`, the exit code stays 0 and the note is still printed in full;
 8. the new profile is validated once and `missing_keys` is merged into the
    result (**informational only — missing keys never fail the creation**).
 
@@ -306,6 +307,12 @@ the profile **is still created**). Only `--include-fallback` restores the TUI
 wizard's historical behaviour of falling back to "every other scanned non-vbmeta
 partition". (The "report `config.vbmeta_no_contents`" note in the plan document
 is exactly the validation issue above, not a separate failure branch.)
+
+Top-level `--json` keys: `profile_id`, `created`, `partition_count`,
+`chain_count`, `scanned_images[]`, `skipped_images[]`, `missing_keys[]`,
+`issues[]`, and `chain_issues[]` (the same `{error_code, message}` shape as
+`issues[]`; failed chain resolutions appear **only** there and never in
+`issues[]`, so they cannot change the exit code).
 
 Top-level `--json` keys: `profile_id`, `created`, `partition_count`,
 `chain_count`, `scanned_images[]`, `skipped_images[]`, `missing_keys[]`,
@@ -701,7 +708,7 @@ result of the `exit_code_from_issues` mapping.
 | `chain.key_file_missing` | The public-key file a chain entry points at is not in the key store |
 | `chain.key_mismatch` | The chain entry's public-key SHA1 differs from the SHA1 of the key the chained partition is actually signed with |
 | `chain.chained_partition_unsigned` | The chained partition is NONE (unsigned), so a chain check is meaningless |
-| `chain.key_not_found` | No key in the store matched the descriptor's public-key SHA1 during chain resolution (`config create --from-images` reports this code but does **not** block creation) |
+| `chain.key_not_found` | No key in the store matched the descriptor's public-key SHA1 during chain resolution (`config create --from-images` reports this code but does **not** block creation). There it is **informational**: it only appears in `chain_issues[]` (rendered as its own section in text output) and **never fails the command on its own**; in `config check-chains` and friends it still maps to exit code 1 |
 
 ### `tool.*` / `signing.*` → exit code 3
 

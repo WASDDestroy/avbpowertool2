@@ -227,6 +227,7 @@ class ConfigCreateFromImagesUseCase:
                 scanned_images=auto.scanned_images,
                 skipped_images=skipped_images,
                 issues=tuple(issues),
+                chain_issues=auto.chain_issues,
             )
 
         # 6. Nothing usable was scanned: never create an empty profile here
@@ -243,12 +244,15 @@ class ConfigCreateFromImagesUseCase:
                 scanned_images=auto.scanned_images,
                 skipped_images=skipped_images,
                 issues=tuple(issues),
+                chain_issues=auto.chain_issues,
             )
 
         # 7. Write the profile.  Chain-resolution problems do not block
-        # creation (the chains can be hardcoded later), but they are kept
-        # visible in the result.
-        issues.extend(auto.chain_issues)
+        # creation (the chains can be hardcoded later), so they are **not**
+        # merged into ``issues``: ``chain.*`` maps to exit code 1 and would
+        # turn an informational note into a failure.  They travel in their
+        # own ``chain_issues`` field instead and stay fully visible in the
+        # JSON and text output.
         create_result = ConfigCreateUseCase(self._ws).execute(
             ConfigCreateRequest(
                 profile_id=profile_id,
@@ -288,6 +292,7 @@ class ConfigCreateFromImagesUseCase:
             skipped_images=skipped_images,
             missing_keys=missing_keys,
             issues=tuple(issues),
+            chain_issues=auto.chain_issues,
         )
 
     def _key_candidates(self, profile_id: str) -> tuple[tuple[str, ...], str]:

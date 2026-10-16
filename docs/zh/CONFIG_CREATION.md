@@ -111,8 +111,11 @@ avbpowertool config create --id my_device --from-images D:\dump\Images --json
 | 镜像没有 AVB 结构 | 默认**致命**：`image.no_vbmeta_structure`，不创建配置；加 `--skip-non-avb` 才跳过，并在结果的 `skipped_images` 里列出 |
 | 一个分区都生成不出来 | `config.no_partitions`（想建空配置请用 `--allow-empty`） |
 | `profiles/<id>/` 已存在 | `config.profile_exists`；加 `--overwrite` 才复用（保留其 `keys/`，替换分区集合） |
-| 链式分区解析不到密钥 | `chain.key_not_found`（退出码 1），但**不阻断创建**，`created` 仍为 `true` |
+| 链式分区解析不到密钥（如厂商/OEM 签名镜像） | 记入结果的 `chain_issues`（`chain.key_not_found`，**信息性**），**不影响退出码**：`created` 仍为 `true`、命令仍退出 0，提示在文本与 `--json` 里照常完整可见 |
 | 缺少密钥 | 只写进结果的 `missing_keys`，**不影响创建成功** |
+
+> `--from-images` 的 `--json` 里，链解析问题只出现在 `chain_issues[]`，
+> **不会**混进 `issues[]`（后者只保留 inspect 阶段的真问题与真正致命的错误）。
 
 `--images` 只过滤扫描集合（镜像集合通常由包装脚本按旗标表算好再传进来）；
 `--key KEY_ID` 可以给所有生成的分区指定同一个 key_id（默认按镜像算法自动挑）。
@@ -264,7 +267,7 @@ PartitionConfig(
 
 自动创建（扫描目录 → 自动生成配置）时：
 
-- **链式分区**：vbmeta 镜像内嵌的 `Chain Partition` 描述符会被识别为该 vbmeta 的链式分区（而不是混入 `included_partitions`），并尝试还原为 `PART:SLOT:KEY_FILE` 三元组 —— SLOT 取自描述符的 `Rollback Index Location`，KEY_FILE 通过描述符的 `Public key (sha1)` 与密钥清单中每个密钥的 `avbtool extract_public_key` 输出（SHA1）匹配。匹配不到密钥时该链**不会写入配置**，并在结果页给出 `chain.key_not_found` 提示（可之后用 `config edit --set chain_partitions=...` 补齐）。
+- **链式分区**：vbmeta 镜像内嵌的 `Chain Partition` 描述符会被识别为该 vbmeta 的链式分区（而不是混入 `included_partitions`），并尝试还原为 `PART:SLOT:KEY_FILE` 三元组 —— SLOT 取自描述符的 `Rollback Index Location`，KEY_FILE 通过描述符的 `Public key (sha1)` 与密钥清单中每个密钥的 `avbtool extract_public_key` 输出（SHA1）匹配。匹配不到密钥时该链**不会写入配置**，并在结果页给出 `chain.key_not_found` 提示（可之后用 `config edit --set chain_partitions=...` 补齐）。CLI 的 `config create --from-images` 把这类提示放进 `chain_issues`（**信息性，不影响退出码**）。
 - **属性（props）**：从镜像读回的属性字符串**保留**在自动生成的配置中（可审查、可手动编辑），但**签名时默认不写入**生成的 vbmeta —— 请在签名确认页选择"是"才会附加（见下文"签名"）。手动创建 vbmeta 分区时也可直接输入属性（逗号分隔的 `key:value`）。
 - **已知限制**：`info_image` 输出无法区分 `Chain Partition` 与 `Chain Partition (do not use ab)`，自动创建统一还原为标准 `chain_partitions`；`chain_partitions_do_not_use_ab` 需手动设置。
 

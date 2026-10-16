@@ -568,6 +568,25 @@ Descriptors:
 #: single pre-seeded key in the store resolves them.
 CHAIN_OUTPUT = SAMPLE_VBMETA_WITH_CHAIN.replace("b" * 40, PUB_SHA1).replace("a" * 40, PUB_SHA1)
 
+#: The real OEM scenario: a vendor-signed vbmeta that embeds ``boot`` (so the
+#: profile is not empty) plus two chain descriptors whose public-key SHA1s
+#: match **no** key in the store (the user only has testkeys).
+VBMETA_VENDOR_SIGNED = (
+    VBMETA_EMBEDDING_BOOT
+    + """\
+    Chain Partition descriptor:
+      Partition Name:          recovery
+      Rollback Index Location: 1
+      Public key (sha1):       bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      Flags:                   0
+    Chain Partition descriptor:
+      Partition Name:          vbmeta_system
+      Rollback Index Location: 2
+      Public key (sha1):       aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      Flags:                   0
+"""
+)
+
 
 class WritingFakeAvbTool(PerImageFakeAvbTool):
     """Per-image fake whose ``extract_public_key`` writes a known blob."""
@@ -798,10 +817,35 @@ class TestConfigCreateFromImagesUseCase:
         assert result.created is True
         assert result.chain_count == 2
         assert result.issues == ()
+        # A store holding the matching key resolves every chain, so nothing is
+        # reported as unresolved.
+        assert result.chain_issues == ()
         vbmeta = ProfileRepository(ws).load("dev").partitions["vbmeta"]
         assert vbmeta.chain_partitions == (
             "vbmeta_system:1:key.pem.bin",
             "vbmeta_vendor:2:key.pem.bin",
+        )
+
+    def test_resolved_chain_keys_from_a_real_key_store_leave_no_chain_issues(
+        self, tmp_path: Path
+    ) -> None:
+        """Regression: a key store holding the chained public key resolves the
+        chains and produces no ``chain_issues`` at all."""
+        ws = _make_workspace(tmp_path)
+        _seed_key_store(ws, "dev", ("testkey_rsa4096",))
+        (ws.images / "vbmeta.img").write_bytes(b"x" * 4096)
+        avb = WritingFakeAvbTool({"vbmeta": _ok(CHAIN_OUTPUT)})
+
+        result = _create_from_images(ws, avb, overwrite=True)
+
+        assert result.created is True
+        assert result.chain_issues == ()
+        assert result.issues == ()
+        assert result.chain_count == 2
+        vbmeta = ProfileRepository(ws).load("dev").partitions["vbmeta"]
+        assert vbmeta.chain_partitions == (
+            "vbmeta_system:1:testkey_rsa4096.pem.bin",
+            "vbmeta_vendor:2:testkey_rsa4096.pem.bin",
         )
 
     def test_unresolved_chains_do_not_block_creation(self, tmp_path: Path) -> None:
@@ -813,14 +857,58 @@ class TestConfigCreateFromImagesUseCase:
 
         assert result.created is True
         assert result.chain_count == 0
-        # No key store holds the chained public keys -> reported, not fatal.
+        # No key store holds the chained public keys -> reported as
+        # informational chain_issues, never as fatal issues (``chain.*``
+        # maps to exit code 1 in exit_code_from_issues).
+        assert [i.error_code for i in result.chain_issues] == [
+            "chain.key_not_found",
+            "chain.key_not_found",
+        ]
         # The emptied vbmeta is reported by the (non-blocking) domain
         # validation, exactly as the profile will be until it is edited.
-        assert [i.error_code for i in result.issues] == [
+        assert [i.error_code for i in result.issues] == ["config.vbmeta_no_contents"]
+        vbmeta = ProfileRepository(ws).load("dev").partitions["vbmeta"]
+        assert vbmeta.chain_partitions == ()
+
+    def test_vendor_signed_chain_keys_are_informational_only(self, tmp_path: Path) -> None:
+        """The real OEM scenario: the vbmeta is vendor-signed, so its chain
+        public keys match no key of the store (which only holds testkeys).
+        Creation must succeed with an empty ``issues`` tuple while every
+        unresolved chain is still reported in ``chain_issues``."""
+        ws = _make_workspace(tmp_path)
+        _seed_key_store(ws, "dev", ("testkey_rsa2048", "testkey_rsa4096"))
+        (ws.images / "boot.img").write_bytes(b"x" * 8192)
+        (ws.images / "vbmeta.img").write_bytes(b"x" * 4096)
+        avb = WritingFakeAvbTool({"boot": _ok(SAMPLE_HASH), "vbmeta": _ok(VBMETA_VENDOR_SIGNED)})
+
+        result = _create_from_images(ws, avb, overwrite=True)
+
+        assert result.created is True
+        assert result.issues == ()
+        assert [i.error_code for i in result.chain_issues] == [
             "chain.key_not_found",
             "chain.key_not_found",
-            "config.vbmeta_no_contents",
         ]
+        assert result.chain_count == 0
+        vbmeta = ProfileRepository(ws).load("dev").partitions["vbmeta"]
+        assert vbmeta.chain_partitions == ()
+        # The embedded descriptor is still honoured: the profile is usable.
+        assert vbmeta.included_partitions == ("boot",)
+
+    def test_resolve_chains_false_produces_no_chain_issues(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "boot.img").write_bytes(b"x" * 8192)
+        (ws.images / "vbmeta.img").write_bytes(b"x" * 4096)
+        avb = WritingFakeAvbTool({"boot": _ok(SAMPLE_HASH), "vbmeta": _ok(VBMETA_VENDOR_SIGNED)})
+
+        result = _create_from_images(ws, avb, resolve_chains=False)
+
+        assert result.created is True
+        assert result.chain_issues == ()
+        assert result.issues == ()
+        assert not any(call[0] == "extract_public_key" for call in avb.calls)
+        vbmeta = ProfileRepository(ws).load("dev").partitions["vbmeta"]
+        assert vbmeta.chain_partitions == ()
 
     def test_explicit_image_directory_is_scanned(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)

@@ -286,6 +286,7 @@ def render_config_create_from_images(
                 "skipped_images": list(result.skipped_images),
                 "missing_keys": list(result.missing_keys),
                 "issues": _issues_to_dicts(result.issues),
+                "chain_issues": _issues_to_dicts(result.chain_issues),
             },
             out,
         )
@@ -307,6 +308,13 @@ def render_config_create_from_images(
         _emit_text(f"  Missing keys:   {', '.join(result.missing_keys)}", out)
     for iss in result.issues:
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+    if result.chain_issues:
+        # Informational only: the chains can be hardcoded later (that is what
+        # tools/make-testkey-config does), so these never fail the command.
+        _emit_text("Chain keys not resolved (informational):", out)
+        for iss in result.chain_issues:
+            _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+        _emit_text("  These entries do not affect the creation result or the exit code.", out)
 
 
 # ---------------------------------------------------------------------------

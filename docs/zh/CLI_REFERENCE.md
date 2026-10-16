@@ -263,7 +263,8 @@ avbpowertool config create: error: argument --from-images: not allowed with argu
    给出 `--skip-non-avb` 才跳过，并记入 `skipped_images`；
 6. 一个分区都生成不出来 → `config.no_partitions`（想建空配置请用 `--allow-empty`）；
 7. 写盘（`--overwrite` 保留已有 `keys/`）；链解析失败**不阻断创建**，
-   但会以 `chain.key_not_found` 记入 issues（因此退出码为 1，`created` 仍为 `true`）；
+   链式公钥在密钥库中找不到时记入 `chain_issues`（信息性），**不影响退出码**：
+   `created` 仍为 `true`、退出码仍为 0，提示照常完整打印；
 8. 生成后跑一次 `config validate`，把 `missing_keys` 并入结果（**仅供参考，
    缺失密钥不会让创建失败**）。
 
@@ -276,7 +277,9 @@ CLI **默认保留剪空后的结果**（可能为空）；若该 vbmeta 既无
 实现里就是上面这条校验 issue，不是单独的失败分支。）
 
 `--json` 顶层键：`profile_id`、`created`、`partition_count`、`chain_count`、
-`scanned_images[]`、`skipped_images[]`、`missing_keys[]`、`issues[]`。
+`scanned_images[]`、`skipped_images[]`、`missing_keys[]`、`issues[]`、
+`chain_issues[]`（与 `issues[]` 同构的 `{error_code, message}` 数组；链解析
+失败只出现在这里，**不进入 `issues[]`**，因此不影响退出码）。
 
 ### `config edit`
 
@@ -625,7 +628,7 @@ avbpowertool about [-h]
 | `chain.key_file_missing` | 链条目指向的公钥文件不在 key store |
 | `chain.key_mismatch` | 链条目公钥 SHA1 ≠ 被链分区实际签名密钥的公钥 SHA1 |
 | `chain.chained_partition_unsigned` | 被链分区是 NONE（未签名），链校验无意义 |
-| `chain.key_not_found` | 链解析时没有密钥能匹配描述符的公钥 SHA1（`config create --from-images` 会报此码但**不阻断创建**） |
+| `chain.key_not_found` | 链解析时没有密钥能匹配描述符的公钥 SHA1（`config create --from-images` 会报此码但**不阻断创建**）。在 `config create --from-images` 里它是**信息性**的：只出现在 `chain_issues[]`（文本输出单独成段），**不单独导致失败**、不影响退出码；在 `config check-chains` 等命令里它仍然映射到退出码 1 |
 
 ### `tool.*` / `signing.*` → 退出码 3
 

@@ -78,6 +78,11 @@ pwsh -NoProfile -File tools\make-testkey-config.ps1 --no_prompt --no_export
 > `config.missing_included_partition`（`vbmeta` 链到一个不在配置里的分区）并以
 > 退出码 1 结束——这是有意的：脚本宁可报错，也不产出一个链是悬空的配置。
 
+> **厂商（OEM）签名的镜像**：这类 `vbmeta` 内嵌的链式公钥通常不在密钥库里，
+> 第 4 步会把它们记进 `chain_issues`（信息性，**不影响退出码**），脚本会打印
+> 一条 `[提示]` 说明有 N 条链式公钥未找到；这不是失败——第 5 步会用上面那三条
+> 硬编码 testkey 链覆盖掉，第 6 步的 `config check-chains` 照常通过。
+
 ## 默认值
 
 | 项 | 默认值 |
@@ -120,7 +125,8 @@ tools\make-testkey-config.cmd --id 20260101-120000_testkey --force --no_prompt
 1. 按旗标表算镜像集合，检查存在性；profile 目录冲突检查
 2. `config create --id <id> --name <name> --allow-empty --json`（仅在目录不存在时）
 3. 把两把 PEM 拷进 `profiles/<id>/keys/` → `keys discover` → `keys ensure-public`
-4. `config create --id <id> --from-images --overwrite --images <集合> --json`（保留密钥库）
+4. `config create --id <id> --from-images --overwrite --images <集合> --json`（保留密钥库；
+   解析不到的链式公钥只记入 `chain_issues`，信息性、不影响退出码，脚本打印一条 `[提示]`）
 5. `config edit`：`vbmeta` 的 `flags=1` + 三条链式分区、`vbmeta_system` 换
    `testkey_rsa2048` / `SHA256_RSA2048`、其余分区 `key_id=testkey_rsa4096`、
    `vbmeta` / `vbmeta_system` 的 `included_partitions` 剪枝（幂等）

@@ -525,6 +525,14 @@ try {
     $chainCount = Get-JsonMember -Json $createResult.Json -Name 'chain_count'
     Write-Ok "已生成 $partitionCount 个分区，$chainCount 条链式条目"
 
+    # 厂商（OEM）签名的 vbmeta 内嵌链式公钥在密钥库里通常找不到：这属于信息性提示
+    # （chain_issues），不是失败——第 5 步会用 testkey 链硬编码覆盖。
+    $chainIssues = Get-JsonMember -Json $createResult.Json -Name 'chain_issues'
+    if ($null -ne $chainIssues -and @($chainIssues).Count -gt 0) {
+        $chainIssueCount = @($chainIssues).Count
+        Write-Note "$chainIssueCount 条链式公钥未在密钥库中找到（厂商密钥），不影响创建成功；第 5 步会用 testkey 链硬编码覆盖。"
+    }
+
     # -----------------------------------------------------------------
     # 步骤 5：改配置
     # -----------------------------------------------------------------
