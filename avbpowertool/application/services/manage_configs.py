@@ -581,6 +581,8 @@ _TUPLE_FIELDS = frozenset(
 )
 #: tuple fields whose items are ``PARTITION:SLOT:KEY_FILE`` triples
 _CHAIN_FIELDS = frozenset({"chain_partitions", "chain_partitions_do_not_use_ab"})
+#: chain slot numbers must be plain ASCII digits (``int()`` accepts more)
+_CHAIN_SLOT_PATTERN = re.compile(r"[0-9]+")
 #: every field accepted by ``config edit`` (``--set`` / ``--unset``)
 _EDITABLE_FIELDS = (
     _INT_FIELDS | _BOOL_FIELDS | _STR_FIELDS | _ALGORITHM_FIELDS | _IMAGE_FIELDS | _TUPLE_FIELDS
@@ -621,6 +623,24 @@ class ConfigEditUseCase:
             profile = repo.load(profile_id)
         except Exception as exc:
             issues.append(OperationIssue("config.not_found", f"Failed to load profile: {exc}"))
+            return ConfigEditResult(
+                profile_id=profile_id,
+                partition_name=request.partition_name,
+                issues=tuple(issues),
+            )
+
+        if profile.id != profile_id:
+            # ``ProfileRepository.save`` writes to ``profiles/<profile.id>/``
+            # while the profile was loaded from ``profiles/<profile_id>/``:
+            # saving now would silently create/overwrite another profile.
+            issues.append(
+                OperationIssue(
+                    "config.profile_id_mismatch",
+                    f"Profile directory {profile_id!r} contains profile id "
+                    f"{profile.id!r}; saving would write to a different profile, "
+                    "edit refused",
+                )
+            )
             return ConfigEditResult(
                 profile_id=profile_id,
                 partition_name=request.partition_name,
@@ -787,12 +807,13 @@ class ConfigEditUseCase:
             else _remove_item(field_name, current, item)
         )
         if updated is None:
-            issues.append(
-                OperationIssue(
-                    "config.invalid_field",
-                    f"Invalid {flag} item for field {field_name!r}: {item!r}",
+            message = f"Invalid {flag} item for field {field_name!r}: {item!r}"
+            if append and field_name in _CHAIN_FIELDS:
+                message += (
+                    "; expected a full PART:SLOT:KEYFILE triple "
+                    "(SLOT a number >= 1, KEYFILE non-empty)"
                 )
-            )
+            issues.append(OperationIssue("config.invalid_field", message))
             return
         parsed[field_name] = updated
 
@@ -882,12 +903,32 @@ def _parse_single_pair(item: str) -> tuple[str, str] | None:
     return pairs[0]
 
 
+def _parse_chain_item(item: str) -> tuple[str, str, str] | None:
+    """Split a chain item into ``(PART, SLOT, KEYFILE)``, or ``None``.
+
+    Only the first two ``:`` separate the three parts, so the key file
+    name may itself contain ``:`` (e.g. a Windows path).  A well-formed
+    item has a non-empty partition, a numeric slot ``>= 1``, and a
+    non-empty key file name.
+    """
+    parts = item.split(":", 2)
+    if len(parts) != 3:
+        return None
+    partition, slot, key_file = (part.strip() for part in parts)
+    if not partition or not key_file:
+        return None
+    if _CHAIN_SLOT_PATTERN.fullmatch(slot) is None or int(slot) < 1:
+        return None
+    return partition, slot, key_file
+
+
 def _append_item(field_name: str, items: tuple[Any, ...], item: str) -> tuple[Any, ...] | None:
     """Append *item* to *items*, or ``None`` when the item is malformed.
 
-    Chain fields merge by partition name: an item for a partition that is
-    already chained replaces that entry in place (keeping its position)
-    instead of adding a duplicate.
+    Chain fields require a full ``PARTITION:SLOT:KEY_FILE`` triple and
+    merge by partition name: an item for a partition that is already
+    chained replaces that entry in place (keeping its position) instead of
+    adding a duplicate.
     """
     if field_name in _PAIR_FIELDS:
         pair = _parse_single_pair(item)
@@ -898,9 +939,10 @@ def _append_item(field_name: str, items: tuple[Any, ...], item: str) -> tuple[An
         return None
 
     if field_name in _CHAIN_FIELDS:
-        partition = _chain_partition_of(entry)
-        if not partition:
+        triple = _parse_chain_item(entry)
+        if triple is None:
             return None
+        partition = triple[0]
         for index, existing in enumerate(items):
             if _chain_partition_of(str(existing)) == partition:
                 replaced = list(items)

@@ -547,3 +547,158 @@ class TestConfigEditUseCase:
         )
         assert any(i.error_code == "config.invalid_field" for i in result.issues)
         assert profile_path.read_bytes() == before
+
+    # ------------------------------------------------------------------
+    # Fix: --append on chain fields requires a full PART:SLOT:KEYFILE triple
+    # ------------------------------------------------------------------
+
+    def test_append_bare_chain_name_rejected_and_disk_unchanged(self, tmp_path: Path) -> None:
+        """A bare partition name must not replace a legal triple in place."""
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+        profile_path = self._profile_json_path(ws)
+        before = profile_path.read_bytes()
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(partition_name="vbmeta", appends=(("chain_partitions", "recovery"),))
+        )
+
+        assert [issue.error_code for issue in result.issues] == ["config.invalid_field"]
+        assert "PART:SLOT:KEYFILE" in result.issues[0].message
+        # byte-level unchanged: the original triple is still chained
+        assert profile_path.read_bytes() == before
+        assert b"recovery:1:rec.pem.bin" in before
+        assert ProfileRepository(ws).load("current").partitions["vbmeta"].chain_partitions == (
+            "boot:3:old_boot.pem.bin",
+            "recovery:1:rec.pem.bin",
+        )
+
+    def test_append_malformed_chain_items_rejected_and_disk_unchanged(self, tmp_path: Path) -> None:
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+        profile_path = self._profile_json_path(ws)
+        before = profile_path.read_bytes()
+
+        malformed = (
+            "recovery",  # bare partition name
+            "vbmeta_system:notanint:key.bin",  # non-numeric slot
+            ":1:key.bin",  # empty partition
+            "boot:1:",  # empty key file
+            "boot:0:key.bin",  # slot must be >= 1
+            "boot:key.bin",  # only two segments
+        )
+        uc = ConfigEditUseCase(ws)
+        for item in malformed:
+            result = uc.execute(
+                ConfigEditRequest(partition_name="vbmeta", appends=(("chain_partitions", item),))
+            )
+            codes = [issue.error_code for issue in result.issues]
+            assert codes == ["config.invalid_field"], item
+            assert "PART:SLOT:KEYFILE" in result.issues[0].message, item
+            assert profile_path.read_bytes() == before, item
+
+        # the sibling chain field enforces the same rule
+        other = uc.execute(
+            ConfigEditRequest(
+                partition_name="vbmeta",
+                appends=(("chain_partitions_do_not_use_ab", "recovery"),),
+            )
+        )
+        assert [issue.error_code for issue in other.issues] == ["config.invalid_field"]
+        assert profile_path.read_bytes() == before
+
+    def test_append_full_chain_triples_still_append_and_replace(self, tmp_path: Path) -> None:
+        """Regression: legal triples keep appending and replacing in place."""
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="vbmeta",
+                appends=(
+                    ("chain_partitions", "vbmeta_vendor:4:v.pem.bin"),
+                    ("chain_partitions", "recovery:2:rec2.pem.bin"),
+                ),
+            )
+        )
+        assert result.issues == ()
+
+        chains = ProfileRepository(ws).load("current").partitions["vbmeta"].chain_partitions
+        assert chains == (
+            "boot:3:old_boot.pem.bin",
+            "recovery:2:rec2.pem.bin",  # replaced in place, position kept
+            "vbmeta_vendor:4:v.pem.bin",  # appended
+        )
+
+    def test_append_chain_item_allows_colon_in_key_file(self, tmp_path: Path) -> None:
+        """Only the first two ``:`` separate the triple (Windows-style path)."""
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                partition_name="vbmeta",
+                appends=(("chain_partitions", "vbmeta_vendor:4:C:/keys/v.pem.bin"),),
+            )
+        )
+        assert result.issues == ()
+
+        chains = ProfileRepository(ws).load("current").partitions["vbmeta"].chain_partitions
+        assert chains[-1] == "vbmeta_vendor:4:C:/keys/v.pem.bin"
+
+    def test_remove_bare_chain_name_still_works(self, tmp_path: Path) -> None:
+        """Regression: ``--remove`` keeps accepting a bare partition name."""
+        ws = _setup_workspace(tmp_path)
+        self._save(ws, self._profile_with_tuple_fields())
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(partition_name="vbmeta", removes=(("chain_partitions", "recovery"),))
+        )
+        assert result.issues == ()
+
+        chains = ProfileRepository(ws).load("current").partitions["vbmeta"].chain_partitions
+        assert chains == ("boot:3:old_boot.pem.bin",)
+
+    # ------------------------------------------------------------------
+    # Fix: profile directory name vs embedded profile id
+    # ------------------------------------------------------------------
+
+    def test_profile_id_mismatch_refused_without_writing(self, tmp_path: Path) -> None:
+        """``profiles/alpha`` holding id ``beta`` must not write to ``beta``."""
+        ws = _setup_workspace(tmp_path)
+        mismatched = AvbProfile(
+            id="beta",
+            name="Beta",
+            partitions={
+                "boot": PartitionConfig(
+                    image="boot.img",
+                    descriptor=DescriptorType.HASH,
+                    algorithm=SigningAlgorithm.SHA256_RSA4096,
+                    key_id="testkey_rsa4096",
+                    partition_name="boot",
+                    partition_size=67108864,
+                )
+            },
+        )
+        _write_profile_json(ws, "alpha", encode_profile(mismatched))
+        alpha_path = ws.resolve_profile_dir("alpha") / "profile.json"
+        before = alpha_path.read_bytes()
+
+        uc = ConfigEditUseCase(ws)
+        result = uc.execute(
+            ConfigEditRequest(
+                profile_id="alpha",
+                partition_name="boot",
+                updates={"partition_size": "1048576"},
+            )
+        )
+
+        assert [issue.error_code for issue in result.issues] == ["config.profile_id_mismatch"]
+        assert "'alpha'" in result.issues[0].message
+        assert "'beta'" in result.issues[0].message
+        assert alpha_path.read_bytes() == before
+        assert not (ws.profiles / "beta").exists()

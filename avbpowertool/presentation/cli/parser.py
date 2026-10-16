@@ -176,8 +176,9 @@ def build_parser() -> argparse.ArgumentParser:
             "Append ITEM to a tuple field (repeatable, tuple fields only: "
             "kernel_cmdlines, chain_partitions, chain_partitions_do_not_use_ab, "
             "included_partitions, include_descriptors_from_image, props, "
-            "prop_from_file). For the chain fields an ITEM for an already-chained "
-            "partition (same name before the first ':') replaces that entry in place"
+            "prop_from_file). For the chain fields ITEM must be a full "
+            "PART:SLOT:KEYFILE triple (SLOT a number >= 1); an ITEM for an "
+            "already-chained partition replaces that entry in place"
         ),
     )
     p_cfg_edit.add_argument(

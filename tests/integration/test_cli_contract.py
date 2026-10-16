@@ -502,6 +502,40 @@ class TestConfigEditCli:
 
         assert code == 2
 
+    def test_config_edit_bare_chain_append_exits_1_without_writing(self, tmp_path: Path) -> None:
+        """A bare chain name is not a valid --append item: exit 1, no write."""
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            self._write_vbmeta_profile(tmp_path)
+            profile_path = tmp_path / "profiles" / "device_a" / "profile.json"
+            before = profile_path.read_bytes()
+            os.chdir(tmp_path)
+
+            out = StringIO()
+            code = main(
+                [
+                    "config",
+                    "edit",
+                    "vbmeta",
+                    "--profile",
+                    "device_a",
+                    "--append",
+                    "chain_partitions=recovery",
+                    "--json",
+                ],
+                out=out,
+            )
+            after = profile_path.read_bytes()
+        finally:
+            os.chdir(old_cwd)
+
+        data = json.loads(out.getvalue())
+        assert code == 1
+        assert data["issues"][0]["error_code"] == "config.invalid_field"
+        assert "PART:SLOT:KEYFILE" in data["issues"][0]["message"]
+        assert after == before
+
 
 class TestParserBuilds:
     def test_build_parser_returns_parser(self) -> None:
