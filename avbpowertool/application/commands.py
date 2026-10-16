@@ -138,6 +138,50 @@ class ConfigValidateResult:
 
 
 # ---------------------------------------------------------------------------
+# Config Check Chains
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CheckChainsRequest:
+    """Request to check every chain-partition entry of a profile."""
+
+    profile_id: str = "current"
+
+
+@dataclass(frozen=True)
+class ChainCheckEntry:
+    """Outcome of one ``PART:SLOT:KEYFILE`` chain entry.
+
+    ``partition_name`` is the partition that *declares* the entry (the
+    vbmeta one), while ``entry`` is the raw ``chain_partitions`` string.
+    ``ok`` is False as soon as any check failed for that entry; the
+    matching failures are in ``CheckChainsResult.issues``.
+    """
+
+    partition_name: str
+    entry: str
+    ok: bool = True
+
+
+@dataclass(frozen=True)
+class CheckChainsResult:
+    """Result of checking a profile's chain partitions.
+
+    ``checked`` counts every chain entry that was looked at, including the
+    failing ones.  ``issues`` holds every failure (the use case never
+    stops at the first one).  ``entries`` is the per-entry status used by
+    the text renderer; the JSON contract only exposes ``profile_id`` /
+    ``checked`` / ``issues``.
+    """
+
+    profile_id: str
+    checked: int = 0
+    issues: tuple[OperationIssue, ...] = ()
+    entries: tuple[ChainCheckEntry, ...] = ()
+
+
+# ---------------------------------------------------------------------------
 # Config Create
 # ---------------------------------------------------------------------------
 

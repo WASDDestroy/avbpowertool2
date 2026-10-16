@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, TextIO, cast
 
 from avbpowertool.application.commands import (
+    CheckChainsRequest,
     ConfigCreateFromImagesRequest,
     ConfigCreateRequest,
     ConfigEditRequest,
@@ -28,6 +29,7 @@ from avbpowertool.application.commands import (
     ProfileRenameRequest,
     SignImagesRequest,
 )
+from avbpowertool.application.services.check_chains import CheckChainsUseCase
 from avbpowertool.application.services.config_auto_create import (
     ConfigCreateFromImagesUseCase,
 )
@@ -62,6 +64,7 @@ from avbpowertool.presentation import audit
 from avbpowertool.presentation.actions import ActionId
 from avbpowertool.presentation.cli.renderer import (
     exit_code_from_issues,
+    render_config_check_chains,
     render_config_create,
     render_config_create_from_images,
     render_config_edit,
@@ -121,6 +124,7 @@ def dispatch(args: Namespace, out: TextIO = sys.stdout) -> int:
         ActionId.CONFIG_MIGRATE: _handle_config_migrate,
         ActionId.CONFIG_EDIT: _handle_config_edit,
         ActionId.CONFIG_RENAME: _handle_config_rename,
+        ActionId.CONFIG_CHECK_CHAINS: _handle_config_check_chains,
         ActionId.KEY_LIST: _handle_key_list,
         ActionId.KEY_DISCOVER: _handle_key_discover,
         ActionId.KEY_ENSURE_PUBLIC: _handle_key_ensure_public,
@@ -217,9 +221,12 @@ def _handle_config_validate(
     request = ConfigValidateRequest(profile_id=getattr(args, "profile", "current"))
     result = uc.execute(request)
     render_config_validate(result, as_json, out)
-    if result.missing_images:
-        return 2
-    return exit_code_from_issues(result.issues)
+    # config.validate reports its problems as data (missing_images /
+    # missing_keys) rather than as issues, so every kind of problem has to
+    # map to the same non-zero exit code a script can gate on.
+    if result.issues or result.missing_images or result.missing_keys:
+        return 1
+    return 0
 
 
 def _parse_image_names(values: list[str] | None) -> tuple[str, ...]:
@@ -423,6 +430,16 @@ def _handle_config_rename(
         out,
         active_profile_id=ProfileRepository(workspace).get_active_profile_id(),
     )
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_config_check_chains(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    uc = CheckChainsUseCase(workspace, _create_avb_tool(workspace))
+    request = CheckChainsRequest(profile_id=getattr(args, "profile", "current"))
+    result = uc.execute(request)
+    render_config_check_chains(result, as_json, out)
     return exit_code_from_issues(result.issues)
 
 

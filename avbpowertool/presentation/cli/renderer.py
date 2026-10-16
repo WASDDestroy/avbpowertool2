@@ -7,6 +7,7 @@ import sys
 from typing import Any, TextIO
 
 from avbpowertool.application.commands import (
+    CheckChainsResult,
     ConfigCreateFromImagesResult,
     ConfigCreateResult,
     ConfigEditResult,
@@ -194,6 +195,17 @@ def render_config_show(result: ConfigShowResult, as_json: bool, out: TextIO = sy
                         "key_id": p.key_id,
                         "partition_name": p.partition_name,
                         "rollback_index": p.rollback_index,
+                        "partition_size": p.partition_size,
+                        "dynamic_partition_size": p.dynamic_partition_size,
+                        "rollback_index_location": p.rollback_index_location,
+                        "salt": p.salt,
+                        "hash_algorithm": p.hash_algorithm,
+                        "flags": p.flags,
+                        "props": [[k, v] for k, v in p.props],
+                        "included_partitions": list(p.included_partitions),
+                        "include_descriptors_from_image": list(p.include_descriptors_from_image),
+                        "chain_partitions": list(p.chain_partitions),
+                        "chain_partitions_do_not_use_ab": list(p.chain_partitions_do_not_use_ab),
                     }
                     for name, p in _named_partitions(result)
                 ],
@@ -443,6 +455,40 @@ def render_config_rename(
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
 
 
+def render_config_check_chains(
+    result: CheckChainsResult, as_json: bool, out: TextIO = sys.stdout
+) -> None:
+    """Render the result of ``config check-chains``.
+
+    The JSON contract is exactly ``profile_id`` / ``checked`` / ``issues``;
+    the text output lists every checked entry as OK or FAIL.
+    """
+    if as_json:
+        _emit_json(
+            {
+                "profile_id": result.profile_id,
+                "checked": result.checked,
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    _emit_text(f"Profile: {result.profile_id}", out)
+    if not result.entries:
+        _emit_text("  No chain partitions to check.", out)
+    for entry in result.entries:
+        status = "OK  " if entry.ok else "FAIL"
+        _emit_text(f"  {status} [{entry.partition_name}] {entry.entry}", out)
+    failed = sum(1 for entry in result.entries if not entry.ok)
+    _emit_text(
+        f"Checked {result.checked} chain entr(ies): {result.checked - failed} OK, {failed} failed.",
+        out,
+    )
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
 # ---------------------------------------------------------------------------
 # Config migrate / edit
 # ---------------------------------------------------------------------------
@@ -613,14 +659,17 @@ def _named_partitions(result: ConfigShowResult) -> list[tuple[str, Any]]:
 
 
 def exit_code_from_issues(issues: tuple[OperationIssue, ...]) -> int:
-    """Map issues to a stable exit code."""
+    """Map issues to a stable exit code.
+
+    Prefix mapping: ``tool.*`` / ``signing.*`` -> 3, ``config.*`` /
+    ``keys.*`` / ``chain.*`` / ``image.*`` -> 1.  Any other prefix keeps
+    returning 0 (an unknown code must not turn a success into a failure).
+    """
     if not issues:
         return 0
     codes = {i.error_code.split(".")[0] for i in issues}
     if "tool" in codes or "signing" in codes:
         return 3
-    if "config" in codes or "keys" in codes:
-        return 1
-    if "image" in codes:
+    if codes & {"config", "keys", "chain", "image"}:
         return 1
     return 0

@@ -280,6 +280,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_cfg_edit.add_argument("--json", action="store_true", help="JSON output")
     p_cfg_edit.set_defaults(action_id=ActionId.CONFIG_EDIT)
 
+    # config check-chains (read-only chain/key consistency check)
+    p_cfg_check = cfg_sub.add_parser(
+        "check-chains",
+        help="Check every chain partition of a profile against its key store",
+    )
+    p_cfg_check.add_argument(
+        "--profile",
+        default="current",
+        help="Profile ID (default: current — resolved to the active profile)",
+    )
+    p_cfg_check.add_argument("--json", action="store_true", help="JSON output")
+    p_cfg_check.set_defaults(action_id=ActionId.CONFIG_CHECK_CHAINS)
+
     # config rename (directory id and/or display name)
     p_cfg_rename = cfg_sub.add_parser(
         "rename",

@@ -579,3 +579,198 @@ class TestParserBuilds:
         assert args.new_profile_id == "gamma"
         assert args.new_name == "Gamma"
         assert parser.parse_args(["config", "rename", "alpha", "gamma"]).new_name is None
+
+    def test_config_check_chains_parser_shape(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["config", "check-chains"])
+        assert args.action_id == ActionId.CONFIG_CHECK_CHAINS
+        assert args.profile == "current"
+        assert args.json is False
+
+
+class TestConfigValidateExitCodes:
+    """``config validate`` exits 1 for every kind of problem (B2).
+
+    Missing images, missing keys and issues all share the ``config.*``
+    exit code 1, so a wrapper script can gate on the exit code alone.
+    """
+
+    def _write_boot_profile(self, root: Path) -> None:
+        _write_profile(
+            root,
+            "device_a",
+            partitions={
+                "boot": PartitionConfig(
+                    image="boot.img",
+                    descriptor=DescriptorType.HASH,
+                    algorithm=SigningAlgorithm.SHA256_RSA4096,
+                    key_id="testkey_rsa4096",
+                    partition_name="boot",
+                    rollback_index=0,
+                    salt="abcdef",
+                ),
+            },
+        )
+
+    def test_missing_keys_only_exits_one(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            self._write_boot_profile(tmp_path)
+            # The image exists, but the key store holds no manifest at all.
+            (tmp_path / "Images" / "boot.img").write_bytes(b"fake boot image")
+            os.chdir(tmp_path)
+
+            out = StringIO()
+            code = main(["config", "validate", "--profile", "device_a", "--json"], out=out)
+        finally:
+            os.chdir(old_cwd)
+
+        data = json.loads(out.getvalue())
+        assert code == 1
+        assert data["missing_images"] == []
+        assert data["missing_keys"] == ["testkey_rsa4096"]
+
+    def test_fully_consistent_config_exits_zero(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            self._write_boot_profile(tmp_path)
+            (tmp_path / "Images" / "boot.img").write_bytes(b"fake boot image")
+            key_dir = tmp_path / "profiles" / "device_a" / "keys"
+            (key_dir / "testkey_rsa4096.pem").write_text("fake key", encoding="utf-8")
+            (key_dir / "manifest.json").write_text(
+                json.dumps({"testkey_rsa4096": {"private_key": "testkey_rsa4096.pem"}}),
+                encoding="utf-8",
+            )
+            os.chdir(tmp_path)
+
+            out = StringIO()
+            code = main(["config", "validate", "--profile", "device_a", "--json"], out=out)
+        finally:
+            os.chdir(old_cwd)
+
+        data = json.loads(out.getvalue())
+        assert code == 0
+        assert data["missing_images"] == []
+        assert data["missing_keys"] == []
+        assert data["issues"] == []
+
+    def test_missing_images_exits_one(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            self._write_boot_profile(tmp_path)
+            os.chdir(tmp_path)
+
+            out = StringIO()
+            code = main(["config", "validate", "--profile", "device_a", "--json"], out=out)
+        finally:
+            os.chdir(old_cwd)
+
+        data = json.loads(out.getvalue())
+        assert code == 1
+        assert data["missing_images"] == ["boot"]
+
+
+class TestConfigShowJsonFields:
+    """``config show --json`` exposes the whole partition surface (B3)."""
+
+    def test_partition_fields_are_present_and_correct(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            _write_profile(
+                tmp_path,
+                "device_a",
+                partitions={
+                    "vbmeta": PartitionConfig(
+                        image="vbmeta.img",
+                        descriptor=DescriptorType.VBMETA,
+                        algorithm=SigningAlgorithm.SHA256_RSA4096,
+                        key_id="testkey_rsa4096",
+                        partition_name="vbmeta",
+                        partition_size=67108864,
+                        dynamic_partition_size=True,
+                        rollback_index=7,
+                        rollback_index_location=2,
+                        salt="c0ffee",
+                        hash_algorithm="sha512",
+                        flags=3,
+                        props=(("a.b", "1"), ("c.d", "2")),
+                        included_partitions=("boot", "dtbo"),
+                        include_descriptors_from_image=("boot.img",),
+                        chain_partitions=("boot:3:testkey_rsa4096.pem.bin",),
+                        chain_partitions_do_not_use_ab=("recovery:1:testkey_rsa4096.pem.bin",),
+                    ),
+                },
+            )
+            os.chdir(tmp_path)
+
+            out = StringIO()
+            code = main(["config", "show", "--profile", "device_a", "--json"], out=out)
+        finally:
+            os.chdir(old_cwd)
+
+        data = json.loads(out.getvalue())
+        assert code == 0
+        partition = data["partitions"][0]
+        # Pre-existing keys keep working (scripts depend on them).
+        assert partition["image_name"] == "vbmeta"
+        assert partition["image"] == "vbmeta.img"
+        assert partition["descriptor"] == "vbmeta"
+        assert partition["algorithm"] == "SHA256_RSA4096"
+        assert partition["key_id"] == "testkey_rsa4096"
+        assert partition["partition_name"] == "vbmeta"
+        assert partition["rollback_index"] == 7
+        # Newly exposed fields.
+        assert partition["partition_size"] == 67108864
+        assert partition["dynamic_partition_size"] is True
+        assert partition["rollback_index_location"] == 2
+        assert partition["salt"] == "c0ffee"
+        assert partition["hash_algorithm"] == "sha512"
+        assert partition["flags"] == 3
+        assert partition["props"] == [["a.b", "1"], ["c.d", "2"]]
+        assert partition["included_partitions"] == ["boot", "dtbo"]
+        assert partition["include_descriptors_from_image"] == ["boot.img"]
+        assert partition["chain_partitions"] == ["boot:3:testkey_rsa4096.pem.bin"]
+        assert partition["chain_partitions_do_not_use_ab"] == ["recovery:1:testkey_rsa4096.pem.bin"]
+
+    def test_defaulted_fields_are_still_present(self, tmp_path: Path) -> None:
+        """A minimal partition reports every key, with its empty default."""
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            _write_profile(
+                tmp_path,
+                "device_a",
+                partitions={
+                    "boot": PartitionConfig(
+                        image="boot.img",
+                        descriptor=DescriptorType.HASH,
+                        algorithm=SigningAlgorithm.SHA256_RSA4096,
+                        key_id="testkey_rsa4096",
+                        partition_name="boot",
+                    ),
+                },
+            )
+            os.chdir(tmp_path)
+
+            out = StringIO()
+            code = main(["config", "show", "--profile", "device_a", "--json"], out=out)
+        finally:
+            os.chdir(old_cwd)
+
+        partition = json.loads(out.getvalue())["partitions"][0]
+        assert code == 0
+        assert partition["partition_size"] == 0
+        assert partition["dynamic_partition_size"] is False
+        assert partition["rollback_index_location"] == 0
+        assert partition["salt"] == ""
+        assert partition["hash_algorithm"] == "sha256"
+        assert partition["flags"] == 0
+        assert partition["props"] == []
+        assert partition["included_partitions"] == []
+        assert partition["include_descriptors_from_image"] == []
+        assert partition["chain_partitions"] == []
+        assert partition["chain_partitions_do_not_use_ab"] == []
