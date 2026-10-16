@@ -62,7 +62,7 @@ avbpowertool                             # 不带参数 -> TUI
 |---|---|
 | `0` | 成功。也用于「错误码前缀不在下表任何一类」的 issue —— 未知前缀不会把成功变成失败 |
 | `1` | issue 中出现 `config.*` / `keys.*` / `image.*` / `chain.*` 前缀；另外两种显式情况：`config validate` 报告了 `missing_images` / `missing_keys`；`image sign --execute` 没有同时给 `--yes`（stderr 打印 `This will modify image files. Use --yes to confirm.`） |
-| `2` | argparse 用法错误：未知命令或旗标、缺少必填参数、互斥旗标同时给出（`--from-images` + `--allow-empty`、`--activate` + `--no-activate`、`--merge` + `--replace`） |
+| `2` | argparse 用法错误：未知命令或旗标、缺少必填参数、互斥旗标同时给出（`--from-images` + `--allow-empty`、`--activate` + `--no-activate`、`--merge` + `--replace`），以及 `config create --overwrite` 没给 `--from-images` |
 | `3` | issue 中出现 `tool.*` / `signing.*` 前缀（avbtool 子进程失败、签名步骤失败） |
 
 映射实现见 `avbpowertool/presentation/cli/renderer.py::exit_code_from_issues`：
@@ -227,7 +227,7 @@ avbpowertool config create [-h] --id PROFILE_ID [--name PROFILE_NAME]
 | `--no-chain-resolve` | 不解析从 vbmeta 读回的链式分区（默认**会**解析） |
 | `--include-fallback` | 内嵌描述符被剪空时回退为「其它所有被扫描分区」（默认关闭，见下） |
 | `--skip-non-avb` | 跳过没有 AVB 结构的镜像，而不是失败 |
-| `--overwrite` | 复用已存在的配置目录（保留其 `keys/`，替换分区集合） |
+| `--overwrite` | 复用已存在的配置目录（保留其 `keys/`，替换分区集合）；需要 `--from-images`，否则退出码 2 |
 | `--activate` / `--no-activate` | 是否写 `.active-profile`。**默认不激活**（`--no-activate` 是默认值） |
 | `--json` | JSON 输出 |
 
@@ -245,8 +245,9 @@ avbpowertool config create: error: argument --from-images: not allowed with argu
 - 落盘 `profiles/<id>/profile.json`（`partitions` 为空）、`profiles/<id>/keys/`，
   并且**仅在 `keys/manifest.json` 尚不存在时**写入 `{}`（不覆盖已发现的密钥）。
 - 同 id 已存在 → `config.profile_exists`。
-- `--overwrite` **只对 `--from-images` 路径生效**；`--allow-empty --overwrite`
-  仍然报 `config.profile_exists`（已实测）。
+- `--overwrite` **需要 `--from-images`**：在本路径上（以及既没给
+  `--from-images` 也没给 `--allow-empty` 的路径上）会被拒绝，向 stderr 打印
+  `error: --overwrite requires --from-images`，退出码 2，且不写盘。
 - `--json` 顶层键：`profile_id`、`created`、`issues[]`。
 
 `--from-images` 路径（`ConfigCreateFromImagesUseCase`）—— 执行顺序固定，

@@ -88,9 +88,9 @@ avbpowertool config create --id my_device --name "My Device ROM" --allow-empty -
 Writes `profiles/<id>/profile.json` (no partitions) and
 `profiles/<id>/keys/`, plus an empty `keys/manifest.json` **only when none
 exists yet** (discovered keys are never overwritten). An existing id gives
-`config.profile_exists` (`--overwrite` only applies to the `--from-images`
-path). This is the "create the profile → drop keys in → fill in partitions"
-flow.
+`config.profile_exists` (`--overwrite` requires `--from-images`; on this path it
+is rejected with exit code 2 and nothing is written). This is the "create the
+profile → drop keys in → fill in partitions" flow.
 
 #### Generated from images: `--from-images`
 

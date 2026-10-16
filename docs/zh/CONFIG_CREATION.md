@@ -85,7 +85,8 @@ avbpowertool config create --id my_device --name "我的设备 ROM" --allow-empt
 
 落盘 `profiles/<id>/profile.json`（无分区）与 `profiles/<id>/keys/`，并在
 `keys/manifest.json` **不存在时**写入 `{}`（不会覆盖已经发现的密钥）。同 id 已存在
-→ `config.profile_exists`（`--overwrite` 只对 `--from-images` 路径生效）。
+→ `config.profile_exists`（`--overwrite` 需要 `--from-images`，在本路径上会被拒绝，
+退出码 2 且不写盘）。
 适合「先建配置 → 放密钥 → 再灌分区」的流程。
 
 #### 从镜像生成：`--from-images`

@@ -150,7 +150,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_cfg_create.add_argument(
         "--overwrite",
         action="store_true",
-        help="Reuse an existing profile directory (its keys/ are kept, its partitions replaced)",
+        help="Reuse an existing profile directory (its keys/ are kept, its partitions "
+        "replaced); requires --from-images",
     )
     create_activation = p_cfg_create.add_mutually_exclusive_group()
     create_activation.add_argument(

@@ -9,7 +9,7 @@ A configuration-driven Python wrapper for AOSP `avbtool.py`. Provides CLI and TU
 - **Image Inspection**: Read AVB metadata from boot, system, vbmeta images
 - **Image Signing**: Sign images with hash/hashtree footers, generate vbmeta images
 - **Config Management**: Profile-based configuration with import/export via ZIP archives
-- **Legacy Config Import**: Auto-convert v1 (AVBPowerTool 1.x) config ZIPs to v2 (Settings page or `config import-legacy`)
+- **Legacy Config Import**: Auto-convert v1 (AVBPowerTool 1.x) config ZIPs to v3 (Settings page or `config import-legacy`)
 - **Key Management**: Per-profile key stores with manifest-based key resolution
 - **CLI Mode**: Full-featured command-line interface with `--json` output
 - **TUI Mode**: Curses-based interactive terminal UI with keyboard navigation
@@ -225,17 +225,17 @@ Infrastructure (avbtool subprocess, filesystem, persistence, FEC)
 ```
 profiles/
   <profile_id>/
-    profile.json      v2 schema config
+    profile.json      v3 schema config
     keys/
       manifest.json   key_id -> filename mapping
       *.pem           key files
 ```
 
-### Config v2 Schema
+### Config v3 Schema
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "profile": {"id": "example", "name": "Example"},
   "key_store_path": "keys",
   "partitions": {
@@ -245,6 +245,7 @@ profiles/
       "algorithm": "SHA256_RSA4096",
       "key_id": "release_rsa4096",
       "partition_name": "boot",
+      "partition_size": 67108864,
       "rollback_index": 0,
       "salt": "abcdef123456"
     }
@@ -265,7 +266,7 @@ See [AGENTS.md](AGENTS.md) for development guidelines.
 - [Backend API Reference](docs/en/BACKEND_API.md) — use the backend from Python
 - [Adding Navigation](docs/en/FRONTEND_NAVIGATION.md) — add entries to the TUI navigation tree
 - [Editing Pages](docs/en/FRONTEND_PAGES.md) — create or modify TUI views
-- [Legacy Config Import](docs/en/LEGACY_CONFIG_IMPORT.md) — v1 → v2 conversion design and implementation
+- [Legacy Config Import](docs/en/LEGACY_CONFIG_IMPORT.md) — v1 → v3 conversion design and implementation
 - [Architecture](docs/en/ARCHITECTURE.md) — layers, data flow, and module responsibilities
 - [Internationalization](docs/en/I18N.md) — add and use localized string resources
 - [中文文档](docs/zh/README.md) — Chinese docs (ARCHITECTURE.md / I18N.md included)

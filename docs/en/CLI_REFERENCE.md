@@ -72,7 +72,7 @@ avbpowertool                             # no arguments   -> TUI
 |---|---|
 | `0` | Success. Also used for issues whose error-code prefix is in none of the classes below — an unknown prefix never turns a success into a failure |
 | `1` | Any issue prefixed `config.*` / `keys.*` / `image.*` / `chain.*`; plus two explicit cases: `config validate` reporting `missing_images` / `missing_keys`, and `image sign --execute` without `--yes` (which prints `This will modify image files. Use --yes to confirm.` to stderr) |
-| `2` | argparse usage error: unknown command or flag, missing required argument, mutually exclusive flags given together (`--from-images` + `--allow-empty`, `--activate` + `--no-activate`, `--merge` + `--replace`) |
+| `2` | argparse usage error: unknown command or flag, missing required argument, mutually exclusive flags given together (`--from-images` + `--allow-empty`, `--activate` + `--no-activate`, `--merge` + `--replace`), and `config create --overwrite` without `--from-images` |
 | `3` | Any issue prefixed `tool.*` / `signing.*` (an avbtool subprocess failure, a failed signing step) |
 
 The mapping lives in
@@ -247,7 +247,7 @@ avbpowertool config create [-h] --id PROFILE_ID [--name PROFILE_NAME]
 | `--no-chain-resolve` | Do not resolve the chain partitions read from the vbmeta images (resolving **is** the default) |
 | `--include-fallback` | Fall back to "every other scanned partition" when the embedded descriptors were all pruned (off by default, see below) |
 | `--skip-non-avb` | Skip images without an AVB structure instead of failing |
-| `--overwrite` | Reuse an existing profile directory (its `keys/` are kept, its partitions replaced) |
+| `--overwrite` | Reuse an existing profile directory (its `keys/` are kept, its partitions replaced); requires `--from-images`, otherwise exit code 2 |
 | `--activate` / `--no-activate` | Whether to write `.active-profile`. **The default is not to activate** (`--no-activate` is the default) |
 | `--json` | JSON output |
 
@@ -268,8 +268,10 @@ The `--allow-empty` path (`ConfigCreateUseCase`)
   `profiles/<id>/keys/`, and an empty `keys/manifest.json` **only when none
   exists yet** (it never overwrites discovered keys).
 - An existing id gives `config.profile_exists`.
-- `--overwrite` **only applies to the `--from-images` path**;
-  `--allow-empty --overwrite` still reports `config.profile_exists` (measured).
+- `--overwrite` **requires `--from-images`**: on this path — and on the plain
+  path where neither `--from-images` nor `--allow-empty` is given — it is
+  rejected with `error: --overwrite requires --from-images` on stderr and exit
+  code 2, and nothing is written.
 - Top-level `--json` keys: `profile_id`, `created`, `issues[]`.
 
 The `--from-images` path (`ConfigCreateFromImagesUseCase`) — the order is fixed

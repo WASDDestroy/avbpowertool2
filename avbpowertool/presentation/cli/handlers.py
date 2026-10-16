@@ -275,6 +275,13 @@ def _handle_config_create(
         render_config_create_from_images(result, as_json, out)
         return exit_code_from_issues(result.issues)
 
+    # --overwrite only means something when the partitions come from images.
+    # Accepting it here would silently ignore the flag (argparse already
+    # accepted it), so reject it the way a usage error is rejected.
+    if getattr(args, "overwrite", False):
+        print("error: --overwrite requires --from-images", file=sys.stderr)
+        return 2
+
     uc = ConfigCreateUseCase(workspace)
     request = ConfigCreateRequest(
         profile_id=profile_id,
