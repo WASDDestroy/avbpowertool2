@@ -19,6 +19,9 @@ from avbpowertool.application.commands import (
     ResolveChainKeysResult,
 )
 from avbpowertool.application.ports import AvbToolPort
+from avbpowertool.application.services.profile_resolution import (
+    resolve_key_store_profile_id,
+)
 from avbpowertool.domain.models import OperationIssue
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.infrastructure.persistence.key_repository import KeyRepository
@@ -37,7 +40,11 @@ class ResolveChainKeysUseCase:
         if not request.chains:
             return ResolveChainKeysResult()
 
-        key_dir = self._ws.resolve_key_dir(request.profile_id)
+        profile_id, resolution_issue = resolve_key_store_profile_id(self._ws, request.profile_id)
+        if resolution_issue is not None:
+            return ResolveChainKeysResult(issues=(resolution_issue,))
+
+        key_dir = self._ws.resolve_key_dir(profile_id)
         manifest = KeyRepository(key_dir).load_manifest()
 
         # Map public-key SHA1 -> (key_id, extracted public-key filename).

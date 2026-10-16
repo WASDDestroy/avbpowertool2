@@ -154,6 +154,7 @@ def _handle_sign(args: Namespace, workspace: WorkspacePaths, as_json: bool, out:
     uc = SignImagesUseCase(workspace, _create_avb_tool(workspace))
     request = SignImagesRequest(
         image_names=tuple(args.images),
+        profile_id=getattr(args, "profile", "current"),
         dry_run=dry_run,
         remove_existing_footers=getattr(args, "remove_footers", False),
     )
@@ -166,7 +167,7 @@ def _handle_config_show(
     args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
 ) -> int:
     uc = ConfigShowUseCase(workspace)
-    request = ConfigShowRequest()
+    request = ConfigShowRequest(profile_id=getattr(args, "profile", "current"))
     result = uc.execute(request)
     render_config_show(result, as_json, out)
     return exit_code_from_issues(result.issues)
@@ -176,7 +177,7 @@ def _handle_config_validate(
     args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
 ) -> int:
     uc = ConfigValidateUseCase(workspace)
-    request = ConfigValidateRequest()
+    request = ConfigValidateRequest(profile_id=getattr(args, "profile", "current"))
     result = uc.execute(request)
     render_config_validate(result, as_json, out)
     if result.missing_images:

@@ -23,6 +23,7 @@ from avbpowertool.application.ports import (
     ProgressSink,
 )
 from avbpowertool.application.services.manage_keys import ensure_public_keys
+from avbpowertool.domain.errors import ConfigError
 from avbpowertool.domain.models import (
     OperationIssue,
     SigningPlan,
@@ -53,30 +54,38 @@ class SignImagesUseCase:
     def execute(self, request: SignImagesRequest) -> SignImagesResult:
         issues: list[OperationIssue] = []
 
-        # Load profile
+        # Resolve the requested profile ("current" -> active profile)
         repo = ProfileRepository(self._ws)
         try:
-            profile = repo.load(request.profile_id)
-        except Exception as exc:
-            issues.append(OperationIssue("config.not_found", f"Failed to load profile: {exc}"))
+            profile_id = repo.resolve_profile_id(request.profile_id)
+        except ConfigError as exc:
+            issues.append(OperationIssue(exc.error_code, str(exc)))
             return SignImagesResult(
                 plan=SigningPlan(profile_id=request.profile_id, steps=(), vbmeta_order=()),
                 issues=tuple(issues),
             )
 
+        # Load profile
+        try:
+            profile = repo.load(profile_id)
+        except Exception as exc:
+            issues.append(OperationIssue("config.not_found", f"Failed to load profile: {exc}"))
+            return SignImagesResult(
+                plan=SigningPlan(profile_id=profile_id, steps=(), vbmeta_order=()),
+                issues=tuple(issues),
+            )
+
         # Build signing plan
         image_dir = self._ws.images
-        key_dir = self._ws.resolve_key_dir(request.profile_id)
-        issues.extend(ensure_public_keys(self._ws, self._avb, request.profile_id))
-        staging_dir = self._ws.staging / f"sign-{request.profile_id}"
+        key_dir = self._ws.resolve_key_dir(profile_id)
+        issues.extend(ensure_public_keys(self._ws, self._avb, profile_id))
+        staging_dir = self._ws.staging / f"sign-{profile_id}"
 
         builder = SigningPlanBuilder(profile, image_dir, key_dir, staging_dir)
         plan = builder.build(request.image_names, include_vbmeta_props=request.include_vbmeta_props)
         issues.extend(plan.issues)
 
-        self._progress.on_event(
-            PlanCreated(profile_id=request.profile_id, step_count=len(plan.steps))
-        )
+        self._progress.on_event(PlanCreated(profile_id=profile_id, step_count=len(plan.steps)))
 
         if request.dry_run or not plan.steps:
             return SignImagesResult(
@@ -86,16 +95,17 @@ class SignImagesUseCase:
             )
 
         # Execute plan
-        return self._execute_plan(plan, request, issues)
+        return self._execute_plan(plan, request, issues, profile_id)
 
     def _execute_plan(
         self,
         plan: SigningPlan,
         request: SignImagesRequest,
         issues: list[OperationIssue],
+        profile_id: str,
     ) -> SignImagesResult:
         """Execute the signing plan step by step."""
-        staging_dir = self._ws.staging / f"sign-{request.profile_id}"
+        staging_dir = self._ws.staging / f"sign-{profile_id}"
         staging_dir.mkdir(parents=True, exist_ok=True)
 
         # Remove existing footers if requested
@@ -158,7 +168,7 @@ class SignImagesUseCase:
 
         # Atomic replace: move staging to target image dir
         if fail_count == 0 and success_count > 0:
-            self._commit_staging(staging_dir, request.profile_id)
+            self._commit_staging(staging_dir, profile_id)
 
         return SignImagesResult(
             plan=plan,

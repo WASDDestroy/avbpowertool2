@@ -50,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_img_sign.add_argument("--yes", action="store_true", help="Confirm execution")
     p_img_sign.add_argument(
+        "--profile",
+        default="current",
+        help="Profile ID (default: current — resolved to the active profile)",
+    )
+    p_img_sign.add_argument(
         "--remove-footers", action="store_true", help="Remove existing footers first"
     )
     p_img_sign.add_argument("--json", action="store_true", help="JSON output")
@@ -61,11 +66,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     # config show
     p_cfg_show = cfg_sub.add_parser("show", help="Show current config")
+    p_cfg_show.add_argument(
+        "--profile",
+        default="current",
+        help="Profile ID (default: current — resolved to the active profile)",
+    )
     p_cfg_show.add_argument("--json", action="store_true", help="JSON output")
     p_cfg_show.set_defaults(action_id=ActionId.CONFIG_SHOW)
 
     # config validate
     p_cfg_val = cfg_sub.add_parser("validate", help="Validate config against workspace")
+    p_cfg_val.add_argument(
+        "--profile",
+        default="current",
+        help="Profile ID (default: current — resolved to the active profile)",
+    )
     p_cfg_val.add_argument("--json", action="store_true", help="JSON output")
     p_cfg_val.set_defaults(action_id=ActionId.CONFIG_VALIDATE)
 

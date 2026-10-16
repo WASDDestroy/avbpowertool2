@@ -133,3 +133,89 @@ class TestProfileRepositoryActivate:
         repo.activate("first")
         repo.activate("second")
         assert repo.get_active_profile_id() == "second"
+
+
+class TestResolveProfileId:
+    # Rule 1: a literal profile named like the request always wins.
+
+    def test_literal_id_returned(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _write_profile(ws, AvbProfile(id="device_a", name="A"))
+
+        repo = ProfileRepository(ws)
+        assert repo.resolve_profile_id("device_a") == "device_a"
+
+    def test_literal_current_wins_over_active_profile(self, tmp_path: Path) -> None:
+        """A profile really named ``current`` keeps working (conftest layout)."""
+        ws = _make_workspace(tmp_path)
+        _write_profile(ws, AvbProfile(id="current", name="Current"))
+        _write_profile(ws, AvbProfile(id="device_a", name="A"))
+        repo = ProfileRepository(ws)
+        repo.activate("device_a")
+
+        assert repo.resolve_profile_id("current") == "current"
+
+    # Rule 2: ``current``/empty falls back to the active profile.
+
+    def test_current_resolves_to_active_profile(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _write_profile(ws, AvbProfile(id="device_a", name="A"))
+        _write_profile(ws, AvbProfile(id="device_b", name="B"))
+        repo = ProfileRepository(ws)
+        repo.activate("device_b")
+
+        assert repo.resolve_profile_id("current") == "device_b"
+        assert repo.resolve_profile_id("") == "device_b"
+
+    def test_whitespace_request_resolves_to_active_profile(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _write_profile(ws, AvbProfile(id="device_a", name="A"))
+        repo = ProfileRepository(ws)
+        repo.activate("device_a")
+
+        assert repo.resolve_profile_id("  ") == "device_a"
+
+    # Rule 3: unresolvable requests raise ConfigError.
+
+    def test_no_active_profile_raises(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _write_profile(ws, AvbProfile(id="device_a", name="A"))
+        repo = ProfileRepository(ws)
+
+        with pytest.raises(ConfigError) as excinfo:
+            repo.resolve_profile_id("current")
+
+        assert excinfo.value.error_code == "config.no_active_profile"
+        assert "config activate" in str(excinfo.value)
+
+    def test_empty_request_without_any_profile_raises(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        repo = ProfileRepository(ws)
+
+        with pytest.raises(ConfigError) as excinfo:
+            repo.resolve_profile_id("")
+
+        assert excinfo.value.error_code == "config.no_active_profile"
+
+    def test_active_profile_pointing_to_missing_id_raises(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _write_profile(ws, AvbProfile(id="device_a", name="A"))
+        repo = ProfileRepository(ws)
+        repo.activate("ghost")
+
+        with pytest.raises(ConfigError) as excinfo:
+            repo.resolve_profile_id("current")
+
+        assert excinfo.value.error_code == "config.no_active_profile"
+
+    def test_unknown_explicit_id_raises_not_found(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _write_profile(ws, AvbProfile(id="device_a", name="A"))
+        repo = ProfileRepository(ws)
+        repo.activate("device_a")
+
+        with pytest.raises(ConfigError) as excinfo:
+            repo.resolve_profile_id("ghost")
+
+        assert excinfo.value.error_code == "config.not_found"
+        assert "ghost" in str(excinfo.value)

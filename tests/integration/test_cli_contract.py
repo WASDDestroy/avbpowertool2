@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 from io import StringIO
 from pathlib import Path
 
+from avbpowertool.domain.models import (
+    AvbProfile,
+    DescriptorType,
+    PartitionConfig,
+    SigningAlgorithm,
+)
+from avbpowertool.infrastructure.persistence.profile_codec import encode_profile
 from avbpowertool.presentation.cli.parser import build_parser, main
 
 
@@ -195,6 +203,153 @@ class TestExitCodes:
         assert getattr(args, "command", None) is None
 
 
+def _prepare_workspace(root: Path) -> Path:
+    """Create an empty workspace layout (no profiles, no active profile)."""
+    (root / "Images").mkdir(exist_ok=True)
+    (root / "profiles").mkdir(exist_ok=True)
+    (root / "Logs").mkdir(exist_ok=True)
+    (root / ".avbpowertool-staging").mkdir(exist_ok=True)
+    (root / "avbtool.py").write_text("# placeholder", encoding="utf-8")
+    return root
+
+
+def _write_profile(
+    root: Path, profile_id: str, partitions: dict[str, PartitionConfig] | None = None
+) -> None:
+    """Write a minimal profile.json + key store for *profile_id*."""
+    profile_dir = root / "profiles" / profile_id
+    (profile_dir / "keys").mkdir(parents=True, exist_ok=True)
+    profile = AvbProfile(id=profile_id, name=profile_id, partitions=partitions or {})
+    (profile_dir / "profile.json").write_text(
+        json.dumps(encode_profile(profile), indent=2), encoding="utf-8"
+    )
+
+
+def _activate(root: Path, profile_id: str) -> None:
+    (root / ".active-profile").write_text(profile_id, encoding="utf-8")
+
+
+class TestProfileResolutionCli:
+    """``current`` must resolve to the active profile; --profile wins."""
+
+    def test_config_show_without_active_profile(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            os.chdir(tmp_path)
+            out = StringIO()
+            code = main(["config", "show", "--json"], out=out)
+        finally:
+            os.chdir(old_cwd)
+
+        data = json.loads(out.getvalue())
+        assert code != 0
+        assert data["issues"][0]["error_code"] == "config.no_active_profile"
+
+    def test_config_show_uses_literal_current_profile(self, tmp_workspace: Path) -> None:
+        """A profile really named ``current`` (conftest layout) still works."""
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_workspace)
+            out = StringIO()
+            code = main(["config", "show", "--json"], out=out)
+        finally:
+            os.chdir(old_cwd)
+
+        data = json.loads(out.getvalue())
+        assert code == 0
+        assert data["config_name"] == "current"
+        assert data["issues"] == []
+
+    def test_config_show_resolves_active_and_explicit_profile(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            _write_profile(tmp_path, "device_x")
+            _write_profile(tmp_path, "device_y")
+            _activate(tmp_path, "device_x")
+            os.chdir(tmp_path)
+
+            default_out = StringIO()
+            default_code = main(["config", "show", "--json"], out=default_out)
+            explicit_out = StringIO()
+            explicit_code = main(
+                ["config", "show", "--profile", "device_y", "--json"], out=explicit_out
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert default_code == 0
+        assert json.loads(default_out.getvalue())["config_name"] == "device_x"
+        assert explicit_code == 0
+        assert json.loads(explicit_out.getvalue())["config_name"] == "device_y"
+
+    def test_config_validate_uses_active_profile(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            _write_profile(tmp_path, "device_x")
+            _activate(tmp_path, "device_x")
+            os.chdir(tmp_path)
+
+            out = StringIO()
+            code = main(["config", "validate", "--json"], out=out)
+        finally:
+            os.chdir(old_cwd)
+
+        data = json.loads(out.getvalue())
+        assert code == 0
+        assert data["config_name"] == "device_x"
+
+    def test_image_sign_dry_run_uses_active_profile(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        try:
+            _prepare_workspace(tmp_path)
+            _write_profile(
+                tmp_path,
+                "device_a",
+                partitions={
+                    "boot": PartitionConfig(
+                        image="boot.img",
+                        descriptor=DescriptorType.HASH,
+                        algorithm=SigningAlgorithm.SHA256_RSA4096,
+                        key_id="testkey_rsa4096",
+                        partition_name="boot",
+                        rollback_index=0,
+                        salt="abcdef",
+                    ),
+                },
+            )
+            key_dir = tmp_path / "profiles" / "device_a" / "keys"
+            (key_dir / "testkey_rsa4096.pem").write_text("fake key", encoding="utf-8")
+            (key_dir / "testkey_rsa4096_pub.bin").write_bytes(b"fake public key")
+            (key_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "testkey_rsa4096": {
+                            "private_key": "testkey_rsa4096.pem",
+                            "public_key": "testkey_rsa4096_pub.bin",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (tmp_path / "Images" / "boot.img").write_bytes(b"fake boot image")
+            _activate(tmp_path, "device_a")
+            os.chdir(tmp_path)
+
+            out = StringIO()
+            code = main(["image", "sign", "boot", "--dry-run", "--json"], out=out)
+        finally:
+            os.chdir(old_cwd)
+
+        data = json.loads(out.getvalue())
+        assert code == 0
+        assert data["issues"] == []
+        assert data["plan"]["profile_id"] == "device_a"
+        assert [s["operation"] for s in data["plan"]["steps"]] == ["add_hash_footer"]
+
+
 class TestParserBuilds:
     def test_build_parser_returns_parser(self) -> None:
         parser = build_parser()
@@ -208,3 +363,14 @@ class TestParserBuilds:
         assert args.command == "image"
         assert args.image_command == "inspect"
         assert args.images == ["boot"]
+
+    def test_profile_flag_on_profile_resolving_subcommands(self) -> None:
+        parser = build_parser()
+        assert parser.parse_args(["image", "sign", "boot"]).profile == "current"
+        assert parser.parse_args(["config", "show"]).profile == "current"
+        assert parser.parse_args(["config", "validate"]).profile == "current"
+        assert parser.parse_args(["config", "show", "--profile", "device_a"]).profile == "device_a"
+        assert (
+            parser.parse_args(["image", "sign", "boot", "--profile", "device_a"]).profile
+            == "device_a"
+        )

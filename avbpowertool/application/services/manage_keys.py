@@ -15,6 +15,9 @@ from avbpowertool.application.commands import (
     KeyRemoveResult,
 )
 from avbpowertool.application.ports import AvbToolPort
+from avbpowertool.application.services.profile_resolution import (
+    resolve_key_store_profile_id,
+)
 from avbpowertool.domain.models import OperationIssue
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
 from avbpowertool.infrastructure.persistence.key_repository import KeyRepository
@@ -68,7 +71,15 @@ class KeyDiscoveryUseCase:
 
     def execute(self, request: KeyDiscoveryRequest) -> KeyDiscoveryResult:
         issues: list[OperationIssue] = []
-        key_dir = self._ws.resolve_key_dir(request.profile_id)
+        profile_id, resolution_issue = resolve_key_store_profile_id(self._ws, request.profile_id)
+        if resolution_issue is not None:
+            issues.append(resolution_issue)
+            return KeyDiscoveryResult(
+                discovered_count=0,
+                manifest_entries=(),
+                issues=tuple(issues),
+            )
+        key_dir = self._ws.resolve_key_dir(profile_id)
 
         if not key_dir.exists():
             issues.append(
@@ -119,7 +130,15 @@ class KeyListUseCase:
 
     def execute(self, request: KeyListRequest) -> KeyListResult:
         issues: list[OperationIssue] = []
-        key_dir = self._ws.resolve_key_dir(request.profile_id)
+        profile_id, resolution_issue = resolve_key_store_profile_id(self._ws, request.profile_id)
+        if resolution_issue is not None:
+            issues.append(resolution_issue)
+            return KeyListResult(
+                manifest_entries=(),
+                pem_files_on_disk=(),
+                issues=tuple(issues),
+            )
+        key_dir = self._ws.resolve_key_dir(profile_id)
 
         if not key_dir.exists():
             issues.append(
@@ -160,7 +179,11 @@ class KeyAddUseCase:
 
     def execute(self, request: KeyAddRequest) -> KeyAddResult:
         issues: list[OperationIssue] = []
-        key_dir = self._ws.resolve_key_dir(request.profile_id)
+        profile_id, resolution_issue = resolve_key_store_profile_id(self._ws, request.profile_id)
+        if resolution_issue is not None:
+            issues.append(resolution_issue)
+            return KeyAddResult(key_id=request.key_id, issues=tuple(issues))
+        key_dir = self._ws.resolve_key_dir(profile_id)
 
         if not key_dir.exists():
             issues.append(
@@ -207,7 +230,11 @@ class KeyRemoveUseCase:
 
     def execute(self, request: KeyRemoveRequest) -> KeyRemoveResult:
         issues: list[OperationIssue] = []
-        key_dir = self._ws.resolve_key_dir(request.profile_id)
+        profile_id, resolution_issue = resolve_key_store_profile_id(self._ws, request.profile_id)
+        if resolution_issue is not None:
+            issues.append(resolution_issue)
+            return KeyRemoveResult(key_id=request.key_id, issues=tuple(issues))
+        key_dir = self._ws.resolve_key_dir(profile_id)
 
         if not key_dir.exists():
             issues.append(

@@ -65,11 +65,21 @@ class ConfigShowUseCase:
         repo = ProfileRepository(self._ws)
 
         try:
-            profile = repo.load(request.profile_id)
+            profile_id = repo.resolve_profile_id(request.profile_id)
+        except ConfigError as exc:
+            issues.append(OperationIssue(exc.error_code, str(exc)))
+            return ConfigShowResult(
+                config_name=request.profile_id,
+                partitions=(),
+                issues=tuple(issues),
+            )
+
+        try:
+            profile = repo.load(profile_id)
         except Exception as exc:
             issues.append(OperationIssue("config.not_found", f"Failed to load profile: {exc}"))
             return ConfigShowResult(
-                config_name=request.profile_id,
+                config_name=profile_id,
                 partitions=(),
                 issues=tuple(issues),
             )
@@ -93,11 +103,21 @@ class ConfigValidateUseCase:
         repo = ProfileRepository(self._ws)
 
         try:
-            profile = repo.load(request.profile_id)
+            profile_id = repo.resolve_profile_id(request.profile_id)
+        except ConfigError as exc:
+            issues.append(OperationIssue(exc.error_code, str(exc)))
+            return ConfigValidateResult(
+                config_name=request.profile_id,
+                partitions=(),
+                issues=tuple(issues),
+            )
+
+        try:
+            profile = repo.load(profile_id)
         except Exception as exc:
             issues.append(OperationIssue("config.not_found", f"Failed to load profile: {exc}"))
             return ConfigValidateResult(
-                config_name=request.profile_id,
+                config_name=profile_id,
                 partitions=(),
                 issues=tuple(issues),
             )
@@ -113,7 +133,7 @@ class ConfigValidateUseCase:
                 missing_images.append(name)
 
             # Check key exists
-            key_dir = self._ws.resolve_key_dir(request.profile_id)
+            key_dir = self._ws.resolve_key_dir(profile_id)
             manifest_path = key_dir / "manifest.json"
             if manifest_path.exists():
                 import json
@@ -433,12 +453,18 @@ class ConfigMigrateUseCase:
 
     def execute(self, request: ConfigMigrateRequest) -> ConfigMigrateResult:
         issues: list[OperationIssue] = []
-        profile_path = self._ws.resolve_profile_dir(request.profile_id) / "profile.json"
-        if not profile_path.exists():
-            issues.append(
-                OperationIssue("config.not_found", f"Profile not found: {request.profile_id}")
-            )
+        repo = ProfileRepository(self._ws)
+
+        try:
+            profile_id = repo.resolve_profile_id(request.profile_id)
+        except ConfigError as exc:
+            issues.append(OperationIssue(exc.error_code, str(exc)))
             return ConfigMigrateResult(profile_id=request.profile_id, issues=tuple(issues))
+
+        profile_path = self._ws.resolve_profile_dir(profile_id) / "profile.json"
+        if not profile_path.exists():
+            issues.append(OperationIssue("config.not_found", f"Profile not found: {profile_id}"))
+            return ConfigMigrateResult(profile_id=profile_id, issues=tuple(issues))
 
         try:
             with open(profile_path, encoding="utf-8") as f:
@@ -447,14 +473,14 @@ class ConfigMigrateUseCase:
             issues.append(
                 OperationIssue(
                     "config.parse_error",
-                    f"Failed to read profile {request.profile_id!r}: {exc}",
+                    f"Failed to read profile {profile_id!r}: {exc}",
                 )
             )
-            return ConfigMigrateResult(profile_id=request.profile_id, issues=tuple(issues))
+            return ConfigMigrateResult(profile_id=profile_id, issues=tuple(issues))
 
         schema_version = data.get("schema_version", 0)
         if schema_version == 3:
-            return ConfigMigrateResult(profile_id=request.profile_id, migrated=False)
+            return ConfigMigrateResult(profile_id=profile_id, migrated=False)
 
         if schema_version != 2:
             issues.append(
@@ -463,7 +489,7 @@ class ConfigMigrateUseCase:
                     f"Unsupported schema_version {schema_version}; only v2 and v3 can be handled",
                 )
             )
-            return ConfigMigrateResult(profile_id=request.profile_id, issues=tuple(issues))
+            return ConfigMigrateResult(profile_id=profile_id, issues=tuple(issues))
 
         try:
             profile, migration_issues = decode_profile_with_issues(data)
@@ -474,13 +500,13 @@ class ConfigMigrateUseCase:
             profile_path.write_text(
                 json.dumps(v3_data, indent=2, ensure_ascii=False), encoding="utf-8"
             )
-            logger.info("Migrated profile %r to schema v3", request.profile_id)
+            logger.info("Migrated profile %r to schema v3", profile_id)
         except Exception as exc:
             issues.append(OperationIssue("config.migrate_failed", f"Migration failed: {exc}"))
-            return ConfigMigrateResult(profile_id=request.profile_id, issues=tuple(issues))
+            return ConfigMigrateResult(profile_id=profile_id, issues=tuple(issues))
 
         return ConfigMigrateResult(
-            profile_id=request.profile_id,
+            profile_id=profile_id,
             migrated=True,
             issues=tuple(issues),
         )
@@ -556,11 +582,21 @@ class ConfigEditUseCase:
         repo = ProfileRepository(self._ws)
 
         try:
-            profile = repo.load(request.profile_id)
+            profile_id = repo.resolve_profile_id(request.profile_id)
+        except ConfigError as exc:
+            issues.append(OperationIssue(exc.error_code, str(exc)))
+            return ConfigEditResult(
+                profile_id=request.profile_id,
+                partition_name=request.partition_name,
+                issues=tuple(issues),
+            )
+
+        try:
+            profile = repo.load(profile_id)
         except Exception as exc:
             issues.append(OperationIssue("config.not_found", f"Failed to load profile: {exc}"))
             return ConfigEditResult(
-                profile_id=request.profile_id,
+                profile_id=profile_id,
                 partition_name=request.partition_name,
                 issues=tuple(issues),
             )
@@ -574,7 +610,7 @@ class ConfigEditUseCase:
                 )
             )
             return ConfigEditResult(
-                profile_id=request.profile_id,
+                profile_id=profile_id,
                 partition_name=request.partition_name,
                 issues=tuple(issues),
             )
@@ -594,7 +630,7 @@ class ConfigEditUseCase:
 
         if issues:
             return ConfigEditResult(
-                profile_id=request.profile_id,
+                profile_id=profile_id,
                 partition_name=request.partition_name,
                 issues=tuple(issues),
             )
@@ -610,7 +646,7 @@ class ConfigEditUseCase:
             issues.append(OperationIssue("config.save_failed", f"Failed to save profile: {exc}"))
 
         return ConfigEditResult(
-            profile_id=request.profile_id,
+            profile_id=profile_id,
             partition_name=request.partition_name,
             issues=tuple(issues),
         )

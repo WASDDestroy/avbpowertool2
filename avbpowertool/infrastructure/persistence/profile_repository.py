@@ -95,5 +95,41 @@ class ProfileRepository:
         except OSError:
             return None
 
+    def resolve_profile_id(self, requested: str) -> str:
+        """Resolve a requested profile ID to a concrete on-disk profile.
+
+        Resolution order (a literal ID always wins, so a profile that is
+        really named ``current`` keeps working):
+
+        1. ``profiles/<requested>/profile.json`` exists -> *requested*.
+        2. *requested* is empty or ``"current"`` and ``.active-profile``
+           points at an existing profile -> that profile's ID.
+        3. Otherwise raise :class:`ConfigError`; a ``current``/empty
+           request without an active profile reports
+           ``config.no_active_profile``.
+
+        Raises:
+            ConfigError: no candidate profile could be resolved.
+        """
+        requested = (requested or "").strip()
+        profiles = self.list_profiles()
+
+        if requested and requested in profiles:
+            return requested
+
+        if requested in ("", "current"):
+            active = self.get_active_profile_id()
+            if active and active in profiles:
+                return active
+            raise ConfigError(
+                "No active profile; use 'config activate' or pass an explicit --profile",
+                error_code="config.no_active_profile",
+            )
+
+        raise ConfigError(
+            f"Profile not found: {requested}",
+            error_code="config.not_found",
+        )
+
     def _profile_json_path(self, profile_id: str) -> Path:
         return self._ws.resolve_profile_dir(profile_id) / "profile.json"
