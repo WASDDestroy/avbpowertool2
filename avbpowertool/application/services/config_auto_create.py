@@ -18,11 +18,20 @@ from avbpowertool.application.commands import (
     ChainKeyResolution,
     ConfigAutoCreateRequest,
     ConfigAutoCreateResult,
+    ConfigCreateFromImagesRequest,
+    ConfigCreateFromImagesResult,
+    ConfigCreateRequest,
+    ConfigValidateRequest,
     InspectImagesRequest,
     ResolveChainKeysRequest,
 )
 from avbpowertool.application.ports import AvbToolPort
 from avbpowertool.application.services.inspect_images import InspectImagesUseCase
+from avbpowertool.application.services.manage_configs import (
+    ConfigCreateUseCase,
+    ConfigValidateUseCase,
+    sanitize_profile_id,
+)
 from avbpowertool.application.services.resolve_chains import ResolveChainKeysUseCase
 from avbpowertool.domain.models import (
     ChainDescriptor,
@@ -33,8 +42,12 @@ from avbpowertool.domain.models import (
     SigningAlgorithm,
 )
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
+from avbpowertool.infrastructure.persistence.key_repository import KeyRepository
 
 _VALID_HASH_ALGORITHMS = ("sha1", "sha256", "sha512")
+
+#: issue code reported for an image that carries no AVB structure at all
+NO_VBMETA_STRUCTURE = "image.no_vbmeta_structure"
 
 
 class ConfigAutoCreateUseCase:
@@ -107,6 +120,178 @@ class ConfigAutoCreateUseCase:
             chain_issues=chain_issues,
             issues=inspect_result.issues,
         )
+
+
+class ConfigCreateFromImagesUseCase:
+    """Create a profile from the AVB metadata of the images on disk.
+
+    This is the scripted counterpart of the create wizard's auto mode: it
+    scans a directory, builds the partition configs, writes the profile and
+    then reports what is still missing (keys).  The execution order is
+    fixed and every early return leaves the workspace untouched:
+
+    1. the requested id must already be a valid profile id;
+    2. an existing ``profiles/<id>/`` is a conflict unless ``overwrite``;
+    3. every explicitly requested image must exist;
+    4. the images are scanned and inspected;
+    5. an image without AVB structure is fatal unless ``skip_non_avb``;
+    6. an empty partition set is ``config.no_partitions``;
+    7. the profile is written (an overwrite keeps the existing ``keys/``);
+    8. the new profile is validated for information (``missing_keys``).
+    """
+
+    def __init__(self, workspace: WorkspacePaths, avb_tool: AvbToolPort) -> None:
+        self._ws = workspace
+        self._avb = avb_tool
+
+    def execute(self, request: ConfigCreateFromImagesRequest) -> ConfigCreateFromImagesResult:
+        # 1. The requested id must be usable as a directory name as-is;
+        # silently rewriting it would create a profile under another id.
+        profile_id = sanitize_profile_id(request.profile_id)
+        if profile_id != request.profile_id:
+            return ConfigCreateFromImagesResult(
+                profile_id=request.profile_id,
+                issues=(
+                    OperationIssue(
+                        "config.invalid_profile_id",
+                        f"Invalid profile id: {request.profile_id!r} "
+                        "(use letters, digits, '_', '-', '.' only)",
+                    ),
+                ),
+            )
+
+        # 2. Conflict check: an existing directory is reused on overwrite
+        # (its keys/ content is kept, the partitions are replaced).
+        if self._ws.resolve_profile_dir(profile_id).exists() and not request.overwrite:
+            return ConfigCreateFromImagesResult(
+                profile_id=profile_id,
+                issues=(
+                    OperationIssue(
+                        "config.profile_exists",
+                        f"Profile already exists: {profile_id}",
+                    ),
+                ),
+            )
+
+        image_dir = request.image_dir if request.image_dir is not None else self._ws.images
+
+        # 3. Every explicitly requested image must exist; a wrapper script
+        # computes the image set, so a typo must fail loudly and early.
+        missing = [
+            name for name in request.image_names if not (image_dir / f"{name}.img").is_file()
+        ]
+        if missing:
+            return ConfigCreateFromImagesResult(
+                profile_id=profile_id,
+                issues=tuple(
+                    OperationIssue(
+                        "image.not_found",
+                        f"Image file does not exist: {image_dir / f'{name}.img'}",
+                    )
+                    for name in missing
+                ),
+            )
+
+        # 4. Scan, inspect and turn every image into a partition config.
+        # The scan directory also drives image resolution: --from-images
+        # points the inspection at the requested directory instead of the
+        # workspace default.
+        available_keys, default_key_id = self._key_candidates(profile_id)
+        scan_ws = self._ws if image_dir == self._ws.images else replace(self._ws, images=image_dir)
+        auto = ConfigAutoCreateUseCase(scan_ws, self._avb).execute(
+            ConfigAutoCreateRequest(
+                image_dir=image_dir,
+                image_names=request.image_names,
+                key_id=request.key_id,
+                available_keys=available_keys,
+                default_key_id=default_key_id,
+                profile_id=profile_id,
+                resolve_chains=request.resolve_chains,
+                allow_fallback=request.allow_fallback,
+            )
+        )
+
+        issues: list[OperationIssue] = [
+            issue
+            for issue in auto.issues
+            if not (request.skip_non_avb and issue.error_code == NO_VBMETA_STRUCTURE)
+        ]
+        skipped_images = auto.skipped_images
+
+        # 5. An image without AVB structure is a fatal error by default:
+        # silently dropping its partitions is the one failure mode scripts
+        # must never miss.
+        if any(issue.error_code == NO_VBMETA_STRUCTURE for issue in issues):
+            return ConfigCreateFromImagesResult(
+                profile_id=profile_id,
+                scanned_images=auto.scanned_images,
+                skipped_images=skipped_images,
+                issues=tuple(issues),
+            )
+
+        # 6. Nothing usable was scanned: never create an empty profile here
+        # (that is what the explicit --allow-empty path is for).
+        if not auto.partitions:
+            issues.append(
+                OperationIssue(
+                    "config.no_partitions",
+                    "No partitions could be generated from the scanned images",
+                )
+            )
+            return ConfigCreateFromImagesResult(
+                profile_id=profile_id,
+                scanned_images=auto.scanned_images,
+                skipped_images=skipped_images,
+                issues=tuple(issues),
+            )
+
+        # 7. Write the profile.  Chain-resolution problems do not block
+        # creation (the chains can be hardcoded later), but they are kept
+        # visible in the result.
+        issues.extend(auto.chain_issues)
+        create_result = ConfigCreateUseCase(self._ws).execute(
+            ConfigCreateRequest(
+                profile_id=profile_id,
+                profile_name=request.profile_name or profile_id,
+                partitions=auto.partitions,
+                activate=request.activate,
+                allow_empty=False,
+                overwrite=request.overwrite,
+            )
+        )
+        issues.extend(create_result.issues)
+
+        chain_count = sum(len(partition.chain_partitions) for partition in auto.partitions)
+
+        # 8. Informational: the keys the new profile still needs.  Missing
+        # keys never fail the command — they can be added afterwards.
+        missing_keys: tuple[str, ...] = ()
+        if create_result.created:
+            validation = ConfigValidateUseCase(self._ws).execute(
+                ConfigValidateRequest(profile_id=profile_id)
+            )
+            missing_keys = validation.missing_keys
+
+        return ConfigCreateFromImagesResult(
+            profile_id=profile_id,
+            created=create_result.created,
+            partition_count=len(auto.partitions) if create_result.created else 0,
+            chain_count=chain_count if create_result.created else 0,
+            scanned_images=auto.scanned_images,
+            skipped_images=skipped_images,
+            missing_keys=missing_keys,
+            issues=tuple(issues),
+        )
+
+    def _key_candidates(self, profile_id: str) -> tuple[tuple[str, ...], str]:
+        """Return ``(available key ids, default key id)`` for the profile.
+
+        The key store is read as-is: a brand-new profile has none, while an
+        overwrite reuses the keys already sitting next to the old profile.
+        """
+        manifest = KeyRepository(self._ws.resolve_key_dir(profile_id)).load_manifest()
+        keys = tuple(manifest)
+        return keys, keys[0] if len(keys) == 1 else "default"
 
 
 def _scan_images(image_dir: Path, image_names: tuple[str, ...]) -> tuple[str, ...]:

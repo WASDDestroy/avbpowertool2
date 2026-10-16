@@ -321,10 +321,14 @@ class LegacyConfigImportUseCase:
             shutil.rmtree(staging_dir, ignore_errors=True)
 
 
-def _sanitize_profile_id(value: str) -> str:
+def sanitize_profile_id(value: str) -> str:
     """Make a filesystem-safe profile id from an arbitrary config name."""
     cleaned = re.sub(r"[^A-Za-z0-9_.-]", "_", value).strip("._")
     return cleaned or "legacy_config"
+
+
+#: Historical private name, kept so existing references keep working.
+_sanitize_profile_id = sanitize_profile_id
 
 
 def _read_v1_config_name(config_dir: Path) -> str | None:
@@ -368,6 +372,11 @@ class ConfigCreateUseCase:
     issues (the domain validator stays strict) so the "create config,
     then add keys, then fill in partitions" flow works.  Every other
     issue is still reported.
+
+    A request with ``overwrite`` set reuses an existing profile directory
+    instead of reporting ``config.profile_exists``: the partition set is
+    replaced and the ``keys/`` content is left alone (the manifest is only
+    seeded when it does not exist yet).
     """
 
     def __init__(self, workspace: WorkspacePaths) -> None:
@@ -392,7 +401,7 @@ class ConfigCreateUseCase:
 
         # Check for conflicts
         existing = repo.list_profiles()
-        if profile_id in existing:
+        if profile_id in existing and not request.overwrite:
             issues.append(
                 OperationIssue(
                     "config.profile_exists",

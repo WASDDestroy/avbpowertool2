@@ -151,6 +151,11 @@ class ConfigCreateRequest:
     that one issue is suppressed; every other validation issue still
     applies.  It defaults to ``False`` so the creation wizard keeps its
     current behaviour.
+
+    ``overwrite`` reuses an existing ``profiles/<id>/`` directory: its
+    ``keys/`` content is kept while the partition set is replaced.  It
+    defaults to ``False`` so every existing caller still reports
+    ``config.profile_exists``.
     """
 
     profile_id: str
@@ -158,6 +163,7 @@ class ConfigCreateRequest:
     partitions: tuple[PartitionConfig, ...] = ()
     activate: bool = True
     allow_empty: bool = False
+    overwrite: bool = False
 
 
 @dataclass(frozen=True)
@@ -166,6 +172,63 @@ class ConfigCreateResult:
 
     profile_id: str
     created: bool = False  # True when the profile directory was written
+    issues: tuple[OperationIssue, ...] = ()
+
+
+# ---------------------------------------------------------------------------
+# Config Create From Images
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ConfigCreateFromImagesRequest:
+    """Request to create a profile from the AVB metadata of image files.
+
+    ``image_dir`` is scanned for ``*.img`` files and defaults to the
+    workspace ``Images/`` directory when it is ``None``.  ``image_names``
+    holds bare image stems (no ``.img``); when non-empty every one of them
+    must exist as ``<image_dir>/<name>.img`` and only those images are
+    used.
+
+    ``allow_fallback`` is off by default here: the vbmeta
+    ``included_partitions`` stay pruned to the descriptors the image really
+    embeds, whereas the TUI wizard passes ``True`` for its historical
+    behaviour.  ``skip_non_avb`` downgrades an image without any AVB
+    structure from a fatal ``image.no_vbmeta_structure`` to a reported
+    skip.  ``overwrite`` reuses an existing ``profiles/<id>/`` directory
+    (keeping its ``keys/``) instead of reporting ``config.profile_exists``.
+    """
+
+    profile_id: str
+    profile_name: str = ""  # empty -> the profile id
+    image_dir: Path | None = None  # None -> the workspace Images/ directory
+    image_names: tuple[str, ...] = ()  # empty -> every *.img in the directory
+    key_id: str | None = None  # explicit override of the automatic choice
+    resolve_chains: bool = True
+    allow_fallback: bool = False
+    skip_non_avb: bool = False
+    overwrite: bool = False
+    activate: bool = False
+
+
+@dataclass(frozen=True)
+class ConfigCreateFromImagesResult:
+    """Result of creating a profile from images.
+
+    ``missing_keys`` is informational only: it lists the key ids the new
+    profile references but its key store does not hold yet, and never
+    influences ``created`` or the exit code (keys may be dropped in
+    later).  ``chain_count`` is the total number of ``chain_partitions``
+    entries written across all vbmeta partitions.
+    """
+
+    profile_id: str
+    created: bool = False
+    partition_count: int = 0
+    chain_count: int = 0
+    scanned_images: tuple[str, ...] = ()
+    skipped_images: tuple[str, ...] = ()
+    missing_keys: tuple[str, ...] = ()
     issues: tuple[OperationIssue, ...] = ()
 
 

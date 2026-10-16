@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     # config create
     p_cfg_create = cfg_sub.add_parser(
         "create",
-        help="Create a new profile (optionally with no partitions)",
+        help="Create a new profile (optionally from images or with no partitions)",
     )
     p_cfg_create.add_argument("--id", dest="profile_id", required=True, help="New profile ID")
     p_cfg_create.add_argument(
@@ -96,10 +96,61 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Profile display name (default: the value of --id)",
     )
-    p_cfg_create.add_argument(
+    # --from-images and --allow-empty are two different creation sources:
+    # one fills the profile from images, the other deliberately leaves it
+    # empty.  argparse rejects the combination with exit code 2.
+    create_source = p_cfg_create.add_mutually_exclusive_group()
+    create_source.add_argument(
+        "--from-images",
+        dest="from_images",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="DIR",
+        help="Generate the partitions from images (default: the workspace Images/ directory)",
+    )
+    create_source.add_argument(
         "--allow-empty",
         action="store_true",
         help="Allow creating a profile with no partitions",
+    )
+    p_cfg_create.add_argument(
+        "--images",
+        action="append",
+        default=None,
+        metavar="NAMES",
+        help="Comma-separated image names to use with --from-images "
+        "(e.g. boot,dtbo or boot.img); may be repeated",
+    )
+    p_cfg_create.add_argument(
+        "--key",
+        dest="key_id",
+        default=None,
+        help="Key ID to use for every generated partition (default: automatic)",
+    )
+    p_cfg_create.add_argument(
+        "--no-chain-resolve",
+        dest="resolve_chains",
+        action="store_false",
+        default=True,
+        help="Do not resolve the chain partitions read from the vbmeta images",
+    )
+    p_cfg_create.add_argument(
+        "--include-fallback",
+        dest="include_fallback",
+        action="store_true",
+        help="Let a vbmeta without embedded descriptors include every other scanned partition",
+    )
+    p_cfg_create.add_argument(
+        "--skip-non-avb",
+        dest="skip_non_avb",
+        action="store_true",
+        help="Skip images without an AVB structure instead of failing",
+    )
+    p_cfg_create.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Reuse an existing profile directory (its keys/ are kept, its partitions replaced)",
     )
     create_activation = p_cfg_create.add_mutually_exclusive_group()
     create_activation.add_argument(

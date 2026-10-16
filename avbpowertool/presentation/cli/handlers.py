@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import sys
 from argparse import Namespace
+from pathlib import Path
 from typing import Any, TextIO, cast
 
 from avbpowertool.application.commands import (
+    ConfigCreateFromImagesRequest,
     ConfigCreateRequest,
     ConfigEditRequest,
     ConfigExportRequest,
@@ -24,6 +26,9 @@ from avbpowertool.application.commands import (
     ProfileActivateRequest,
     ProfileListRequest,
     SignImagesRequest,
+)
+from avbpowertool.application.services.config_auto_create import (
+    ConfigCreateFromImagesUseCase,
 )
 from avbpowertool.application.services.inspect_images import InspectImagesUseCase
 from avbpowertool.application.services.manage_configs import (
@@ -55,6 +60,7 @@ from avbpowertool.presentation.actions import ActionId
 from avbpowertool.presentation.cli.renderer import (
     exit_code_from_issues,
     render_config_create,
+    render_config_create_from_images,
     render_config_edit,
     render_config_migrate,
     render_config_show,
@@ -211,10 +217,52 @@ def _handle_config_validate(
     return exit_code_from_issues(result.issues)
 
 
+def _parse_image_names(values: list[str] | None) -> tuple[str, ...]:
+    """Flatten repeated ``--images a,b`` values into bare image stems.
+
+    Both ``boot`` and ``boot.img`` are accepted; duplicates keep their
+    first position so the scan order stays predictable.
+    """
+    names: list[str] = []
+    for value in values or []:
+        for item in value.split(","):
+            name = item.strip()
+            if name.endswith(".img"):
+                name = name[: -len(".img")]
+            if name and name not in names:
+                names.append(name)
+    return tuple(names)
+
+
 def _handle_config_create(
     args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
 ) -> int:
     profile_id = args.profile_id
+    # None means "no --from-images": keep the plain empty-profile path.
+    # "" means the flag was given without a directory -> workspace Images/.
+    from_images = getattr(args, "from_images", None)
+    if from_images is not None:
+        image_dir = workspace.images if from_images == "" else Path(from_images)
+        uc = ConfigCreateFromImagesUseCase(workspace, _create_avb_tool(workspace))
+        request = ConfigCreateFromImagesRequest(
+            profile_id=profile_id,
+            profile_name=getattr(args, "profile_name", None) or "",
+            image_dir=image_dir,
+            image_names=_parse_image_names(getattr(args, "images", None)),
+            key_id=getattr(args, "key_id", None),
+            resolve_chains=getattr(args, "resolve_chains", True),
+            # Only --include-fallback restores the wizard's "include every
+            # other partition" behaviour.
+            allow_fallback=getattr(args, "include_fallback", False),
+            skip_non_avb=getattr(args, "skip_non_avb", False),
+            overwrite=getattr(args, "overwrite", False),
+            # Scripted creation must not silently change the active profile.
+            activate=getattr(args, "activate", False),
+        )
+        result = uc.execute(request)
+        render_config_create_from_images(result, as_json, out)
+        return exit_code_from_issues(result.issues)
+
     uc = ConfigCreateUseCase(workspace)
     request = ConfigCreateRequest(
         profile_id=profile_id,

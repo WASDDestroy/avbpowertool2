@@ -7,6 +7,7 @@ import sys
 from typing import Any, TextIO
 
 from avbpowertool.application.commands import (
+    ConfigCreateFromImagesResult,
     ConfigCreateResult,
     ConfigEditResult,
     ConfigExportResult,
@@ -252,6 +253,44 @@ def render_config_create(
 
     if result.created:
         _emit_text(f"Created profile '{result.profile_id}'.", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_config_create_from_images(
+    result: ConfigCreateFromImagesResult, as_json: bool, out: TextIO = sys.stdout
+) -> None:
+    """Render the result of ``config create --from-images``."""
+    if as_json:
+        _emit_json(
+            {
+                "profile_id": result.profile_id,
+                "created": result.created,
+                "partition_count": result.partition_count,
+                "chain_count": result.chain_count,
+                "scanned_images": list(result.scanned_images),
+                "skipped_images": list(result.skipped_images),
+                "missing_keys": list(result.missing_keys),
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if result.created:
+        _emit_text(
+            f"Created profile '{result.profile_id}' with {result.partition_count} partition(s) "
+            f"and {result.chain_count} chain entr(ies).",
+            out,
+        )
+    else:
+        _emit_text(f"Profile '{result.profile_id}' was not created.", out)
+    if result.scanned_images:
+        _emit_text(f"  Scanned images: {', '.join(result.scanned_images)}", out)
+    if result.skipped_images:
+        _emit_text(f"  Skipped images: {', '.join(result.skipped_images)}", out)
+    if result.missing_keys:
+        _emit_text(f"  Missing keys:   {', '.join(result.missing_keys)}", out)
     for iss in result.issues:
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
 

@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
+from typing import Any
 
 from avbpowertool.application.commands import (
     ChainKeyResolution,
     ConfigAutoCreateRequest,
+    ConfigCreateFromImagesRequest,
+    ConfigCreateFromImagesResult,
 )
 from avbpowertool.application.ports import AvbToolResult
 from avbpowertool.application.services.config_auto_create import (
     ConfigAutoCreateUseCase,
+    ConfigCreateFromImagesUseCase,
     apply_chain_resolutions,
     build_auto_partition,
     finalize_vbmeta_includes,
@@ -24,6 +30,9 @@ from avbpowertool.domain.models import (
     SigningAlgorithm,
 )
 from avbpowertool.infrastructure.filesystem.workspace import WorkspacePaths
+from avbpowertool.infrastructure.persistence.profile_repository import (
+    ProfileRepository,
+)
 from tests.conftest import AVBTOOL_OUTPUT_DIR, FakeAvbTool
 
 SAMPLE_HASH = (AVBTOOL_OUTPUT_DIR / "hash_descriptor.txt").read_text(encoding="utf-8")
@@ -525,3 +534,298 @@ class TestConfigAutoCreateUseCase:
         )
 
         assert [p.descriptor for p in result.partitions] == [DescriptorType.HASHTREE]
+
+
+# ---------------------------------------------------------------------------
+# ConfigCreateFromImagesUseCase
+# ---------------------------------------------------------------------------
+
+PUB_BLOB = b"\x30\x81\x89\x02\x01\x00fake-public-key-blob"
+PUB_SHA1 = hashlib.sha1(PUB_BLOB).hexdigest()
+
+#: A vbmeta image embedding exactly one descriptor, for the scanned ``boot``.
+VBMETA_EMBEDDING_BOOT = """\
+Footer version:           1.0
+Image size:               4096 bytes
+Algorithm:                SHA256_RSA4096
+Rollback Index:           0
+Flags:                    0
+Rollback Index Location:  0
+Release String:           'avbtool 1.3.0'
+Descriptors:
+    Hash descriptor:
+      Image Size:            4194304 bytes
+      Hash Algorithm:        sha256
+      Partition Name:        boot
+      Salt:                  aabbccddeeff
+      Digest:                1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+      Flags:                 0
+"""
+
+#: The two-chain fixture, with both chain public keys set to PUB_SHA1 so the
+#: single pre-seeded key in the store resolves them.
+CHAIN_OUTPUT = SAMPLE_VBMETA_WITH_CHAIN.replace("b" * 40, PUB_SHA1).replace("a" * 40, PUB_SHA1)
+
+
+class WritingFakeAvbTool(PerImageFakeAvbTool):
+    """Per-image fake whose ``extract_public_key`` writes a known blob."""
+
+    def extract_public_key(self, key_path: Path, output_path: Path) -> AvbToolResult:
+        self._record("extract_public_key", (key_path, output_path), {})
+        output_path.write_bytes(PUB_BLOB)
+        return AvbToolResult(0, "", "", "extract_public_key")
+
+
+def _create_from_images(
+    ws: WorkspacePaths, avb: FakeAvbTool, **overrides: Any
+) -> ConfigCreateFromImagesResult:
+    request = ConfigCreateFromImagesRequest(profile_id="dev", **overrides)
+    return ConfigCreateFromImagesUseCase(ws, avb).execute(request)
+
+
+class TestConfigCreateFromImagesUseCase:
+    def test_creates_profile_from_the_scanned_images(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "boot.img").write_bytes(b"x" * 8192)
+        (ws.images / "vbmeta.img").write_bytes(b"x" * 4096)
+        avb = PerImageFakeAvbTool({"boot": _ok(SAMPLE_HASH), "vbmeta": _ok(VBMETA_EMBEDDING_BOOT)})
+
+        result = _create_from_images(ws, avb)
+
+        assert result.created is True
+        assert result.partition_count == 2
+        assert result.chain_count == 0
+        assert result.scanned_images == ("boot", "vbmeta")
+        assert result.skipped_images == ()
+        assert result.issues == ()
+
+        profile = ProfileRepository(ws).load("dev")
+        assert set(profile.partitions) == {"boot", "vbmeta"}
+        assert profile.partitions["vbmeta"].included_partitions == ("boot",)
+        assert (ws.resolve_key_dir("dev") / "manifest.json").is_file()
+
+    def test_image_names_restricts_the_generated_partitions(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        for name in ("boot", "dtbo", "vbmeta"):
+            (ws.images / f"{name}.img").write_bytes(b"x" * 4096)
+        avb = PerImageFakeAvbTool(
+            {
+                "boot": _ok(SAMPLE_HASH),
+                "dtbo": _ok(SAMPLE_HASH),
+                "vbmeta": _ok(VBMETA_EMBEDDING_BOOT),
+            }
+        )
+
+        result = _create_from_images(ws, avb, image_names=("boot",))
+
+        assert result.created is True
+        assert result.scanned_images == ("boot",)
+        assert result.partition_count == 1
+        assert set(ProfileRepository(ws).load("dev").partitions) == {"boot"}
+        # Only the requested image was ever inspected.
+        assert [call[1][0].stem for call in avb.calls] == ["boot"]
+
+    def test_missing_image_name_creates_nothing(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "boot.img").write_bytes(b"x" * 4096)
+        avb = PerImageFakeAvbTool({"boot": _ok(SAMPLE_HASH)})
+
+        result = _create_from_images(ws, avb, image_names=("boot", "ghost"))
+
+        assert result.created is False
+        assert result.partition_count == 0
+        assert [i.error_code for i in result.issues] == ["image.not_found"]
+        assert "ghost.img" in result.issues[0].message
+        assert not ws.resolve_profile_dir("dev").exists()
+        assert avb.calls == []
+
+    def test_image_without_avb_structure_is_fatal_by_default(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "boot.img").write_bytes(b"x" * 4096)
+        (ws.images / "raw.img").write_bytes(b"raw")
+        avb = PerImageFakeAvbTool(
+            {
+                "boot": _ok(SAMPLE_HASH),
+                "raw": AvbToolResult(1, "", SAMPLE_NO_FOOTER, "info_image"),
+            }
+        )
+
+        result = _create_from_images(ws, avb)
+
+        assert result.created is False
+        assert [i.error_code for i in result.issues] == ["image.no_vbmeta_structure"]
+        assert result.skipped_images == ("raw",)
+        assert not ws.resolve_profile_dir("dev").exists()
+
+    def test_skip_non_avb_creates_the_profile_and_reports_the_skip(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "boot.img").write_bytes(b"x" * 4096)
+        (ws.images / "raw.img").write_bytes(b"raw")
+        avb = PerImageFakeAvbTool(
+            {
+                "boot": _ok(SAMPLE_HASH),
+                "raw": AvbToolResult(1, "", SAMPLE_NO_FOOTER, "info_image"),
+            }
+        )
+
+        result = _create_from_images(ws, avb, skip_non_avb=True)
+
+        assert result.created is True
+        assert result.skipped_images == ("raw",)
+        assert result.partition_count == 1
+        assert "image.no_vbmeta_structure" not in [i.error_code for i in result.issues]
+        assert set(ProfileRepository(ws).load("dev").partitions) == {"boot"}
+
+    def test_existing_profile_is_a_conflict_without_overwrite(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "boot.img").write_bytes(b"x" * 4096)
+        avb = PerImageFakeAvbTool({"boot": _ok(SAMPLE_HASH)})
+
+        first = _create_from_images(ws, avb)
+        second = _create_from_images(ws, avb)
+
+        assert first.created is True
+        assert second.created is False
+        assert [i.error_code for i in second.issues] == ["config.profile_exists"]
+        assert set(ProfileRepository(ws).load("dev").partitions) == {"boot"}
+
+    def test_overwrite_replaces_partitions_and_keeps_the_key_store(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "boot.img").write_bytes(b"x" * 4096)
+        first_tool = PerImageFakeAvbTool({"boot": _ok(SAMPLE_HASH)})
+        assert _create_from_images(ws, first_tool).created is True
+
+        # A user drops a key into the store before regenerating.
+        key_dir = ws.resolve_key_dir("dev")
+        manifest = {"testkey_rsa4096": {"private_key": "testkey_rsa4096.pem"}}
+        (key_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (key_dir / "testkey_rsa4096.pem").write_text("fake key", encoding="utf-8")
+
+        (ws.images / "boot.img").unlink()
+        (ws.images / "dtbo.img").write_bytes(b"x" * 4096)
+        second_tool = PerImageFakeAvbTool({"dtbo": _ok(SAMPLE_HASH)})
+
+        result = _create_from_images(ws, second_tool, overwrite=True)
+
+        assert result.created is True
+        assert set(ProfileRepository(ws).load("dev").partitions) == {"dtbo"}
+        # keys/ content survived the overwrite
+        assert json.loads((key_dir / "manifest.json").read_text(encoding="utf-8")) == manifest
+        assert (key_dir / "testkey_rsa4096.pem").is_file()
+
+    def test_directory_without_usable_images_reports_no_partitions(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "notes.txt").write_text("not an image", encoding="utf-8")
+        avb = FakeAvbTool()
+
+        result = _create_from_images(ws, avb)
+
+        assert result.created is False
+        assert [i.error_code for i in result.issues] == ["config.no_partitions"]
+        assert not ws.resolve_profile_dir("dev").exists()
+
+    def test_only_non_avb_images_reports_no_partitions(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "raw.img").write_bytes(b"raw")
+        avb = PerImageFakeAvbTool({"raw": AvbToolResult(1, "", SAMPLE_NO_FOOTER, "info_image")})
+
+        result = _create_from_images(ws, avb, skip_non_avb=True)
+
+        assert result.created is False
+        assert [i.error_code for i in result.issues] == ["config.no_partitions"]
+        assert result.skipped_images == ("raw",)
+        assert not ws.resolve_profile_dir("dev").exists()
+
+    def test_missing_keys_are_reported_without_failing(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "boot.img").write_bytes(b"x" * 4096)
+        avb = PerImageFakeAvbTool({"boot": _ok(SAMPLE_HASH)})
+
+        result = _create_from_images(ws, avb, key_id="testkey_rsa4096")
+
+        assert result.created is True
+        assert result.issues == ()
+        assert result.missing_keys == ("testkey_rsa4096",)
+
+    def test_activate_writes_the_active_profile(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "boot.img").write_bytes(b"x" * 4096)
+        avb = PerImageFakeAvbTool({"boot": _ok(SAMPLE_HASH)})
+
+        inactive = _create_from_images(ws, avb)
+        assert inactive.created is True
+        assert not (ws.root / ".active-profile").exists()
+
+        (ws.images / "dtbo.img").write_bytes(b"x" * 4096)
+        avb_dtbo = PerImageFakeAvbTool({"dtbo": _ok(SAMPLE_HASH)})
+        activated = _create_from_images(ws, avb_dtbo, overwrite=True, activate=True)
+
+        assert activated.created is True
+        assert (ws.root / ".active-profile").read_text(encoding="utf-8") == "dev"
+
+    def test_invalid_profile_id_creates_nothing(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "boot.img").write_bytes(b"x" * 4096)
+        avb = PerImageFakeAvbTool({"boot": _ok(SAMPLE_HASH)})
+
+        result = ConfigCreateFromImagesUseCase(ws, avb).execute(
+            ConfigCreateFromImagesRequest(profile_id="bad id!")
+        )
+
+        assert result.created is False
+        assert [i.error_code for i in result.issues] == ["config.invalid_profile_id"]
+        assert not (ws.profiles / "bad_id_").exists()
+        assert avb.calls == []
+
+    def test_chain_entries_are_resolved_and_counted(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        key_dir = ws.resolve_key_dir("dev")
+        key_dir.mkdir(parents=True)
+        (key_dir / "key.pem").write_text("fake key", encoding="utf-8")
+        (key_dir / "manifest.json").write_text(
+            json.dumps({"default": {"private_key": "key.pem"}}), encoding="utf-8"
+        )
+        (ws.images / "vbmeta.img").write_bytes(b"x" * 4096)
+        avb = WritingFakeAvbTool({"vbmeta": _ok(CHAIN_OUTPUT)})
+
+        result = _create_from_images(ws, avb, overwrite=True)
+
+        assert result.created is True
+        assert result.chain_count == 2
+        assert result.issues == ()
+        vbmeta = ProfileRepository(ws).load("dev").partitions["vbmeta"]
+        assert vbmeta.chain_partitions == (
+            "vbmeta_system:1:key.pem.bin",
+            "vbmeta_vendor:2:key.pem.bin",
+        )
+
+    def test_unresolved_chains_do_not_block_creation(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws.images / "vbmeta.img").write_bytes(b"x" * 4096)
+        avb = PerImageFakeAvbTool({"vbmeta": _ok(SAMPLE_VBMETA_WITH_CHAIN)})
+
+        result = _create_from_images(ws, avb)
+
+        assert result.created is True
+        assert result.chain_count == 0
+        # No key store holds the chained public keys -> reported, not fatal.
+        # The emptied vbmeta is reported by the (non-blocking) domain
+        # validation, exactly as the profile will be until it is edited.
+        assert [i.error_code for i in result.issues] == [
+            "chain.key_not_found",
+            "chain.key_not_found",
+            "config.vbmeta_no_contents",
+        ]
+
+    def test_explicit_image_directory_is_scanned(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        other = tmp_path / "other_images"
+        other.mkdir()
+        (other / "boot.img").write_bytes(b"x" * 4096)
+        avb = PerImageFakeAvbTool({"boot": _ok(SAMPLE_HASH)})
+
+        result = _create_from_images(ws, avb, image_dir=other)
+
+        assert result.created is True
+        assert result.scanned_images == ("boot",)
+        assert set(ProfileRepository(ws).load("dev").partitions) == {"boot"}
