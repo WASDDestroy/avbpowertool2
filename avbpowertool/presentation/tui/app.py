@@ -129,6 +129,7 @@ class App:
             import_config,
             import_legacy,
             manage_keys,
+            plugins,
             read_image_info,
             settings,
             sign_images,
@@ -147,6 +148,7 @@ class App:
             "action:settings.view": settings.show_view,
             "action:misc.import_legacy": import_legacy.show,
             "action:settings.check_l10n": settings.show_check_l10n,
+            "action:plugin.manage": plugins.show,
         }
 
         handler = view_map.get(action_id)

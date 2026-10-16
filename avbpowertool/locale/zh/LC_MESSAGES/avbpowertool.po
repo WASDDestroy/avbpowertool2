@@ -720,3 +720,40 @@ msgstr "  公钥元数据：{value}"
 
 msgid "config.field.append_to_release_string"
 msgstr "  附加到版本字符串：{value}"
+
+# 插件
+msgid "node.plugins.name"
+msgstr "插件"
+
+msgid "node.plugins.description"
+msgstr "列出并运行已安装的插件。"
+
+msgid "plugin.title"
+msgstr "插件"
+
+msgid "plugin.none"
+msgstr "没有已安装的插件。"
+
+msgid "plugin.none_hint"
+msgstr "请在 CLI 中安装：avbpowertool plugin install <目录|zip>"
+
+msgid "plugin.select"
+msgstr "选择要运行的插件"
+
+msgid "plugin.confirm_run"
+msgstr "运行该插件吗？运行期间终端将交给插件使用。"
+
+msgid "plugin.run_title"
+msgstr "插件运行结果"
+
+msgid "plugin.exit_code"
+msgstr "退出码：{code}"
+
+msgid "plugin.run_failed"
+msgstr "插件运行失败。"
+
+msgid "plugin.interrupted"
+msgstr "插件运行被中断。"
+
+msgid "plugin.manifest_issues"
+msgstr "清单无法解析的插件："

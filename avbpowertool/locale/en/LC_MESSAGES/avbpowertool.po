@@ -720,3 +720,40 @@ msgstr "  Public Key Metadata: {value}"
 
 msgid "config.field.append_to_release_string"
 msgstr "  Append To Release String: {value}"
+
+# Plugins
+msgid "node.plugins.name"
+msgstr "Plugins"
+
+msgid "node.plugins.description"
+msgstr "List and run installed plugins."
+
+msgid "plugin.title"
+msgstr "Plugins"
+
+msgid "plugin.none"
+msgstr "No plugins installed."
+
+msgid "plugin.none_hint"
+msgstr "Install one from the CLI: avbpowertool plugin install <dir|zip>"
+
+msgid "plugin.select"
+msgstr "Select a plugin to run"
+
+msgid "plugin.confirm_run"
+msgstr "Run this plugin? The terminal is handed over to it while it runs."
+
+msgid "plugin.run_title"
+msgstr "Plugin Run Result"
+
+msgid "plugin.exit_code"
+msgstr "Exit code: {code}"
+
+msgid "plugin.run_failed"
+msgstr "Plugin run failed."
+
+msgid "plugin.interrupted"
+msgstr "Plugin run was interrupted."
+
+msgid "plugin.manifest_issues"
+msgstr "Plugins with an unreadable manifest:"

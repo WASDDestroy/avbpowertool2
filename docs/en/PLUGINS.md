@@ -17,7 +17,8 @@ program that drives this tool back through its CLI.
 - [5. The Plugin ↔ Tool Contract](#5-the-plugin--tool-contract)
 - [6. Calling the Tool from a Plugin](#6-calling-the-tool-from-a-plugin)
 - [7. Install / Uninstall / Run Examples](#7-install--uninstall--run-examples)
-- [8. Security](#8-security)
+- [8. TUI](#8-tui)
+- [9. Security](#9-security)
 
 ---
 
@@ -313,7 +314,43 @@ avbpowertool plugin uninstall my_plugin --yes --json
 > you need machine-readable plugin output, have the plugin write a file or print to
 > stderr itself.
 
-## 8. Security
+## 8. TUI
+
+The TUI has a **plugins page** that does exactly two things: list and run. Path to it:
+
+```
+Home
+  [O] Other Features          <- route:misc
+        [P] Plugins           <- action:plugin.manage
+```
+
+- **Selecting runs it**: every row is `display name (plugin_id)` (the display name is
+  resolved from the manifest for the current language — see the resolution rules in
+  section 2). Choosing a row asks for one confirmation and then runs that plugin.
+- **An interactive plugin takes over the terminal**: curses is suspended before the run
+  (`def_prog_mode` + `endwin`) and the terminal belongs entirely to the plugin — it may
+  print progress and ask questions. When it exits, the curses state is restored
+  (`reset_prog_mode` + redraw) and the plugins page comes back. No TUI borders or help
+  bar are visible while the plugin runs; that is expected.
+- **The TUI cannot pass arguments**: the argument list is always empty when a plugin is
+  run from the TUI. Use the CLI when arguments are needed:
+
+  ```shell
+  avbpowertool plugin run testkey_config_gen -- --core --8e --no_prompt
+  ```
+
+- **Install / uninstall are CLI-only**: the TUI has no install or uninstall entry (both
+  need a source path and an explicit confirmation — see section 3). With no plugins
+  installed, the page points at `avbpowertool plugin install <dir|zip>`.
+- **Plugins with a broken manifest**: a directory whose manifest cannot be parsed is
+  never dropped silently — it is listed, as `[error_code] message` lines, both in the
+  list screen and on the result screen. Those rows are not runnable plugins; choosing
+  one only shows those messages.
+- **The result screen**: it shows the plugin name/id, the `exit code`, and every issue
+  (if any). **A non-zero exit code is not a tool error** — it is the plugin's own
+  verdict; only a non-empty `issues[]` means the plugin never started.
+
+## 9. Security
 
 **This tool performs no security check on plugins at all**: no signature, no
 permission model, no sandbox, no provenance check. `plugin install` merely copies a

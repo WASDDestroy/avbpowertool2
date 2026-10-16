@@ -19,7 +19,8 @@
       "parent": "route:home",
       "items": [
         {"action": "action:misc.import_legacy", "shortcut": "I"},
-        {"action": "action:image.read_info", "shortcut": "R"}
+        {"action": "action:image.read_info", "shortcut": "R"},
+        {"action": "action:plugin.manage", "shortcut": "P"}
       ]
     },
     "route:config_manager": {
@@ -93,6 +94,10 @@
     "action:settings.check_l10n": {
       "label_key": "settings.action.check_l10n",
       "description_key": ""
+    },
+    "action:plugin.manage": {
+      "label_key": "node.plugins.name",
+      "description_key": "node.plugins.description"
     }
   }
 }
