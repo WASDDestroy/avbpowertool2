@@ -26,6 +26,7 @@ from avbpowertool.application.commands import (
     LegacyImportRequest,
     PluginInstallRequest,
     PluginListRequest,
+    PluginPackRequest,
     PluginRunRequest,
     PluginUninstallRequest,
     ProfileActivateRequest,
@@ -59,6 +60,7 @@ from avbpowertool.application.services.manage_keys import (
 from avbpowertool.application.services.manage_plugins import (
     PluginInstallUseCase,
     PluginListUseCase,
+    PluginPackUseCase,
     PluginRunUseCase,
     PluginUninstallUseCase,
 )
@@ -97,6 +99,7 @@ from avbpowertool.presentation.cli.renderer import (
     render_legacy_import,
     render_plugin_install,
     render_plugin_list,
+    render_plugin_pack,
     render_plugin_run,
     render_plugin_uninstall,
     render_profile_activate,
@@ -156,6 +159,7 @@ def dispatch(args: Namespace, out: TextIO = sys.stdout) -> int:
         ActionId.KEY_ADD: _handle_key_add,
         ActionId.KEY_REMOVE: _handle_key_remove,
         ActionId.PLUGIN_LIST: _handle_plugin_list,
+        ActionId.PLUGIN_PACK: _handle_plugin_pack,
         ActionId.PLUGIN_INSTALL: _handle_plugin_install,
         ActionId.PLUGIN_UNINSTALL: _handle_plugin_uninstall,
         ActionId.PLUGIN_RUN: _handle_plugin_run,
@@ -570,6 +574,19 @@ def _handle_plugin_list(
     uc = PluginListUseCase(workspace, language=get_current_language())
     result = uc.execute(PluginListRequest())
     render_plugin_list(result, as_json, out)
+    return exit_code_from_issues(result.issues)
+
+
+def _handle_plugin_pack(
+    args: Namespace, workspace: WorkspacePaths, as_json: bool, out: TextIO
+) -> int:
+    uc = PluginPackUseCase(workspace)
+    request = PluginPackRequest(
+        source=args.source,
+        output_path=getattr(args, "output", None),
+    )
+    result = uc.execute(request)
+    render_plugin_pack(result, as_json, out)
     return exit_code_from_issues(result.issues)
 
 

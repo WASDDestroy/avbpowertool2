@@ -12,6 +12,7 @@ import pytest
 from avbpowertool.application.commands import (
     PluginInstallRequest,
     PluginListRequest,
+    PluginPackRequest,
     PluginRunRequest,
     PluginUninstallRequest,
 )
@@ -24,6 +25,7 @@ from avbpowertool.application.services.manage_plugins import (
     ENV_ROOT,
     PluginInstallUseCase,
     PluginListUseCase,
+    PluginPackUseCase,
     PluginRunUseCase,
     PluginUninstallUseCase,
 )
@@ -385,6 +387,108 @@ class TestPluginInstallUseCase:
         assert result.installed is False
         assert _codes(result) == ["plugin.install_failed"]
         assert not (tmp_path / "evil.txt").exists()
+
+
+# ---------------------------------------------------------------------------
+# Pack
+# ---------------------------------------------------------------------------
+
+
+class TestPluginPackUseCase:
+    def test_packs_a_directory_source(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        source = _make_source_dir(tmp_path, version=2, version_name="2.0.0")
+
+        result = PluginPackUseCase(ws).execute(PluginPackRequest(source=str(source)))
+
+        assert result.issues == ()
+        assert result.plugin_id == "demo"
+        assert result.version == 2
+        assert result.version_name == "2.0.0"
+        assert result.file_count == 2
+        assert result.output_path == str(ws.root / "demo.zip")
+        assert (ws.root / "demo.zip").is_file()
+
+    def test_packs_an_installed_plugin_by_id(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _install_plugin(ws, "demo", version=3)
+
+        result = PluginPackUseCase(ws).execute(PluginPackRequest(source="demo"))
+
+        assert result.issues == ()
+        assert result.plugin_id == "demo"
+        assert result.output_path == str(ws.root / "demo.zip")
+        with zipfile.ZipFile(ws.root / "demo.zip") as archive:
+            assert sorted(archive.namelist()) == [
+                f"demo/{PLUGIN_MANIFEST_NAME}",
+                "demo/run.cmd",
+            ]
+
+    def test_unknown_source_is_not_found(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+
+        result = PluginPackUseCase(ws).execute(PluginPackRequest(source="ghost"))
+
+        assert result.plugin_id == ""
+        assert _codes(result) == ["plugin.not_found"]
+        # The message explains both ways of addressing a plugin.
+        message = result.issues[0].message
+        assert "directory" in message
+        assert "plugins/" in message
+        assert not (ws.root / "ghost.zip").exists()
+
+    def test_default_output_is_the_workspace_root(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        source = _make_source_dir(tmp_path)
+
+        result = PluginPackUseCase(ws).execute(PluginPackRequest(source=str(source)))
+
+        assert result.output_path == str(ws.root / "demo.zip")
+        assert (ws.root / "demo.zip").is_file()
+
+    def test_output_override_is_used(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        source = _make_source_dir(tmp_path)
+        target = tmp_path / "dist" / "custom.zip"
+
+        result = PluginPackUseCase(ws).execute(
+            PluginPackRequest(source=str(source), output_path=str(target))
+        )
+
+        assert result.issues == ()
+        assert result.output_path == str(target)
+        assert target.is_file()
+
+    def test_key_material_is_flagged(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        source = _make_source_dir(tmp_path)
+        (source / "keys").mkdir()
+        (source / "keys" / "testkey_rsa4096.pem").write_text("KEY", encoding="utf-8")
+
+        result = PluginPackUseCase(ws).execute(PluginPackRequest(source=str(source)))
+
+        assert result.includes_key_material is True
+        with zipfile.ZipFile(ws.root / "demo.zip") as archive:
+            assert "demo/keys/testkey_rsa4096.pem" in archive.namelist()
+
+    def test_plain_plugin_has_no_key_material(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        source = _make_source_dir(tmp_path)
+
+        result = PluginPackUseCase(ws).execute(PluginPackRequest(source=str(source)))
+
+        assert result.includes_key_material is False
+
+    def test_missing_manifest_is_reported(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        source = tmp_path / "src" / "demo"
+        source.mkdir(parents=True)
+        (source / "run.cmd").write_text("x", encoding="utf-8")
+
+        result = PluginPackUseCase(ws).execute(PluginPackRequest(source=str(source)))
+
+        assert _codes(result) == ["plugin.manifest_missing"]
+        assert not (ws.root / "demo.zip").exists()
 
 
 # ---------------------------------------------------------------------------

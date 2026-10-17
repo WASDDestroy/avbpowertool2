@@ -127,6 +127,7 @@ avbpowertool keys remove mykey --profile myprofile
 
 # Plugins (everything after a standalone -- goes to the plugin)
 avbpowertool plugin list
+avbpowertool plugin pack testkey_config_gen                     # -> testkey_config_gen.zip
 avbpowertool plugin install ./my_plugin.zip --json             # --force to overwrite
 avbpowertool plugin run testkey_config_gen -- --core --8e --no_prompt
 avbpowertool plugin uninstall my_plugin --yes

@@ -18,7 +18,7 @@ import re
 import shutil
 import xml.etree.ElementTree as ET
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from avbpowertool.domain.errors import ConfigError
 from avbpowertool.domain.models import OperationIssue
@@ -35,6 +35,12 @@ _PLUGIN_ROOT_TAG = "avbpowertool_plugin"
 
 #: A member like ``C:evil`` (drive) or ``name:stream`` (NTFS ADS).
 _DRIVE_PATTERN = re.compile(r"^[A-Za-z]:")
+
+#: Directory names that are development noise, not plugin content.
+_PACK_NOISE_DIRECTORIES = frozenset({"__pycache__", ".git"})
+
+#: File suffixes that are development noise, not plugin content.
+_PACK_NOISE_SUFFIXES = (".pyc",)
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +225,78 @@ class PluginRepository:
                 error_code="plugin.not_found",
             )
         return self._read_manifest(manifest_path)
+
+    def read_manifest(self, plugin_dir: Path) -> PluginManifest:
+        """Read the manifest of an arbitrary plugin directory.
+
+        Unlike :meth:`load_manifest` this does not assume the directory sits
+        under ``plugins/``, which is what ``plugin pack`` needs: a source is
+        any plugin directory, installed or still in development.
+
+        Raises:
+            ConfigError: the manifest is missing (``plugin.manifest_missing``)
+                or cannot be read/parsed/validated (its issue code).
+        """
+        return self._read_manifest(plugin_dir / PLUGIN_MANIFEST_NAME)
+
+    # ------------------------------------------------------------------
+    # Pack
+    # ------------------------------------------------------------------
+
+    def pack(self, plugin_dir: Path, output_path: Path) -> tuple[PluginManifest, int]:
+        """Pack *plugin_dir* into an installable zip at *output_path*.
+
+        The archive uses the "exactly one directory level" layout the
+        installer understands (``<plugin_id>/<relative path>``), so the
+        output of this method installs as-is.  Member names always use
+        ``/`` separators; an absolute path or a ``..`` component can never
+        be produced, and both are asserted before writing.
+
+        Development noise is skipped at every level: ``__pycache__/``,
+        ``.git/`` and ``*.pyc``.  Everything else is packed — including a
+        plugin's own ``keys/`` directory, because a plugin may legitimately
+        ship key material.  When *output_path* lives inside *plugin_dir*,
+        the archive itself is left out so a repeated pack cannot swallow
+        the previous one.
+
+        Returns:
+            ``(manifest, file_count)`` where *file_count* is the number of
+            members written (the zip holds no explicit directory entries).
+
+        Raises:
+            ConfigError: ``plugin.not_found`` (no such directory), the
+                manifest issue code, or ``plugin.pack_failed`` when the
+                archive cannot be written.
+        """
+        if not plugin_dir.is_dir():
+            raise ConfigError(
+                f"Plugin directory not found: {plugin_dir}",
+                error_code="plugin.not_found",
+            )
+
+        manifest = self.read_manifest(plugin_dir)
+        members = _collect_pack_members(plugin_dir, manifest.plugin_id, output_path)
+
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for source, arcname in members:
+                    archive.write(source, arcname)
+        except OSError as exc:
+            # A half-written archive must not look like a usable package.
+            _discard_partial_archive(output_path)
+            raise ConfigError(
+                f"Failed to pack plugin {manifest.plugin_id!r} into {output_path}: {exc}",
+                error_code="plugin.pack_failed",
+            ) from exc
+
+        logger.info(
+            "Packed plugin %r into %s (%d files)",
+            manifest.plugin_id,
+            output_path,
+            len(members),
+        )
+        return manifest, len(members)
 
     # ------------------------------------------------------------------
     # Install
@@ -532,6 +610,87 @@ def _same_directory(first: Path, second: Path) -> bool:
         return first.samefile(second)
     except OSError:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Pack helpers
+# ---------------------------------------------------------------------------
+
+
+def _collect_pack_members(
+    plugin_dir: Path, plugin_id: str, output_path: Path
+) -> list[tuple[Path, str]]:
+    """Return ``(source, archive name)`` for every file to pack.
+
+    Symlinks are skipped: they are not regular files and could point outside
+    the plugin directory.  *output_path* is skipped too when it already
+    exists inside *plugin_dir*, so packing over a previous archive never
+    embeds that archive in the new one.
+    """
+    excluded = _resolved_path(output_path)
+    members: list[tuple[Path, str]] = []
+
+    for path in sorted(plugin_dir.rglob("*")):
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+        except OSError:
+            # A file that cannot be inspected is not worth failing the pack
+            # over; it is simply not part of the package.
+            continue
+
+        relative = path.relative_to(plugin_dir)
+        if _is_pack_noise(relative):
+            continue
+        if excluded is not None and _resolved_path(path) == excluded:
+            continue
+
+        members.append((path, _pack_member_name(plugin_id, relative)))
+
+    return members
+
+
+def _is_pack_noise(relative: Path) -> bool:
+    """True for development noise: ``__pycache__/``, ``.git/``, ``*.pyc``."""
+    parts = relative.parts
+    if any(part in _PACK_NOISE_DIRECTORIES for part in parts):
+        return True
+    return relative.name.endswith(_PACK_NOISE_SUFFIXES)
+
+
+def _pack_member_name(plugin_id: str, relative: Path) -> str:
+    """Build ``<plugin_id>/<relative>`` with ``/`` separators.
+
+    The relative path comes from ``rglob`` on the source directory, so it is
+    already confined to it; the assertions below make that a checked
+    invariant rather than an assumption.
+    """
+    parts = (plugin_id, *relative.parts)
+    unsafe = any(
+        part in ("", ".", "..") or "/" in part or "\\" in part or ":" in part for part in parts
+    )
+    if unsafe:
+        raise ConfigError(
+            f"Refused to pack unsafe archive member: {'/'.join(parts)!r}",
+            error_code="plugin.pack_failed",
+        )
+    return PurePosixPath(*parts).as_posix()
+
+
+def _resolved_path(path: Path) -> Path | None:
+    """``Path.resolve()`` that answers ``None`` instead of raising."""
+    try:
+        return path.resolve()
+    except OSError:
+        return None
+
+
+def _discard_partial_archive(output_path: Path) -> None:
+    """Remove a partially written archive; the caller reports the failure."""
+    try:
+        output_path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("Cannot remove partial plugin archive: %s", output_path)
 
 
 def _select_zip_members(

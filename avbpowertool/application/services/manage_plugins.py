@@ -1,4 +1,4 @@
-"""Plugin management use cases: list, install, uninstall, run."""
+"""Plugin management use cases: list, pack, install, uninstall, run."""
 
 from __future__ import annotations
 
@@ -12,6 +12,8 @@ from avbpowertool.application.commands import (
     PluginListItem,
     PluginListRequest,
     PluginListResult,
+    PluginPackRequest,
+    PluginPackResult,
     PluginRunRequest,
     PluginRunResult,
     PluginUninstallRequest,
@@ -120,6 +122,116 @@ class PluginInstallUseCase:
             version=manifest.version,
             version_name=manifest.version_name,
         )
+
+
+class PluginPackUseCase:
+    """Pack a plugin directory into an installable zip.
+
+    ``SOURCE`` is resolved in this order:
+
+    1. an existing directory path (a plugin still under development, or any
+       directory holding a manifest);
+    2. ``<workspace>/plugins/<SOURCE>/`` (an installed plugin, addressed by
+       its id);
+    3. neither → ``plugin.not_found``.
+
+    The archive uses the "exactly one directory level" layout
+    (``<plugin_id>/…``) that ``plugin install`` understands, and defaults to
+    ``<workspace root>/<plugin_id>.zip`` — the same style as
+    ``config export``.  A source that carries key material (a ``keys/``
+    directory or any ``.pem`` file) is reported, because those files are
+    packed like any other content.
+    """
+
+    def __init__(self, workspace: WorkspacePaths) -> None:
+        self._ws = workspace
+
+    def execute(self, request: PluginPackRequest) -> PluginPackResult:
+        plugin_dir = self._resolve_source(request.source)
+        if plugin_dir is None:
+            logger.warning(
+                "Cannot pack plugin %r: no such directory and not installed", request.source
+            )
+            return PluginPackResult(
+                issues=(
+                    OperationIssue(
+                        "plugin.not_found",
+                        f"Plugin not found: {request.source!r} (pass a plugin directory "
+                        "path, or the id of a plugin installed under plugins/)",
+                    ),
+                )
+            )
+
+        repo = PluginRepository(self._ws.plugins)
+        try:
+            manifest = repo.read_manifest(plugin_dir)
+        except ConfigError as exc:
+            logger.warning("Cannot pack plugin from %s: %s", plugin_dir, exc)
+            return PluginPackResult(issues=(OperationIssue(exc.error_code, str(exc)),))
+
+        # The default output name comes from the manifest id, not from the
+        # directory name: the archive's top level is the manifest id, so a
+        # source directory that was renamed still packs consistently.
+        output_path = (
+            Path(request.output_path)
+            if request.output_path
+            else self._ws.root / f"{manifest.plugin_id}.zip"
+        )
+
+        try:
+            manifest, file_count = repo.pack(plugin_dir, output_path)
+        except ConfigError as exc:
+            logger.warning("Cannot pack plugin %r: %s", manifest.plugin_id, exc)
+            return PluginPackResult(
+                plugin_id=manifest.plugin_id,
+                output_path=str(output_path),
+                version=manifest.version,
+                version_name=manifest.version_name,
+                issues=(OperationIssue(exc.error_code, str(exc)),),
+            )
+        except OSError as exc:
+            logger.error("Failed to pack plugin %r: %s", manifest.plugin_id, exc)
+            return PluginPackResult(
+                plugin_id=manifest.plugin_id,
+                output_path=str(output_path),
+                version=manifest.version,
+                version_name=manifest.version_name,
+                issues=(OperationIssue("plugin.pack_failed", f"Failed to pack plugin: {exc}"),),
+            )
+
+        return PluginPackResult(
+            plugin_id=manifest.plugin_id,
+            output_path=str(output_path),
+            file_count=file_count,
+            version=manifest.version,
+            version_name=manifest.version_name,
+            includes_key_material=_includes_key_material(plugin_dir),
+        )
+
+    def _resolve_source(self, source: str) -> Path | None:
+        """Resolve ``SOURCE`` to a plugin directory, or ``None`` (see above)."""
+        if not source.strip():
+            return None
+        candidate = Path(source)
+        if candidate.is_dir():
+            return candidate
+        installed = self._ws.plugins / source
+        if installed.is_dir():
+            return installed
+        return None
+
+
+def _includes_key_material(plugin_dir: Path) -> bool:
+    """True when *plugin_dir* holds a ``keys/`` directory or any ``.pem``."""
+    for path in plugin_dir.rglob("*"):
+        try:
+            if path.name.lower() == "keys" and path.is_dir():
+                return True
+            if path.suffix.lower() == ".pem" and path.is_file():
+                return True
+        except OSError:
+            continue
+    return False
 
 
 class PluginUninstallUseCase:

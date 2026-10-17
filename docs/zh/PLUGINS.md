@@ -103,25 +103,10 @@ avbpowertool plugin install <SOURCE> [--force] [--json]
 2. **zip 归档** —— 支持两种布局：
    - **根布局**：清单就在压缩包根目录（`avbpowertool_plugin_config.xml`、`run.cmd`…）；
    - **恰好一层目录**：所有文件都在**同一个**顶层目录下（`demo/avbpowertool_plugin_config.xml`…），
-     这正是 `Compress-Archive <目录>` 产生的形状。这一层目录名会被剥掉。
+     这正是 `plugin pack` 与 `Compress-Archive <目录>` 产生的形状。这一层目录名会被剥掉。
 
    归档里存在**多于一个**清单（例如根一份、子目录一份）→ `plugin.manifest_invalid`；
    一个都没有 → `plugin.manifest_missing`。
-
-打包示例：
-
-```powershell
-# Windows PowerShell：把目录打成「恰好一层目录」布局的 zip
-Compress-Archive -Path .\my_plugin -DestinationPath .\my_plugin.zip -Force
-avbpowertool plugin install .\my_plugin.zip --json
-```
-
-```shell
-# POSIX：注意在插件目录的**父目录**里执行，让 zip 里带上一层目录名
-cd /path/to/parent
-zip -r my_plugin.zip my_plugin
-avbpowertool plugin install ./my_plugin.zip --json
-```
 
 安装行为：
 
@@ -162,6 +147,59 @@ avbpowertool plugin install ./my_plugin.zip --json
   不会因为缺字段而装不上。
 - 覆盖安装是**合并**语义（与 `--force` 一直以来的行为一致）：新包里没有的文件会留在原地。
   需要干净安装时先 `plugin uninstall <id> --yes` 再装。
+
+### 打包（`plugin pack`）
+
+```shell
+avbpowertool plugin pack <SOURCE> [--output <ZIP>] [--json]
+```
+
+`SOURCE` 有两种用法（按此顺序解析）：
+
+1. **插件目录路径** —— 存在且是目录就直接用它，例如 `.\plugins\testkey_config_gen\`；
+2. **已安装插件的 id** —— 路径不存在时按 `<工作区>/plugins/<SOURCE>/` 查找，
+   例如 `testkey_config_gen`。
+
+两者都不满足 → `plugin.not_found`（退出码 1），消息里会说明这两种用法。
+
+- **默认输出**：`<工作区根>/<plugin_id>.zip`，与 `config export` 的默认风格一致；
+  `--output` 可指定其它路径。文件已存在时直接覆盖。
+- **产物布局**：**恰好一层目录** `<plugin_id>/<相对路径>`，例如
+  `testkey_config_gen/avbpowertool_plugin_config.xml`、
+  `testkey_config_gen/keys/testkey_rsa4096.pem`。这正是 `plugin install` 支持的
+  「恰好一层目录」形状，因此产物可以**直接安装**。
+- **跳过的噪音文件**：任何层级的 `__pycache__/` 目录、`*.pyc`、`.git/` 都不进 zip；
+  其余文件全部打包。插件自己的 `keys/` 也会打包——插件可以合法地携带密钥材料。
+- **密钥提示**：源目录里存在 `keys/` 子目录（或任何 `.pem`）时，文本模式额外打印一行
+  `包含密钥材料，会一起打包进 zip`；`--json` 里对应 `includes_key_material: true`，
+  供脚本判断。
+- 输出 zip 落在源目录内部时，该 zip 自身会被排除，重复打包不会自包含。
+- 写包失败（父目录建不出来、磁盘错误、文件被占用等）→ `plugin.pack_failed`，
+  且不会留下半成品 zip。
+
+`--json` 键：`plugin_id`、`output_path`、`file_count`、`version`、`version_name`、
+`includes_key_material`、`issues[]`。
+
+`pack` → `install` 往返示例：
+
+```shell
+avbpowertool plugin pack testkey_config_gen
+avbpowertool plugin install testkey_config_gen.zip
+```
+
+**手工打包（不推荐）**：优先用 `plugin pack`。确实要手工打包时，注意 zip 里必须是
+「恰好一层目录」布局——在插件目录的**父目录**里执行，让 zip 带上目录名：
+
+```powershell
+# Windows PowerShell
+Compress-Archive -Path .\my_plugin -DestinationPath .\my_plugin.zip -Force
+```
+
+```shell
+# POSIX：在插件目录的父目录里执行
+cd /path/to/parent
+zip -r my_plugin.zip my_plugin
+```
 
 卸载：
 
@@ -295,6 +333,10 @@ result = PluginListUseCase(workspace, language=os.environ["AVBPOWERTOOL_LANG"]).
 avbpowertool plugin list
 avbpowertool plugin list --json
 
+# 打包成可安装的 zip（SOURCE 可以是插件目录路径，也可以是已安装插件的 id）
+avbpowertool plugin pack ./my_plugin --json
+avbpowertool plugin pack testkey_config_gen
+
 # 从目录安装
 avbpowertool plugin install ./my_plugin --json
 
@@ -318,6 +360,7 @@ avbpowertool plugin uninstall my_plugin --yes --json
 | 命令 | 顶层键 |
 |---|---|
 | `plugin list` | `plugins[]`（`plugin_id` / `name` / `entry` / `version` / `version_name` / `path`）、`issues[]` |
+| `plugin pack` | `plugin_id`、`output_path`、`file_count`、`version`、`version_name`、`includes_key_material`、`issues[]` |
 | `plugin install` | `plugin_id`、`installed`、`file_count`、`version`、`version_name`、`issues[]` |
 | `plugin uninstall` | `plugin_id`、`removed`、`removed_files`、`removed_bytes`、`issues[]` |
 | `plugin run` | `plugin_id`、`exit_code`、`issues[]` |

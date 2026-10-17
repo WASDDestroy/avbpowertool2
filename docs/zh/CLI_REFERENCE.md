@@ -559,6 +559,7 @@ key_id 已存在 → `keys.already_exists`。`--json` 键：`key_id`、`issues[]
 
 ```
 avbpowertool plugin list      [-h] [--json]
+avbpowertool plugin pack      [-h] [--output ZIP] [--json] SOURCE
 avbpowertool plugin install   [-h] [--force] [--json] SOURCE
 avbpowertool plugin uninstall [-h] [--yes] [--json] PLUGIN_ID
 avbpowertool plugin run       [-h] [--json] PLUGIN_ID [-- <args> ...]
@@ -575,9 +576,20 @@ avbpowertool plugin run       [-h] [--json] PLUGIN_ID [-- <args> ...]
 `--json` 键：`plugins[]`（`plugin_id` / `name` / `entry` / `version` /
 `version_name` / `path`）、`issues[]`。
 
+**`plugin pack <SOURCE>`** —— 把插件打成可安装的 zip。`SOURCE` 是插件目录路径，
+或已安装插件的 id（按 `plugins/<SOURCE>/` 解析）；两者都不匹配 → `plugin.not_found`，
+消息里会说明这两种用法。归档使用 `plugin install` 支持的「恰好一层目录」布局
+（`<plugin_id>/…`），因此产物可以**直接安装**；默认输出
+`<工作区根>/<plugin_id>.zip`（与 `config export` 同风格），已存在则覆盖。任何层级的
+`__pycache__/`、`.git/`、`*.pyc` 都被跳过，其余文件全部打包（包括密钥材料）；源目录
+含 `keys/` 或任何 `.pem` 时文本模式多打印一行提示，`--json` 里
+`includes_key_material` 为 `true`。输出 zip 落在源目录内部时会被排除。
+`--json` 键：`plugin_id`、`output_path`、`file_count`、`version`、`version_name`、
+`includes_key_material`、`issues[]`。写包失败 → `plugin.pack_failed`，不留半成品 zip。
+
 **`plugin install <SOURCE>`** —— 从目录或 zip 安装。`SOURCE` 是插件目录或 `.zip`；
-zip 支持「根布局」与「恰好一层目录」两种形状（后者即 `Compress-Archive` 的产物）。
-目标 `plugins/<id>/` 已存在时由清单里的**版本**决定：
+zip 支持「根布局」与「恰好一层目录」两种形状（后者即 `plugin pack` /
+`Compress-Archive` 的产物）。目标 `plugins/<id>/` 已存在时由清单里的**版本**决定：
 
 | 旗标 / 情况 | 语义 |
 |---|---|
@@ -717,16 +729,17 @@ avbpowertool about [-h]
 
 | 错误码 | 含义 |
 |---|---|
-| `plugin.not_found` | `plugins/<id>/` 不存在（`plugin uninstall` / `plugin run` 的 id 没装） |
+| `plugin.not_found` | `plugins/<id>/` 不存在（`plugin uninstall` / `plugin run` 的 id 没装），或 `plugin pack` 的 `SOURCE` 既不是目录也不是已安装的 id |
 | `plugin.downgrade` | **新增**。`plugin install` 的 `<version>` 比已安装的低。什么都不写；用 `--force`（或将来在 TUI 里确认）才能降级 |
 | `plugin.exists` | 目标插件已安装但**版本无法判断**（已安装清单缺失、损坏，或声明的 id 与目录不符），且没给 `--force` |
 | `plugin.id_invalid` | 插件 id 非法：为空、`.`、`..`、含 `/` 或 `\`，或解析后不是 `plugins/` 的直接子目录 |
-| `plugin.manifest_missing` | 安装源里找不到 `avbpowertool_plugin_config.xml`（目录或归档） |
+| `plugin.manifest_missing` | 安装源或 `plugin pack` 的打包源里找不到 `avbpowertool_plugin_config.xml`（目录或归档） |
 | `plugin.manifest_invalid` | 清单 XML 无法解析、根元素名不对、`schema_version` 不受支持、id 为空、`<version>` 不是非负整数、或没有声明任何 `<name>` |
 | `plugin.entry_missing` | 清单的 `<entry>` 为空 |
 | `plugin.entry_invalid` | `<entry>` 含 `/` 或 `\`（试图指向插件目录之外） |
 | `plugin.entry_not_found` | 清单指向的入口文件在插件目录里不存在（`plugin run`） |
 | `plugin.install_failed` | 安装失败：`SOURCE` 既不是目录也不是合法 zip、归档含不安全成员（绝对路径 / 盘符 / `:` / `..`）、或复制/解压时报 `OSError` |
+| `plugin.pack_failed` | **新增**。打包失败：输出 zip 无法写入（父目录建不出来、磁盘错误、文件被占用），或成员名不安全。不会留下半成品 zip |
 | `plugin.uninstall_failed` | 删除插件目录失败（例如 Windows 上文件被占用） |
 | `plugin.run_failed` | 插件**根本没启动**：入口后缀不支持、解释器缺失、子进程无法创建。此时 `exit_code` 是占位的 `-1` |
 

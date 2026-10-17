@@ -714,6 +714,41 @@ class PluginInstallResult:
 
 
 @dataclass(frozen=True)
+class PluginPackRequest:
+    """Request to pack a plugin directory into an installable zip.
+
+    ``source`` is either a plugin directory path or the id of an installed
+    plugin (resolved against ``plugins/``).  ``output_path`` is the zip to
+    write; ``None`` means ``<workspace root>/<plugin_id>.zip``.
+    """
+
+    source: str = ""
+    output_path: str | None = None
+
+
+@dataclass(frozen=True)
+class PluginPackResult:
+    """Result of packing a plugin.
+
+    ``plugin_id`` is the id declared by the manifest and is also the single
+    top-level directory inside the archive, so the produced zip installs
+    as-is.  ``file_count`` counts the members written (noise files such as
+    ``__pycache__/``, ``.git/`` and ``*.pyc`` are not packed and not
+    counted).  ``includes_key_material`` is ``True`` when the source holds a
+    ``keys/`` directory or any ``.pem`` file — the zip carries those too,
+    which a script may want to warn about.
+    """
+
+    plugin_id: str = ""
+    output_path: str = ""
+    file_count: int = 0
+    version: int = 0
+    version_name: str = ""
+    includes_key_material: bool = False
+    issues: tuple[OperationIssue, ...] = ()
+
+
+@dataclass(frozen=True)
 class PluginUninstallRequest:
     """Request to remove an installed plugin."""
 

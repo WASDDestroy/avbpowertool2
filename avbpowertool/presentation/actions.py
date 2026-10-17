@@ -34,6 +34,7 @@ class ActionId(StrEnum):
     KEY_ADD = "keys.add"
     KEY_REMOVE = "keys.remove"
     PLUGIN_LIST = "plugin.list"
+    PLUGIN_PACK = "plugin.pack"
     PLUGIN_INSTALL = "plugin.install"
     PLUGIN_UNINSTALL = "plugin.uninstall"
     PLUGIN_RUN = "plugin.run"

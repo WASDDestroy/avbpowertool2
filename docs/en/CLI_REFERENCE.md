@@ -639,6 +639,7 @@ deleting the `.pem` file**). An unknown key_id gives `keys.not_found`.
 
 ```
 avbpowertool plugin list      [-h] [--json]
+avbpowertool plugin pack      [-h] [--output ZIP] [--json] SOURCE
 avbpowertool plugin install   [-h] [--force] [--json] SOURCE
 avbpowertool plugin uninstall [-h] [--yes] [--json] PLUGIN_ID
 avbpowertool plugin run       [-h] [--json] PLUGIN_ID [-- <args> ...]
@@ -658,10 +659,26 @@ and is never silently dropped.
 `--json` keys: `plugins[]` (`plugin_id` / `name` / `entry` / `version` /
 `version_name` / `path`), `issues[]`.
 
+**`plugin pack <SOURCE>`** — packs a plugin into an installable zip. `SOURCE` is
+either a plugin directory path or the id of an installed plugin (resolved against
+`plugins/`); when neither matches, `plugin.not_found` is reported and the message
+names both forms. The archive uses the "exactly one directory level" layout
+(`<plugin_id>/…`) that `plugin install` understands, so the result installs
+as-is; the default destination is `<workspace root>/<plugin_id>.zip` (same style
+as `config export`) and an existing file is overwritten. `__pycache__/`, `.git/`
+and `*.pyc` are skipped at every level; everything else is packed, key material
+included, and a source carrying a `keys/` directory or any `.pem` prints one
+extra line and reports `includes_key_material: true` in JSON. An output zip
+inside the source directory is excluded from the archive.
+`--json` keys: `plugin_id`, `output_path`, `file_count`, `version`,
+`version_name`, `includes_key_material`, `issues[]`. A write failure gives
+`plugin.pack_failed` and leaves no half-written zip.
+
 **`plugin install <SOURCE>`** — installs from a directory or a zip. `SOURCE` is a
 plugin directory or a `.zip`; a zip may use the "root layout" or the "exactly one
-directory level" layout (the latter is what `Compress-Archive` produces). When the
-target `plugins/<id>/` already exists, the manifest **versions** decide:
+directory level" layout (the latter is what `plugin pack` and `Compress-Archive`
+produce). When the target `plugins/<id>/` already exists, the manifest
+**versions** decide:
 
 | Flag / situation | Semantics |
 |---|---|
@@ -808,16 +825,17 @@ result of the `exit_code_from_issues` mapping.
 
 | Error code | Meaning |
 |---|---|
-| `plugin.not_found` | `plugins/<id>/` does not exist (the `plugin uninstall` / `plugin run` id is not installed) |
+| `plugin.not_found` | `plugins/<id>/` does not exist (the `plugin uninstall` / `plugin run` id is not installed), or the `plugin pack` source is neither a directory nor an installed id |
 | `plugin.downgrade` | **New.** `plugin install` was given a lower `<version>` than the installed one. Nothing is written; confirm the downgrade with `--force` (or accept the TUI's confirmation, once the TUI install entry exists) |
 | `plugin.exists` | The target plugin is already installed and its version **cannot be determined** (the installed manifest is missing, malformed, or declares another id), and `--force` was not given |
 | `plugin.id_invalid` | Illegal plugin id: empty, `.`, `..`, containing `/` or `\`, or not resolving to a direct child of `plugins/` |
-| `plugin.manifest_missing` | No `avbpowertool_plugin_config.xml` in the install source (directory or archive) |
+| `plugin.manifest_missing` | No `avbpowertool_plugin_config.xml` in the install source or the `plugin pack` source (directory or archive) |
 | `plugin.manifest_invalid` | The manifest XML cannot be parsed, the root element name is wrong, `schema_version` is unsupported, the id is empty, `<version>` is not a non-negative integer, or no `<name>` is declared |
 | `plugin.entry_missing` | The manifest's `<entry>` is empty |
 | `plugin.entry_invalid` | `<entry>` contains `/` or `\` (an attempt to point outside the plugin directory) |
 | `plugin.entry_not_found` | The entry file the manifest points at does not exist in the plugin directory (`plugin run`) |
 | `plugin.install_failed` | Install failed: `SOURCE` is neither a directory nor a valid zip, the archive holds an unsafe member (absolute path / drive letter / `:` / `..`), or the copy/extraction raised `OSError` |
+| `plugin.pack_failed` | **New.** Packing failed: the output zip cannot be written (parent directory cannot be created, disk error, locked file), or a member name would be unsafe. No half-written zip is left behind |
 | `plugin.uninstall_failed` | Removing the plugin directory failed (a locked file on Windows, for instance) |
 | `plugin.run_failed` | The plugin **never started**: unsupported entry suffix, missing interpreter, or a subprocess that could not be created. `exit_code` is the placeholder `-1` |
 

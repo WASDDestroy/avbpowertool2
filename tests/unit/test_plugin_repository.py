@@ -99,6 +99,12 @@ def _code(exc_info: pytest.ExceptionInfo[ConfigError]) -> str:
     return exc_info.value.error_code
 
 
+def _members(archive: Path) -> list[str]:
+    """Return every member name of *archive*, in archive order."""
+    with zipfile.ZipFile(archive) as zf:
+        return zf.namelist()
+
+
 # ---------------------------------------------------------------------------
 # list_manifests
 # ---------------------------------------------------------------------------
@@ -676,6 +682,126 @@ class TestInstallRejectsOtherSources:
             PluginRepository(tmp_path / "plugins").install(tmp_path / "nope", force=False)
 
         assert _code(exc_info) == "plugin.install_failed"
+
+
+# ---------------------------------------------------------------------------
+# pack
+# ---------------------------------------------------------------------------
+
+
+class TestPack:
+    def test_members_are_prefixed_and_use_forward_slashes(self, tmp_path: Path) -> None:
+        source = _make_source(tmp_path)
+        (source / "keys").mkdir()
+        (source / "keys" / "demo.pem").write_text("KEY", encoding="utf-8")
+        (source / "sub").mkdir()
+        (source / "sub" / "notes.txt").write_text("x", encoding="utf-8")
+        archive = tmp_path / "demo.zip"
+
+        manifest, file_count = PluginRepository(tmp_path / "plugins").pack(source, archive)
+
+        assert manifest.plugin_id == "demo"
+        assert file_count == 5
+        members = _members(archive)
+        assert sorted(members) == sorted(
+            [
+                "demo/README.md",
+                "demo/avbpowertool_plugin_config.xml",
+                "demo/keys/demo.pem",
+                "demo/run.cmd",
+                "demo/sub/notes.txt",
+            ]
+        )
+        assert all(name.startswith("demo/") for name in members)
+        assert all("\\" not in name for name in members)
+
+    def test_packed_zip_installs_back_with_identical_content(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        source = _make_source(tmp_path, version=2, version_name="2.0.0", script="print('hi')\n")
+        (source / "keys").mkdir()
+        (source / "keys" / "demo.pem").write_bytes(b"PRIVATE")
+        archive = tmp_path / "demo.zip"
+
+        PluginRepository(plugins_dir).pack(source, archive)
+        manifest, file_count = PluginRepository(plugins_dir).install(archive, force=False)
+
+        assert manifest.plugin_id == "demo"
+        assert manifest.version == 2
+        assert file_count == 4
+        assert _snapshot(plugins_dir / "demo") == _snapshot(source)
+
+    def test_skips_pycache_pyc_and_git_at_every_level(self, tmp_path: Path) -> None:
+        source = _make_source(tmp_path)
+        (source / "__pycache__").mkdir()
+        (source / "__pycache__" / "x.pyc").write_bytes(b"pyc")
+        (source / "a.pyc").write_bytes(b"pyc")
+        (source / ".git").mkdir()
+        (source / ".git" / "config").write_text("x", encoding="utf-8")
+        (source / "sub").mkdir()
+        (source / "sub" / "__pycache__").mkdir()
+        (source / "sub" / "__pycache__" / "y.pyc").write_bytes(b"pyc")
+
+        _manifest, file_count = PluginRepository(tmp_path / "plugins").pack(
+            source, tmp_path / "demo.zip"
+        )
+
+        members = _members(tmp_path / "demo.zip")
+        assert file_count == 3
+        assert sorted(members) == sorted(
+            [
+                "demo/README.md",
+                "demo/avbpowertool_plugin_config.xml",
+                "demo/run.cmd",
+            ]
+        )
+
+    def test_output_inside_the_source_is_not_self_included(self, tmp_path: Path) -> None:
+        source = _make_source(tmp_path)
+        archive = source / "demo.zip"
+        repo = PluginRepository(tmp_path / "plugins")
+
+        repo.pack(source, archive)
+        _manifest, file_count = repo.pack(source, archive)
+
+        members = _members(archive)
+        assert file_count == 3
+        assert len(members) == 3
+        assert "demo/demo.zip" not in members
+
+    def test_missing_directory_is_not_found(self, tmp_path: Path) -> None:
+        with pytest.raises(ConfigError) as exc_info:
+            PluginRepository(tmp_path / "plugins").pack(tmp_path / "nope", tmp_path / "x.zip")
+
+        assert _code(exc_info) == "plugin.not_found"
+
+    def test_missing_manifest_is_reported(self, tmp_path: Path) -> None:
+        source = tmp_path / "src" / "demo"
+        source.mkdir(parents=True)
+        (source / "run.cmd").write_text("x", encoding="utf-8")
+
+        with pytest.raises(ConfigError) as exc_info:
+            PluginRepository(tmp_path / "plugins").pack(source, tmp_path / "demo.zip")
+
+        assert _code(exc_info) == "plugin.manifest_missing"
+        assert not (tmp_path / "demo.zip").exists()
+
+    def test_broken_manifest_is_reported(self, tmp_path: Path) -> None:
+        source = _make_source(tmp_path)
+        (source / PLUGIN_MANIFEST_NAME).write_text("not xml at all", encoding="utf-8")
+
+        with pytest.raises(ConfigError) as exc_info:
+            PluginRepository(tmp_path / "plugins").pack(source, tmp_path / "demo.zip")
+
+        assert _code(exc_info) == "plugin.manifest_invalid"
+
+    def test_invalid_manifest_reports_its_first_issue_code(self, tmp_path: Path) -> None:
+        source = _make_source(tmp_path)
+        (source / PLUGIN_MANIFEST_NAME).write_bytes(_manifest_xml(plugin_id="../escape"))
+
+        with pytest.raises(ConfigError) as exc_info:
+            PluginRepository(tmp_path / "plugins").pack(source, tmp_path / "demo.zip")
+
+        assert _code(exc_info) == "plugin.id_invalid"
 
 
 # ---------------------------------------------------------------------------

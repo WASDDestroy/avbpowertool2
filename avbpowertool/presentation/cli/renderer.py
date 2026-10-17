@@ -25,6 +25,7 @@ from avbpowertool.application.commands import (
     LegacyImportResult,
     PluginInstallResult,
     PluginListResult,
+    PluginPackResult,
     PluginRunResult,
     PluginUninstallResult,
     ProfileActivateResult,
@@ -729,6 +730,43 @@ def render_plugin_list(result: PluginListResult, as_json: bool, out: TextIO = sy
     for p in result.plugins:
         version = _plugin_version_label(p.version, p.version_name)
         _emit_text(f"{p.plugin_id}: {p.name} {version} [{p.entry}] ({p.path})", out)
+    for iss in result.issues:
+        _emit_text(f"  [{iss.error_code}] {iss.message}", out)
+
+
+def render_plugin_pack(result: PluginPackResult, as_json: bool, out: TextIO = sys.stdout) -> None:
+    """Render the result of ``plugin pack``.
+
+    The JSON contract is exactly ``plugin_id`` / ``output_path`` /
+    ``file_count`` / ``version`` / ``version_name`` /
+    ``includes_key_material`` / ``issues``.  Text mode prints one line in the
+    ``Packed <id> v<version> → <path> (<n> files)`` shape, plus a warning
+    when the package carries key material (a ``keys/`` directory or a
+    ``.pem``), because those files are packed like everything else.
+    """
+    if as_json:
+        _emit_json(
+            {
+                "plugin_id": result.plugin_id,
+                "output_path": result.output_path,
+                "file_count": result.file_count,
+                "version": result.version,
+                "version_name": result.version_name,
+                "includes_key_material": result.includes_key_material,
+                "issues": _issues_to_dicts(result.issues),
+            },
+            out,
+        )
+        return
+
+    if not result.issues:
+        _emit_text(
+            f"Packed {result.plugin_id} v{result.version} → "
+            f"{result.output_path} ({result.file_count} files)",
+            out,
+        )
+        if result.includes_key_material:
+            _emit_text("包含密钥材料，会一起打包进 zip", out)
     for iss in result.issues:
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
 

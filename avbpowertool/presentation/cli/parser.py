@@ -432,6 +432,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_plugin_list.add_argument("--json", action="store_true", help="JSON output")
     p_plugin_list.set_defaults(action_id=ActionId.PLUGIN_LIST)
 
+    # plugin pack
+    p_plugin_pack = plugin_sub.add_parser(
+        "pack",
+        help="Pack a plugin directory into an installable zip",
+        epilog=(
+            "SOURCE is either a plugin directory path or the id of an installed "
+            "plugin. The archive uses the '<plugin_id>/...' layout, so the "
+            "result installs as-is with 'plugin install'."
+        ),
+    )
+    p_plugin_pack.add_argument(
+        "source",
+        metavar="SOURCE",
+        help="Plugin directory path or installed plugin ID",
+    )
+    p_plugin_pack.add_argument(
+        "--output",
+        help="Output zip path (default: <plugin_id>.zip in the workspace root)",
+    )
+    p_plugin_pack.add_argument("--json", action="store_true", help="JSON output")
+    p_plugin_pack.set_defaults(action_id=ActionId.PLUGIN_PACK)
+
     # plugin install
     p_plugin_install = plugin_sub.add_parser(
         "install", help="Install a plugin from a directory or a zip archive"

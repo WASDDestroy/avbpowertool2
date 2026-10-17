@@ -114,26 +114,12 @@ avbpowertool plugin install <SOURCE> [--force] [--json]
      (`avbpowertool_plugin_config.xml`, `run.cmd`, …);
    - **exactly one directory level**: every file lives under **one** top-level
      directory (`demo/avbpowertool_plugin_config.xml`, …) — exactly what
-     `Compress-Archive <dir>` produces. That level is stripped on extraction.
+     `plugin pack` and `Compress-Archive <dir>` produce. That level is stripped
+     on extraction.
 
    More than one manifest in the archive (say one at the root and one in a
    sub-directory) gives `plugin.manifest_invalid`; none at all gives
    `plugin.manifest_missing`.
-
-Packaging examples:
-
-```powershell
-# Windows PowerShell: produce a zip in the "exactly one directory level" layout
-Compress-Archive -Path .\my_plugin -DestinationPath .\my_plugin.zip -Force
-avbpowertool plugin install .\my_plugin.zip --json
-```
-
-```shell
-# POSIX: run this in the plugin directory's PARENT so the zip carries the directory name
-cd /path/to/parent
-zip -r my_plugin.zip my_plugin
-avbpowertool plugin install ./my_plugin.zip --json
-```
 
 Install behaviour:
 
@@ -186,6 +172,64 @@ is a free-form label shown next to the number (`plugin list` prints
   `--force` always did: files that the new package does not carry stay behind.
   Remove the directory first (`plugin uninstall <id> --yes`) when you need a
   clean install.
+
+### Packaging (`plugin pack`)
+
+```shell
+avbpowertool plugin pack <SOURCE> [--output <ZIP>] [--json]
+```
+
+`SOURCE` is resolved in this order:
+
+1. **a plugin directory path** — when it exists and is a directory, e.g.
+   `.\plugins\testkey_config_gen\`;
+2. **an installed plugin id** — otherwise `<workspace>/plugins/<SOURCE>/`,
+   e.g. `testkey_config_gen`.
+
+Neither → `plugin.not_found` (exit code 1); the message names both forms.
+
+- **Default output**: `<workspace root>/<plugin_id>.zip`, the same style as
+  `config export`; `--output` writes elsewhere. An existing file is overwritten.
+- **Layout**: **exactly one directory level**, `<plugin_id>/<relative path>` —
+  for instance `testkey_config_gen/avbpowertool_plugin_config.xml` and
+  `testkey_config_gen/keys/testkey_rsa4096.pem`. That is the layout
+  `plugin install` understands, so the archive installs **as-is**.
+- **Skipped noise**: `__pycache__/`, `*.pyc` and `.git/` at any level; every
+  other file is packed — including the plugin's own `keys/`, because a plugin
+  may legitimately ship key material.
+- **Key material**: when the source holds a `keys/` directory (or any `.pem`),
+  text mode adds one line, `包含密钥材料，会一起打包进 zip`, and `--json` reports
+  `includes_key_material: true`, so a script can decide what to do about it.
+- An output zip inside the source directory is excluded from the package, so
+  packing over a previous archive never embeds that archive in the new one.
+- A failed write (the parent directory cannot be created, a disk error, a
+  locked file, …) gives `plugin.pack_failed` and never leaves a half-written
+  zip behind.
+
+`--json` keys: `plugin_id`, `output_path`, `file_count`, `version`,
+`version_name`, `includes_key_material`, `issues[]`.
+
+Round trip (`pack` → `install`):
+
+```shell
+avbpowertool plugin pack testkey_config_gen
+avbpowertool plugin install testkey_config_gen.zip
+```
+
+**Manual packaging (not recommended)**: prefer `plugin pack`. When you do pack
+by hand, keep the "exactly one directory level" layout — run the archiver in the
+plugin directory's **parent** so the zip carries the directory name:
+
+```powershell
+# Windows PowerShell
+Compress-Archive -Path .\my_plugin -DestinationPath .\my_plugin.zip -Force
+```
+
+```shell
+# POSIX: run this in the plugin directory's parent
+cd /path/to/parent
+zip -r my_plugin.zip my_plugin
+```
 
 Uninstall:
 
@@ -330,6 +374,10 @@ result = PluginListUseCase(workspace, language=os.environ["AVBPOWERTOOL_LANG"]).
 avbpowertool plugin list
 avbpowertool plugin list --json
 
+# Pack an installable zip (SOURCE is a plugin directory path or an installed id)
+avbpowertool plugin pack ./my_plugin --json
+avbpowertool plugin pack testkey_config_gen
+
 # Install from a directory
 avbpowertool plugin install ./my_plugin --json
 
@@ -353,6 +401,7 @@ avbpowertool plugin uninstall my_plugin --yes --json
 | Command | Top-level keys |
 |---|---|
 | `plugin list` | `plugins[]` (`plugin_id` / `name` / `entry` / `version` / `version_name` / `path`), `issues[]` |
+| `plugin pack` | `plugin_id`, `output_path`, `file_count`, `version`, `version_name`, `includes_key_material`, `issues[]` |
 | `plugin install` | `plugin_id`, `installed`, `file_count`, `version`, `version_name`, `issues[]` |
 | `plugin uninstall` | `plugin_id`, `removed`, `removed_files`, `removed_bytes`, `issues[]` |
 | `plugin run` | `plugin_id`, `exit_code`, `issues[]` |

@@ -545,6 +545,98 @@ class TestPluginRunCli:
 
 
 # ---------------------------------------------------------------------------
+# plugin pack
+# ---------------------------------------------------------------------------
+
+
+class TestPluginPackCli:
+    def test_packs_a_directory_source_as_json(self, workspace: Path) -> None:
+        source = _make_source_dir(workspace, version=2, version_name="2.0.0")
+
+        code, stdout, _ = _run(["plugin", "pack", str(source), "--json"])
+
+        assert code == 0
+        data = json.loads(stdout)
+        assert data["plugin_id"] == "demo"
+        assert data["version"] == 2
+        assert data["version_name"] == "2.0.0"
+        assert data["file_count"] == 2
+        assert data["includes_key_material"] is False
+        assert data["issues"] == []
+        archive = Path(data["output_path"])
+        assert archive == workspace / "demo.zip"
+        with zipfile.ZipFile(archive) as zf:
+            assert sorted(zf.namelist()) == [
+                f"demo/{PLUGIN_MANIFEST_NAME}",
+                "demo/run.py",
+            ]
+
+    def test_packs_an_installed_plugin_by_id(self, workspace: Path) -> None:
+        _install_plugin(workspace, "demo", version=1)
+
+        code, stdout, _ = _run(["plugin", "pack", "demo", "--json"])
+
+        assert code == 0
+        data = json.loads(stdout)
+        assert data["plugin_id"] == "demo"
+        assert data["version"] == 1
+        assert Path(data["output_path"]) == workspace / "demo.zip"
+        assert (workspace / "demo.zip").is_file()
+
+    def test_output_flag_controls_the_destination(self, workspace: Path) -> None:
+        source = _make_source_dir(workspace)
+        target = workspace / "out" / "packed.zip"
+
+        code, stdout, _ = _run(["plugin", "pack", str(source), "--output", str(target), "--json"])
+
+        assert code == 0
+        data = json.loads(stdout)
+        assert data["output_path"] == str(target)
+        assert target.is_file()
+        assert not (workspace / "demo.zip").exists()
+
+    def test_unknown_source_is_not_found(self, workspace: Path) -> None:
+        code, stdout, _ = _run(["plugin", "pack", "ghost", "--json"])
+
+        assert code == 1
+        data = json.loads(stdout)
+        assert data["plugin_id"] == ""
+        assert [i["error_code"] for i in data["issues"]] == ["plugin.not_found"]
+
+    def test_missing_manifest_exits_one(self, workspace: Path) -> None:
+        source = workspace / "src" / "demo"
+        source.mkdir(parents=True)
+        (source / "run.py").write_text("print('x')\n", encoding="utf-8")
+
+        code, stdout, _ = _run(["plugin", "pack", str(source), "--json"])
+
+        assert code == 1
+        data = json.loads(stdout)
+        assert [i["error_code"] for i in data["issues"]] == ["plugin.manifest_missing"]
+
+    def test_text_mode_warns_about_key_material(self, workspace: Path) -> None:
+        source = _make_source_dir(workspace)
+        (source / "keys").mkdir()
+        (source / "keys" / "testkey_rsa4096.pem").write_text("KEY", encoding="utf-8")
+
+        code, stdout, _ = _run(["plugin", "pack", str(source)])
+
+        assert code == 0
+        assert "Packed demo v0 →" in stdout
+        assert "(3 files)" in stdout
+        assert "包含密钥材料" in stdout
+
+    def test_text_mode_has_no_key_warning_without_key_material(self, workspace: Path) -> None:
+        source = _make_source_dir(workspace)
+
+        code, stdout, _ = _run(["plugin", "pack", str(source)])
+
+        assert code == 0
+        assert "Packed demo v0" in stdout
+        assert "包含密钥材料" not in stdout
+
+
+# ---------------------------------------------------------------------------
 # Exit-code mapping
 # ---------------------------------------------------------------------------
 
@@ -572,6 +664,7 @@ class TestPluginHelp:
         [
             ["plugin", "--help"],
             ["plugin", "list", "--help"],
+            ["plugin", "pack", "--help"],
             ["plugin", "install", "--help"],
             ["plugin", "uninstall", "--help"],
             ["plugin", "run", "--help"],
