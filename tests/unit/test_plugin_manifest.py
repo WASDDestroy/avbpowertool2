@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from avbpowertool.domain.plugin import PluginManifest
 from avbpowertool.domain.validation import validate_plugin_manifest
 from avbpowertool.infrastructure.persistence.plugin_repository import (
@@ -20,12 +22,18 @@ def _xml(
     names: tuple[tuple[str, str], ...] | None = (("en", "Demo"),),
     descriptions: tuple[tuple[str, str], ...] = (),
     schema_version: str | None = "1",
+    version: str | None = None,
+    version_name: str | None = None,
 ) -> bytes:
     """Build a manifest document; ``None`` omits the element/attribute."""
     attrs = "" if schema_version is None else f' schema_version="{schema_version}"'
     body = ""
     if plugin_id is not None:
         body += f"<id>{plugin_id}</id>"
+    if version is not None:
+        body += f"<version>{version}</version>"
+    if version_name is not None:
+        body += f"<version_name>{version_name}</version_name>"
     if entry is not None:
         body += f"<entry>{entry}</entry>"
     if names is not None:
@@ -67,6 +75,8 @@ class TestParsePluginManifest:
                 entry="make-testkey-config.cmd",
                 names=(("en", "Test-key config generator"), ("zh", "测试密钥配置生成")),
                 descriptions=(("zh", "按旗标表生成配置"), ("en", "Generate a config")),
+                version="1",
+                version_name="1.0.0",
             )
         )
 
@@ -79,6 +89,8 @@ class TestParsePluginManifest:
         )
         assert manifest.descriptions == (("zh", "按旗标表生成配置"), ("en", "Generate a config"))
         assert manifest.schema_version == 1
+        assert manifest.version == 1
+        assert manifest.version_name == "1.0.0"
 
     def test_text_is_stripped(self) -> None:
         manifest, issues = parse_plugin_manifest(
@@ -166,6 +178,54 @@ class TestParsePluginManifest:
 
 
 # ---------------------------------------------------------------------------
+# Version / version_name
+# ---------------------------------------------------------------------------
+
+
+class TestVersionParsing:
+    def test_version_defaults_to_zero(self) -> None:
+        manifest, issues = parse_plugin_manifest(_xml())
+
+        assert issues == []
+        assert manifest.version == 0
+
+    @pytest.mark.parametrize(("raw", "expected"), [("0", 0), ("7", 7), (" 42 ", 42)])
+    def test_explicit_non_negative_versions_are_parsed(self, raw: str, expected: int) -> None:
+        manifest, issues = parse_plugin_manifest(_xml(version=raw))
+
+        assert issues == []
+        assert manifest.version == expected
+
+    @pytest.mark.parametrize("raw", ["-1", "abc", "1.5", "", "   "])
+    def test_invalid_versions_are_reported(self, raw: str) -> None:
+        _manifest, issues = parse_plugin_manifest(_xml(version=raw))
+
+        assert _codes(issues) == ["plugin.manifest_invalid"]
+        assert "version" in issues[0].message
+
+    def test_version_name_defaults_to_empty(self) -> None:
+        manifest, issues = parse_plugin_manifest(_xml())
+
+        assert issues == []
+        assert manifest.version_name == ""
+
+    @pytest.mark.parametrize("raw", ["1.0.0", "1.1.0-beta+42", "2026 春节版", "任意字串"])
+    def test_version_name_is_passed_through(self, raw: str) -> None:
+        manifest, issues = parse_plugin_manifest(_xml(version="3", version_name=raw))
+
+        assert issues == []
+        assert manifest.version == 3
+        assert manifest.version_name == raw
+
+    def test_version_name_without_a_version_is_kept(self) -> None:
+        manifest, issues = parse_plugin_manifest(_xml(version_name="2.0"))
+
+        assert issues == []
+        assert manifest.version == 0
+        assert manifest.version_name == "2.0"
+
+
+# ---------------------------------------------------------------------------
 # Validator
 # ---------------------------------------------------------------------------
 
@@ -187,6 +247,24 @@ class TestValidatePluginManifest:
             "plugin.entry_missing",
             "plugin.manifest_invalid",
         ]
+
+    @pytest.mark.parametrize("version", [0, 1, 99])
+    def test_non_negative_versions_are_valid(self, version: int) -> None:
+        issues = validate_plugin_manifest(
+            PluginManifest(
+                plugin_id="demo", entry="run.py", names=(("en", "Demo"),), version=version
+            )
+        )
+
+        assert issues == []
+
+    def test_negative_version_is_reported(self) -> None:
+        issues = validate_plugin_manifest(
+            PluginManifest(plugin_id="demo", entry="run.py", names=(("en", "Demo"),), version=-1)
+        )
+
+        assert _codes(issues) == ["plugin.manifest_invalid"]
+        assert "version" in issues[0].message
 
 
 # ---------------------------------------------------------------------------

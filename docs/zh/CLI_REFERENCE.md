@@ -569,20 +569,30 @@ avbpowertool plugin run       [-h] [--json] PLUGIN_ID [-- <args> ...]
 
 **`plugin list`** —— 列出 `plugins/` 下的插件，按 id 排序。`name` 已按当前语言
 （`settings.json` 的 `language`，默认 `en`）解析。没有插件时文本模式打印
-`No plugins installed.`。清单损坏的目录会出现在 `issues[]` 里（`plugin.manifest_*`），
-但**不会**被静默丢弃。
-`--json` 键：`plugins[]`（`plugin_id` / `name` / `entry` / `path`）、`issues[]`。
+`No plugins installed.`。文本模式在名字后带上清单里的版本：`v<version>`，若清单声明了
+版本名则为 `v<version> (<version_name>)`。清单损坏的目录会出现在 `issues[]` 里
+（`plugin.manifest_*`），但**不会**被静默丢弃。
+`--json` 键：`plugins[]`（`plugin_id` / `name` / `entry` / `version` /
+`version_name` / `path`）、`issues[]`。
 
 **`plugin install <SOURCE>`** —— 从目录或 zip 安装。`SOURCE` 是插件目录或 `.zip`；
 zip 支持「根布局」与「恰好一层目录」两种形状（后者即 `Compress-Archive` 的产物）。
-目标 `plugins/<id>/` 已存在时：
+目标 `plugins/<id>/` 已存在时由清单里的**版本**决定：
 
-| 旗标 | 语义 |
+| 旗标 / 情况 | 语义 |
 |---|---|
-| （默认） | 报 `plugin.exists`，退出码 1，**不覆盖任何文件** |
-| `--force` | 覆盖安装 |
+| 目标不存在 | 安装 |
+| 待安装 `version` > 已安装 | 升级：直接覆盖，**不需要** `--force` |
+| 待安装 `version` == 已安装 | 同版本重装：直接覆盖，**不需要** `--force` |
+| 待安装 `version` < 已安装 | 拒绝降级：`plugin.downgrade`，退出码 1，**一个字节都不写** |
+| 已安装清单读不出来 | `plugin.exists`，退出码 1（版本未知） |
+| `--force` | 一律覆盖，含降级 |
 
-`--json` 键：`plugin_id`、`installed`、`file_count`、`issues[]`。
+因此 `--force` 的含义是「不管版本，强制覆盖」。清单里没有 `<version>` 就是版本 `0`；
+`plugin.exists` 从此只用于「已安装清单缺失、损坏或声明的 id 与目录不符」这种版本无法
+判断的兜底场景。
+`--json` 键：`plugin_id`、`installed`、`file_count`、`version`、`version_name`、
+`issues[]`（安装失败时 `version` / `version_name` 保持默认值 `0` / `""`）。
 不安全归档（绝对路径 / 盘符 / `:` / `..`）在解压任何字节之前就被拒绝
 （`plugin.install_failed`），不会留下半成品目录。
 
@@ -708,10 +718,11 @@ avbpowertool about [-h]
 | 错误码 | 含义 |
 |---|---|
 | `plugin.not_found` | `plugins/<id>/` 不存在（`plugin uninstall` / `plugin run` 的 id 没装） |
-| `plugin.exists` | 目标插件已安装且没给 `--force`（`plugin install` 不覆盖任何文件） |
+| `plugin.downgrade` | **新增**。`plugin install` 的 `<version>` 比已安装的低。什么都不写；用 `--force`（或将来在 TUI 里确认）才能降级 |
+| `plugin.exists` | 目标插件已安装但**版本无法判断**（已安装清单缺失、损坏，或声明的 id 与目录不符），且没给 `--force` |
 | `plugin.id_invalid` | 插件 id 非法：为空、`.`、`..`、含 `/` 或 `\`，或解析后不是 `plugins/` 的直接子目录 |
 | `plugin.manifest_missing` | 安装源里找不到 `avbpowertool_plugin_config.xml`（目录或归档） |
-| `plugin.manifest_invalid` | 清单 XML 无法解析、根元素名不对、`schema_version` 不受支持、id 为空、或没有声明任何 `<name>` |
+| `plugin.manifest_invalid` | 清单 XML 无法解析、根元素名不对、`schema_version` 不受支持、id 为空、`<version>` 不是非负整数、或没有声明任何 `<name>` |
 | `plugin.entry_missing` | 清单的 `<entry>` 为空 |
 | `plugin.entry_invalid` | `<entry>` 含 `/` 或 `\`（试图指向插件目录之外） |
 | `plugin.entry_not_found` | 清单指向的入口文件在插件目录里不存在（`plugin run`） |

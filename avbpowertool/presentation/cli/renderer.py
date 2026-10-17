@@ -699,8 +699,10 @@ def render_plugin_list(result: PluginListResult, as_json: bool, out: TextIO = sy
     """Render the result of ``plugin list``.
 
     The JSON contract is exactly ``plugins`` (each with ``plugin_id`` /
-    ``name`` / ``entry`` / ``path``) and ``issues``.  ``name`` is already
-    resolved for the language the use case was built with.
+    ``name`` / ``entry`` / ``version`` / ``version_name`` / ``path``) and
+    ``issues``.  ``name`` is already resolved for the language the use case
+    was built with.  Text mode appends ``v<version>`` — plus the optional
+    ``version_name`` in parentheses — to the display name.
     """
     if as_json:
         _emit_json(
@@ -710,6 +712,8 @@ def render_plugin_list(result: PluginListResult, as_json: bool, out: TextIO = sy
                         "plugin_id": p.plugin_id,
                         "name": p.name,
                         "entry": p.entry,
+                        "version": p.version,
+                        "version_name": p.version_name,
                         "path": p.path,
                     }
                     for p in result.plugins
@@ -723,7 +727,8 @@ def render_plugin_list(result: PluginListResult, as_json: bool, out: TextIO = sy
     if not result.plugins:
         _emit_text("No plugins installed.", out)
     for p in result.plugins:
-        _emit_text(f"{p.plugin_id}: {p.name} [{p.entry}] ({p.path})", out)
+        version = _plugin_version_label(p.version, p.version_name)
+        _emit_text(f"{p.plugin_id}: {p.name} {version} [{p.entry}] ({p.path})", out)
     for iss in result.issues:
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
 
@@ -734,7 +739,9 @@ def render_plugin_install(
     """Render the result of ``plugin install``.
 
     The JSON contract is exactly ``plugin_id`` / ``installed`` /
-    ``file_count`` / ``issues``.
+    ``file_count`` / ``version`` / ``version_name`` / ``issues``.  A refused
+    downgrade prints the ``plugin.downgrade`` message verbatim, so it names
+    both the installed and the incoming version.
     """
     if as_json:
         _emit_json(
@@ -742,6 +749,8 @@ def render_plugin_install(
                 "plugin_id": result.plugin_id,
                 "installed": result.installed,
                 "file_count": result.file_count,
+                "version": result.version,
+                "version_name": result.version_name,
                 "issues": _issues_to_dicts(result.issues),
             },
             out,
@@ -750,6 +759,7 @@ def render_plugin_install(
 
     if result.installed and not result.issues:
         _emit_text(f"Installed plugin: {result.plugin_id}", out)
+        _emit_text(f"  Version: {_plugin_version_label(result.version, result.version_name)}", out)
         _emit_text(f"  Files: {result.file_count}", out)
     for iss in result.issues:
         _emit_text(f"  [{iss.error_code}] {iss.message}", out)
@@ -817,6 +827,13 @@ def render_plugin_run(result: PluginRunResult, as_json: bool, out: TextIO = sys.
 def _named_partitions(result: ConfigShowResult) -> list[tuple[str, Any]]:
     """Return [(name, partition_config), ...] for display."""
     return [(p.partition_name, p) for p in result.partitions]
+
+
+def _plugin_version_label(version: int, version_name: str) -> str:
+    """Render ``v<version>`` with the optional ``(<version_name>)`` suffix."""
+    if version_name:
+        return f"v{version} ({version_name})"
+    return f"v{version}"
 
 
 def exit_code_from_issues(issues: tuple[OperationIssue, ...]) -> int:

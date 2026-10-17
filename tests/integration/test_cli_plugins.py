@@ -14,10 +14,12 @@ from pathlib import Path
 
 import pytest
 
+from avbpowertool.domain.models import OperationIssue
 from avbpowertool.infrastructure.persistence.plugin_repository import (
     PLUGIN_MANIFEST_NAME,
 )
 from avbpowertool.presentation.cli.parser import main
+from avbpowertool.presentation.cli.renderer import exit_code_from_issues
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -28,12 +30,19 @@ def _manifest_xml(
     plugin_id: str = "demo",
     entry: str = "run.py",
     names: tuple[tuple[str, str], ...] = (("en", "Demo plugin"), ("zh", "演示插件")),
+    version: int | None = None,
+    version_name: str | None = None,
 ) -> str:
     body = "".join(f'<name lang="{lang}">{text}</name>' for lang, text in names)
+    version_xml = "" if version is None else f"<version>{version}</version>"
+    version_name_xml = (
+        "" if version_name is None else f"<version_name>{version_name}</version_name>"
+    )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<avbpowertool_plugin schema_version="1">'
-        f"<id>{plugin_id}</id><entry>{entry}</entry><names>{body}</names>"
+        f"<id>{plugin_id}</id>{version_xml}{version_name_xml}"
+        f"<entry>{entry}</entry><names>{body}</names>"
         "</avbpowertool_plugin>"
     )
 
@@ -54,22 +63,34 @@ def _install_plugin(
     entry: str = "run.py",
     script: str = "print('hello')\n",
     names: tuple[tuple[str, str], ...] = (("en", "Demo plugin"), ("zh", "演示插件")),
+    version: int | None = None,
+    version_name: str | None = None,
 ) -> Path:
     plugin_dir = root / "plugins" / plugin_id
     plugin_dir.mkdir(parents=True, exist_ok=True)
     (plugin_dir / PLUGIN_MANIFEST_NAME).write_text(
-        _manifest_xml(plugin_id, entry, names), encoding="utf-8"
+        _manifest_xml(plugin_id, entry, names, version, version_name), encoding="utf-8"
     )
     (plugin_dir / entry).write_text(script, encoding="utf-8")
     return plugin_dir
 
 
-def _make_source_dir(root: Path, plugin_id: str = "demo", entry: str = "run.py") -> Path:
+def _make_source_dir(
+    root: Path,
+    plugin_id: str = "demo",
+    entry: str = "run.py",
+    script: str = "print('installed')\n",
+    version: int | None = None,
+    version_name: str | None = None,
+) -> Path:
     """A plugin directory *outside* ``plugins/``, ready to be installed."""
     source = root / "src" / plugin_id
     source.mkdir(parents=True, exist_ok=True)
-    (source / PLUGIN_MANIFEST_NAME).write_text(_manifest_xml(plugin_id, entry), encoding="utf-8")
-    (source / entry).write_text("print('installed')\n", encoding="utf-8")
+    (source / PLUGIN_MANIFEST_NAME).write_text(
+        _manifest_xml(plugin_id, entry, version=version, version_name=version_name),
+        encoding="utf-8",
+    )
+    (source / entry).write_text(script, encoding="utf-8")
     return source
 
 
@@ -135,7 +156,20 @@ class TestPluginListCli:
         # No settings.json -> the persisted language is the "en" default.
         assert entry["name"] == "Demo plugin"
         assert entry["entry"] == "run.py"
+        # A manifest without <version> / <version_name> reports 0 / "".
+        assert entry["version"] == 0
+        assert entry["version_name"] == ""
         assert Path(entry["path"]).resolve() == (workspace / "plugins" / "demo").resolve()
+
+    def test_json_reports_the_manifest_version(self, workspace: Path) -> None:
+        _install_plugin(workspace, "demo", version=2, version_name="2.1.0")
+
+        code, stdout, _ = _run(["plugin", "list", "--json"])
+
+        assert code == 0
+        entry = json.loads(stdout)["plugins"][0]
+        assert entry["version"] == 2
+        assert entry["version_name"] == "2.1.0"
 
     def test_resolves_the_name_for_the_configured_language(self, tmp_path: Path) -> None:
         old_cwd = os.getcwd()
@@ -151,14 +185,22 @@ class TestPluginListCli:
         finally:
             os.chdir(old_cwd)
 
-    def test_text_mode_lists_id_name_entry_and_path(self, workspace: Path) -> None:
+    def test_text_mode_lists_id_name_version_entry_and_path(self, workspace: Path) -> None:
         _install_plugin(workspace, "demo")
 
         code, stdout, _ = _run(["plugin", "list"])
 
         assert code == 0
-        assert "demo: Demo plugin [run.py] (" in stdout
+        assert "demo: Demo plugin v0 [run.py] (" in stdout
         assert "plugins" in stdout and "demo)" in stdout
+
+    def test_text_mode_includes_the_version_name_when_declared(self, workspace: Path) -> None:
+        _install_plugin(workspace, "demo", version=2, version_name="2.1.0")
+
+        code, stdout, _ = _run(["plugin", "list"])
+
+        assert code == 0
+        assert "demo: Demo plugin v2 (2.1.0) [run.py] (" in stdout
 
 
 # ---------------------------------------------------------------------------
@@ -195,9 +237,103 @@ class TestPluginInstallCli:
         assert data["file_count"] == 2
         assert (workspace / "plugins" / "demo" / "run.py").is_file()
 
-    def test_reinstall_without_force_is_refused(self, workspace: Path) -> None:
-        source = _make_source_dir(workspace)
+    def test_install_json_reports_the_version(self, workspace: Path) -> None:
+        source = _make_source_dir(workspace, version=3, version_name="3.0.0")
+
+        code, stdout, _ = _run(["plugin", "install", str(source), "--json"])
+
+        assert code == 0
+        data = json.loads(stdout)
+        assert data["version"] == 3
+        assert data["version_name"] == "3.0.0"
+
+    def test_install_text_mode_reports_the_version(self, workspace: Path) -> None:
+        source = _make_source_dir(workspace, version=3, version_name="3.0.0")
+
+        code, stdout, _ = _run(["plugin", "install", str(source)])
+
+        assert code == 0
+        assert "Installed plugin: demo" in stdout
+        assert "v3 (3.0.0)" in stdout
+
+    def test_same_version_reinstall_succeeds_without_force(self, workspace: Path) -> None:
+        source = _make_source_dir(workspace, script="print('reinstalled')\n")
         _install_plugin(workspace, "demo")
+
+        code, stdout, _ = _run(["plugin", "install", str(source), "--json"])
+
+        assert code == 0
+        data = json.loads(stdout)
+        assert data["installed"] is True
+        assert data["issues"] == []
+        assert (workspace / "plugins" / "demo" / "run.py").read_text(
+            encoding="utf-8"
+        ) == "print('reinstalled')\n"
+
+    def test_upgrade_succeeds_without_force(self, workspace: Path) -> None:
+        _install_plugin(workspace, "demo", version=1, version_name="1.0.0")
+        source = _make_source_dir(
+            workspace, version=2, version_name="2.0.0", script="print('v2')\n"
+        )
+
+        code, stdout, _ = _run(["plugin", "install", str(source), "--json"])
+
+        assert code == 0
+        data = json.loads(stdout)
+        assert data["installed"] is True
+        assert data["version"] == 2
+        assert data["version_name"] == "2.0.0"
+        assert (workspace / "plugins" / "demo" / "run.py").read_text(encoding="utf-8") == (
+            "print('v2')\n"
+        )
+
+    def test_downgrade_is_refused(self, workspace: Path) -> None:
+        plugin_dir = _install_plugin(workspace, "demo", version=2, version_name="2.0.0")
+        source = _make_source_dir(
+            workspace, version=1, version_name="1.0.0", script="print('v1')\n"
+        )
+
+        code, stdout, _ = _run(["plugin", "install", str(source), "--json"])
+
+        assert code == 1
+        data = json.loads(stdout)
+        assert data["installed"] is False
+        assert [i["error_code"] for i in data["issues"]] == ["plugin.downgrade"]
+        # Nothing was overwritten.
+        assert (plugin_dir / "run.py").read_text(encoding="utf-8") == "print('hello')\n"
+
+    def test_downgrade_text_message_names_both_versions(self, workspace: Path) -> None:
+        _install_plugin(workspace, "demo", version=2, version_name="2.0.0")
+        source = _make_source_dir(workspace, version=1, version_name="1.0.0")
+
+        code, stdout, _ = _run(["plugin", "install", str(source)])
+
+        assert code == 1
+        assert "[plugin.downgrade]" in stdout
+        assert "version 2 (2.0.0)" in stdout
+        assert "version 1 (1.0.0)" in stdout
+        assert "--force" in stdout
+
+    def test_downgrade_with_force_succeeds(self, workspace: Path) -> None:
+        _install_plugin(workspace, "demo", version=2, version_name="2.0.0")
+        source = _make_source_dir(
+            workspace, version=1, version_name="1.0.0", script="print('v1')\n"
+        )
+
+        code, stdout, _ = _run(["plugin", "install", str(source), "--force", "--json"])
+
+        assert code == 0
+        data = json.loads(stdout)
+        assert data["installed"] is True
+        assert data["version"] == 1
+        assert (workspace / "plugins" / "demo" / "run.py").read_text(encoding="utf-8") == (
+            "print('v1')\n"
+        )
+
+    def test_unreadable_installed_manifest_still_reports_exists(self, workspace: Path) -> None:
+        plugin_dir = _install_plugin(workspace, "demo", version=2)
+        (plugin_dir / PLUGIN_MANIFEST_NAME).write_text("not xml at all", encoding="utf-8")
+        source = _make_source_dir(workspace, version=1)
 
         code, stdout, _ = _run(["plugin", "install", str(source), "--json"])
 
@@ -205,6 +341,16 @@ class TestPluginInstallCli:
         data = json.loads(stdout)
         assert data["installed"] is False
         assert [i["error_code"] for i in data["issues"]] == ["plugin.exists"]
+
+    def test_unreadable_installed_manifest_with_force_succeeds(self, workspace: Path) -> None:
+        plugin_dir = _install_plugin(workspace, "demo", version=2)
+        (plugin_dir / PLUGIN_MANIFEST_NAME).write_text("not xml at all", encoding="utf-8")
+        source = _make_source_dir(workspace, version=1)
+
+        code, stdout, _ = _run(["plugin", "install", str(source), "--force", "--json"])
+
+        assert code == 0
+        assert json.loads(stdout)["installed"] is True
 
     def test_reinstall_with_force_succeeds(self, workspace: Path) -> None:
         source = _make_source_dir(workspace)
@@ -396,6 +542,23 @@ class TestPluginRunCli:
         # The plugin ran: its own status travels, without any issue.
         assert data["exit_code"] == 1
         assert data["issues"] == []
+
+
+# ---------------------------------------------------------------------------
+# Exit-code mapping
+# ---------------------------------------------------------------------------
+
+
+class TestPluginExitCodeMapping:
+    @pytest.mark.parametrize(
+        "error_code",
+        ["plugin.downgrade", "plugin.exists", "plugin.manifest_invalid", "plugin.not_found"],
+    )
+    def test_plugin_error_codes_map_to_exit_code_one(self, error_code: str) -> None:
+        assert exit_code_from_issues((OperationIssue(error_code, "message"),)) == 1
+
+    def test_no_issues_map_to_exit_code_zero(self) -> None:
+        assert exit_code_from_issues(()) == 0
 
 
 # ---------------------------------------------------------------------------

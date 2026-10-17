@@ -17,6 +17,12 @@ flags / 密钥 / 算法 → 剪枝内嵌描述符 → 自检 → （可选）改
 > `keys/` 里的 testkey PEM 是本地密钥材料，被 `.gitignore` 的
 > `plugins/*/keys/` 规则排除，**不入库**；清单 XML、两个脚本与本文档都在版本控制内。
 
+**当前插件版本：`<version>1</version>` / `<version_name>1.0.0</version_name>`。**
+`<version>` 是单调递增的整数，`plugin install` 用它判断升级 / 同版本重装 / 降级
+（降级默认拒绝，需 `--force`）。**改插件内容时请递增 `<version>`**，并按语义更新
+`<version_name>`（例如 `1.0.0` → `1.1.0`），否则已安装的用户重新安装旧包会被当成
+同版本重装而静默覆盖。详见 [插件系统](../../docs/zh/PLUGINS.md#2-清单-xml-格式)。
+
 ## 前置条件
 
 | 条件 | 说明 |

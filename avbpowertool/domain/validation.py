@@ -308,7 +308,9 @@ def validate_plugin_manifest(manifest: PluginManifest) -> list[OperationIssue]:
     * the entry must be a bare file name *inside* the plugin directory, so
       a manifest can never address a script outside its own package;
     * at least one name must be declared (the display name is what the
-      CLI/TUI show, and ``name_for`` falls back to the id without it).
+      CLI/TUI show, and ``name_for`` falls back to the id without it);
+    * ``version`` must be a non-negative integer (``0`` when the element is
+      absent, which is how an unversioned plugin is represented).
     """
     issues: list[OperationIssue] = []
 
@@ -318,6 +320,15 @@ def validate_plugin_manifest(manifest: PluginManifest) -> list[OperationIssue]:
                 "plugin.manifest_invalid",
                 f"Expected plugin schema_version {_PLUGIN_SCHEMA_VERSION}, "
                 f"got {manifest.schema_version}",
+            )
+        )
+
+    if manifest.version < 0:
+        issues.append(
+            OperationIssue(
+                "plugin.manifest_invalid",
+                f"Invalid plugin version: {manifest.version} "
+                "(<version> must be a non-negative integer)",
             )
         )
 

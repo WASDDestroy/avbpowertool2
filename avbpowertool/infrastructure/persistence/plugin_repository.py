@@ -68,6 +68,8 @@ def parse_plugin_manifest(xml_bytes: bytes) -> tuple[PluginManifest, list[Operat
     manifest = PluginManifest(
         plugin_id=(root.findtext("id") or "").strip(),
         entry=(root.findtext("entry") or "").strip(),
+        version=_parse_version(root),
+        version_name=(root.findtext("version_name") or "").strip(),
         names=_localized_pairs(names_container, "name"),
         descriptions=_localized_pairs(root, "description"),
         schema_version=_parse_schema_version(root),
@@ -78,6 +80,22 @@ def parse_plugin_manifest(xml_bytes: bytes) -> tuple[PluginManifest, list[Operat
 def _empty_manifest() -> PluginManifest:
     """A placeholder for XML that could not be understood at all."""
     return PluginManifest(plugin_id="", entry="")
+
+
+def _parse_version(root: ET.Element) -> int:
+    """Read ``<version>``; a missing element means version ``0``.
+
+    A present but non-numeric value is returned as ``-1`` so that
+    :func:`validate_plugin_manifest` reports it as
+    ``plugin.manifest_invalid`` — exactly like an explicit negative value.
+    """
+    raw = root.findtext("version")
+    if raw is None:
+        return 0
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return -1
 
 
 def _parse_schema_version(root: ET.Element) -> int:
@@ -213,9 +231,15 @@ class PluginRepository:
         at its root or under exactly one same-named directory (the layout
         ``Compress-Archive <dir>`` produces).
 
+        An existing target is handled by version (see
+        :meth:`_overwrite_allowed`): a newer or equal ``version`` overwrites
+        without *force*, a lower one is refused, and an unreadable installed
+        manifest falls back to the old "needs --force" rule.
+
         Raises:
             ConfigError: with ``plugin.manifest_missing``, a manifest issue
-                code, ``plugin.exists``, or ``plugin.install_failed``.
+                code, ``plugin.downgrade``, ``plugin.exists``, or
+                ``plugin.install_failed``.
         """
         if source.is_dir():
             manifest = self._read_manifest(source / PLUGIN_MANIFEST_NAME)
@@ -233,7 +257,7 @@ class PluginRepository:
     def _install_directory(self, source: Path, manifest: PluginManifest, force: bool) -> int:
         """Copy a plugin directory into ``plugins/<id>/``."""
         target = self._plugins_dir / manifest.plugin_id
-        self._refuse_existing(target, manifest.plugin_id, force)
+        overwrite = self._overwrite_allowed(target, manifest, force)
 
         if _same_directory(source, target):
             # The plugin directory is its own install location: copying it
@@ -243,7 +267,7 @@ class PluginRepository:
 
         try:
             self._plugins_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(source, target, dirs_exist_ok=force)
+            shutil.copytree(source, target, dirs_exist_ok=overwrite)
         except OSError as exc:
             raise ConfigError(
                 f"Failed to install plugin {manifest.plugin_id!r}: {exc}",
@@ -307,7 +331,7 @@ class PluginRepository:
     ) -> int:
         """Extract a zip into ``plugins/<id>/``, stripping the *prefix*."""
         target = self._plugins_dir / manifest.plugin_id
-        self._refuse_existing(target, manifest.plugin_id, force)
+        self._overwrite_allowed(target, manifest, force)
 
         try:
             with zipfile.ZipFile(source) as archive:
@@ -333,13 +357,77 @@ class PluginRepository:
         )
         return file_count
 
-    def _refuse_existing(self, target: Path, plugin_id: str, force: bool) -> None:
-        """Raise ``plugin.exists`` when *target* is taken and *force* is off."""
-        if target.exists() and not force:
+    def _overwrite_allowed(self, target: Path, incoming: PluginManifest, force: bool) -> bool:
+        """Decide what happens to an already existing *target* directory.
+
+        Returns ``True`` when *target* exists and must be overwritten,
+        ``False`` when there is nothing there yet (a plain install).
+
+        The rule is driven by the manifest versions, because "already
+        installed" is not an error any more — upgrading (and reinstalling
+        the same version) is the normal path:
+
+        ==============================  =====================================
+        Situation                       Outcome
+        ==============================  =====================================
+        target missing                  install normally (``False``)
+        ``force``                       overwrite, downgrade included
+        incoming < installed            ``plugin.downgrade``, nothing written
+        incoming >= installed           overwrite without ``force``
+        installed manifest unreadable   ``plugin.exists`` without ``force``
+        ==============================  =====================================
+
+        ``plugin.exists`` is therefore only the fallback for a target whose
+        version cannot be determined: a manifest that is missing, malformed,
+        or belongs to a different id.
+        """
+        if not target.exists():
+            return False
+        if force:
+            return True
+
+        installed = self._read_installed_manifest(target, incoming.plugin_id)
+        if installed is None:
             raise ConfigError(
-                f"Plugin already installed: {plugin_id} (use --force to overwrite)",
+                f"Plugin already installed: {incoming.plugin_id} "
+                "(its manifest cannot be read, so the installed version is unknown; "
+                "use --force to overwrite)",
                 error_code="plugin.exists",
             )
+
+        if incoming.version < installed.version:
+            raise ConfigError(
+                f"Refusing to downgrade plugin {incoming.plugin_id!r}: installed "
+                f"{_describe_version(installed)} is newer than the incoming "
+                f"{_describe_version(incoming)} (use --force to downgrade)",
+                error_code="plugin.downgrade",
+            )
+
+        logger.info(
+            "Upgrading plugin %r from %s to %s",
+            incoming.plugin_id,
+            _describe_version(installed),
+            _describe_version(incoming),
+        )
+        return True
+
+    def _read_installed_manifest(self, target: Path, plugin_id: str) -> PluginManifest | None:
+        """Read the manifest already installed in *target*, or ``None``.
+
+        ``None`` means "the installed version is unknown": the manifest is
+        missing, cannot be read, does not parse/validate, or declares a
+        different id than the directory it sits in.
+        """
+        manifest_path = target / PLUGIN_MANIFEST_NAME
+        try:
+            xml_bytes = manifest_path.read_bytes()
+        except OSError:
+            return None
+
+        installed, issues = parse_plugin_manifest(xml_bytes)
+        if issues or installed.plugin_id != plugin_id:
+            return None
+        return installed
 
     # ------------------------------------------------------------------
     # Uninstall
@@ -421,6 +509,13 @@ class PluginRepository:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _describe_version(manifest: PluginManifest) -> str:
+    """Render a manifest version for messages: ``version 2 (2.0.0)``."""
+    if manifest.version_name:
+        return f"version {manifest.version} ({manifest.version_name})"
+    return f"version {manifest.version}"
 
 
 def _is_zipfile(path: Path) -> bool:

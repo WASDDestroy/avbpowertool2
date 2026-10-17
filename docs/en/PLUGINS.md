@@ -59,6 +59,8 @@ The ready-made example in this repository
 <?xml version="1.0" encoding="UTF-8"?>
 <avbpowertool_plugin schema_version="1">
   <id>testkey_config_gen</id>
+  <version>1</version>
+  <version_name>1.0.0</version_name>
   <entry>make-testkey-config.cmd</entry>
   <names>
     <name lang="en">Test-key config generator</name>
@@ -74,6 +76,8 @@ The ready-made example in this repository
 | Root element `avbpowertool_plugin` | yes | A different root name gives `plugin.manifest_invalid` |
 | `schema_version` (attribute) | no | Omitted means `1` (the only supported version). A non-number or anything but `1` gives `plugin.manifest_invalid` |
 | `<id>` | yes | The plugin id; it **must match the installation directory name** (`plugin install` uses it to pick the target directory). Empty gives `plugin.manifest_invalid`; illegal characters give `plugin.id_invalid` |
+| `<version>` | no | The plugin's **monotonically increasing integer** version; omitted means `0` (an unversioned plugin is version `0`). Anything that is not a non-negative integer (`-1`, `abc`, `1.5`) gives `plugin.manifest_invalid`. It drives upgrade / downgrade decisions — see section 3 |
+| `<version_name>` | no | A **free-form** human-readable label (`1.1.0`, `2026 beta`, …); omitted means `""`. Never validated and never compared — it is display-only |
 | `<entry>` | yes | A **bare file name** of the entry script, inside the plugin directory. Empty gives `plugin.entry_missing`; a `/` or `\` (an attempt to point outside) gives `plugin.entry_invalid` |
 | `<names><name lang="…">` | yes | The localized display names, at least one. **Declaring none gives `plugin.manifest_invalid`** |
 | `<description lang="…">` | no | Localized description; the CLI does not show it today, the TUI / future list views use it |
@@ -133,15 +137,55 @@ avbpowertool plugin install ./my_plugin.zip --json
 
 Install behaviour:
 
-- an existing `plugins/<id>/` without `--force` gives `plugin.exists` (exit code 1)
-  and **overwrites nothing**;
-- with `--force` the install overwrites (`copytree(dirs_exist_ok=True)`);
+- a target that does not exist yet is simply installed;
+- when `plugins/<id>/` already exists, the **versions** decide what happens
+  (see [Versions and downgrades](#versions-and-downgrades) below): a newer or
+  equal `<version>` overwrites **without** `--force`, a lower one is refused
+  with `plugin.downgrade`;
+- `--force` always overwrites, downgrades included;
+- an installed manifest that cannot be read (missing, malformed, or declaring
+  another id) leaves the version unknown and falls back to the old rule:
+  `plugin.exists` without `--force`;
 - a zip is validated **before a single byte is extracted**: absolute paths, drive
   letters, `:` (NTFS ADS), and any `..` component are refused
   (`plugin.install_failed`), so there is never a half-extracted directory and no
   file lands outside the target directory;
 - a `SOURCE` that is neither a directory nor a valid zip gives
   `plugin.install_failed`.
+
+### Versions and downgrades
+
+`<version>` is a **monotonically increasing integer maintained by the plugin
+author** — this tool never invents, increments, or rewrites it. `<version_name>`
+is a free-form label shown next to the number (`plugin list` prints
+`v2 (2.1.0)`); it is never compared.
+
+| Installed | Incoming | Result |
+|---|---|---|
+| nothing | any version | Installed |
+| v1 | v2 | **Upgrade**, installed directly — no `--force` needed |
+| v2 | v2 | **Same version**: reinstalled directly — no `--force` needed |
+| v2 | v1 | **Downgrade refused**: `plugin.downgrade`, exit code 1, **nothing is written** |
+| v2 | v1 + `--force` | Downgrade performed |
+| unreadable manifest | any version | `plugin.exists` (the version is unknown), needs `--force` |
+| any | any + `--force` | Overwritten |
+
+- A downgrade is refused by default because it silently removes fixes and
+  features the user already has. The message names **both** versions (number and
+  `version_name`) and points at `--force`.
+- `plugin.downgrade` is a **new error code** (exit code 1, like every other
+  `plugin.*` code). It replaces `plugin.exists` for the "already installed"
+  case: `plugin.exists` now means only "there is something there, but its
+  version cannot be determined".
+- A downgrade must be confirmed explicitly: with `--force` on the CLI, or by
+  accepting the TUI's downgrade confirmation (the TUI install entry itself is
+  still CLI-only today — see section 8).
+- A manifest **without** `<version>` is version `0`, so an old unversioned plugin
+  installs and upgrades normally instead of failing on a missing element.
+- Installing over an existing directory **merges** the files, exactly like
+  `--force` always did: files that the new package does not carry stay behind.
+  Remove the directory first (`plugin uninstall <id> --yes`) when you need a
+  clean install.
 
 Uninstall:
 
@@ -281,14 +325,18 @@ result = PluginListUseCase(workspace, language=os.environ["AVBPOWERTOOL_LANG"]).
 ## 7. Install / Uninstall / Run Examples
 
 ```shell
-# List installed plugins (name already resolved for the current language)
+# List installed plugins (name already resolved for the current language,
+# version shown as v<version> [(<version_name>)])
 avbpowertool plugin list
 avbpowertool plugin list --json
 
 # Install from a directory
 avbpowertool plugin install ./my_plugin --json
 
-# Install from a zip (add --force when it already exists)
+# Upgrade (or reinstall the same version): no --force needed
+avbpowertool plugin install ./my_plugin.zip --json
+
+# Downgrade: refused by default, --force confirms it
 avbpowertool plugin install ./my_plugin.zip --force --json
 
 # Run: everything after -- belongs to the plugin
@@ -304,8 +352,8 @@ avbpowertool plugin uninstall my_plugin --yes --json
 
 | Command | Top-level keys |
 |---|---|
-| `plugin list` | `plugins[]` (`plugin_id` / `name` / `entry` / `path`), `issues[]` |
-| `plugin install` | `plugin_id`, `installed`, `file_count`, `issues[]` |
+| `plugin list` | `plugins[]` (`plugin_id` / `name` / `entry` / `version` / `version_name` / `path`), `issues[]` |
+| `plugin install` | `plugin_id`, `installed`, `file_count`, `version`, `version_name`, `issues[]` |
 | `plugin uninstall` | `plugin_id`, `removed`, `removed_files`, `removed_bytes`, `issues[]` |
 | `plugin run` | `plugin_id`, `exit_code`, `issues[]` |
 

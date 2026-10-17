@@ -440,7 +440,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_plugin_install.add_argument(
         "--force",
         action="store_true",
-        help="Overwrite an already installed plugin with the same id",
+        help=(
+            "Overwrite an already installed plugin with the same id; "
+            "also allows installing a lower version (downgrade)"
+        ),
     )
     p_plugin_install.add_argument("--json", action="store_true", help="JSON output")
     p_plugin_install.set_defaults(action_id=ActionId.PLUGIN_INSTALL)

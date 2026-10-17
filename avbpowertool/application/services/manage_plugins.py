@@ -72,6 +72,8 @@ class PluginListUseCase:
                 plugin_id=manifest.plugin_id,
                 name=manifest.name_for(self._language),
                 entry=manifest.entry,
+                version=manifest.version,
+                version_name=manifest.version_name,
                 path=str(self._ws.resolve_plugin_dir(manifest.plugin_id)),
             )
             for manifest in manifests
@@ -82,7 +84,13 @@ class PluginListUseCase:
 
 
 class PluginInstallUseCase:
-    """Install a plugin from a directory or a zip archive."""
+    """Install a plugin from a directory or a zip archive.
+
+    The repository decides whether an existing installation may be
+    replaced: a newer (or equal) ``version`` upgrades without ``force``, a
+    lower one is refused with ``plugin.downgrade`` unless ``force`` is set,
+    and an unreadable installed manifest falls back to ``plugin.exists``.
+    """
 
     def __init__(self, workspace: WorkspacePaths) -> None:
         self._ws = workspace
@@ -94,7 +102,7 @@ class PluginInstallUseCase:
         except ConfigError as exc:
             # The id is unknown when the manifest itself is the problem;
             # the issue message carries the path (and the id when there is
-            # one, as for plugin.exists).
+            # one, as for plugin.exists / plugin.downgrade).
             logger.warning("Plugin install failed: %s", exc)
             return PluginInstallResult(issues=(OperationIssue(exc.error_code, str(exc)),))
         except OSError as exc:
@@ -109,6 +117,8 @@ class PluginInstallUseCase:
             plugin_id=manifest.plugin_id,
             installed=True,
             file_count=file_count,
+            version=manifest.version,
+            version_name=manifest.version_name,
         )
 
 

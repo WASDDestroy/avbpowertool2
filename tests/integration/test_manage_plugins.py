@@ -42,12 +42,19 @@ def _manifest_xml(
     plugin_id: str = "demo",
     entry: str = "run.cmd",
     names: tuple[tuple[str, str], ...] = (("en", "Demo plugin"), ("zh", "演示插件")),
+    version: int | None = None,
+    version_name: str | None = None,
 ) -> bytes:
     body = "".join(f'<name lang="{lang}">{text}</name>' for lang, text in names)
+    version_xml = "" if version is None else f"<version>{version}</version>"
+    version_name_xml = (
+        "" if version_name is None else f"<version_name>{version_name}</version_name>"
+    )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<avbpowertool_plugin schema_version="1">'
-        f"<id>{plugin_id}</id><entry>{entry}</entry><names>{body}</names>"
+        f"<id>{plugin_id}</id>{version_xml}{version_name_xml}"
+        f"<entry>{entry}</entry><names>{body}</names>"
         "</avbpowertool_plugin>"
     ).encode("utf-8")
 
@@ -71,19 +78,33 @@ def _install_plugin(
     plugin_id: str = "demo",
     entry: str = "run.cmd",
     names: tuple[tuple[str, str], ...] = (("en", "Demo plugin"), ("zh", "演示插件")),
+    version: int | None = None,
+    version_name: str | None = None,
+    script: str = "@echo off\n",
 ) -> Path:
     plugin_dir = ws.plugins / plugin_id
     plugin_dir.mkdir(parents=True, exist_ok=True)
-    (plugin_dir / PLUGIN_MANIFEST_NAME).write_bytes(_manifest_xml(plugin_id, entry, names))
-    (plugin_dir / entry).write_text("@echo off\n", encoding="utf-8")
+    (plugin_dir / PLUGIN_MANIFEST_NAME).write_bytes(
+        _manifest_xml(plugin_id, entry, names, version, version_name)
+    )
+    (plugin_dir / entry).write_text(script, encoding="utf-8")
     return plugin_dir
 
 
-def _make_source_dir(tmp_path: Path, plugin_id: str = "demo", entry: str = "run.cmd") -> Path:
+def _make_source_dir(
+    tmp_path: Path,
+    plugin_id: str = "demo",
+    entry: str = "run.cmd",
+    version: int | None = None,
+    version_name: str | None = None,
+    script: str = "@echo off\n",
+) -> Path:
     source = tmp_path / "src" / plugin_id
     source.mkdir(parents=True)
-    (source / PLUGIN_MANIFEST_NAME).write_bytes(_manifest_xml(plugin_id, entry))
-    (source / entry).write_text("@echo off\n", encoding="utf-8")
+    (source / PLUGIN_MANIFEST_NAME).write_bytes(
+        _manifest_xml(plugin_id, entry, version=version, version_name=version_name)
+    )
+    (source / entry).write_text(script, encoding="utf-8")
     return source
 
 
@@ -185,6 +206,22 @@ class TestPluginListUseCase:
         assert result.plugins == ()
         assert result.issues == ()
 
+    def test_reports_the_manifest_version_and_version_name(
+        self, tmp_path: Path, language: str
+    ) -> None:
+        ws = _make_workspace(tmp_path)
+        _install_plugin(ws, "alpha", version=3, version_name="3.1.0")
+        _install_plugin(ws, "beta")
+
+        result = PluginListUseCase(ws, language=language).execute(PluginListRequest())
+
+        by_id = {item.plugin_id: item for item in result.plugins}
+        assert by_id["alpha"].version == 3
+        assert by_id["alpha"].version_name == "3.1.0"
+        # A manifest without <version> / <version_name> is 0 / "".
+        assert by_id["beta"].version == 0
+        assert by_id["beta"].version_name == ""
+
 
 # ---------------------------------------------------------------------------
 # Install
@@ -204,6 +241,26 @@ class TestPluginInstallUseCase:
         assert result.file_count == 2
         assert (ws.plugins / "demo" / PLUGIN_MANIFEST_NAME).is_file()
 
+    def test_passes_the_version_fields_through(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        source = _make_source_dir(tmp_path, version=4, version_name="4.2.0")
+
+        result = PluginInstallUseCase(ws).execute(PluginInstallRequest(str(source)))
+
+        assert result.issues == ()
+        assert result.installed is True
+        assert result.version == 4
+        assert result.version_name == "4.2.0"
+
+    def test_legacy_manifest_installs_as_version_zero(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        source = _make_source_dir(tmp_path)
+
+        result = PluginInstallUseCase(ws).execute(PluginInstallRequest(str(source)))
+
+        assert result.version == 0
+        assert result.version_name == ""
+
     def test_installs_a_zip_archive(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)
         archive = tmp_path / "demo.zip"
@@ -218,15 +275,81 @@ class TestPluginInstallUseCase:
         assert result.file_count == 2
         assert (ws.plugins / "demo" / "run.cmd").is_file()
 
-    def test_existing_plugin_is_reported(self, tmp_path: Path) -> None:
+    def test_same_version_reinstall_succeeds_without_force(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)
-        _install_plugin(ws, "demo")
-        source = _make_source_dir(tmp_path)
+        _install_plugin(ws, "demo", version=1, version_name="1.0.0")
+        source = _make_source_dir(tmp_path, version=1, version_name="1.0.0", script="NEW\n")
+
+        result = PluginInstallUseCase(ws).execute(PluginInstallRequest(str(source)))
+
+        assert result.issues == ()
+        assert result.installed is True
+        assert (ws.plugins / "demo" / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
+
+    def test_upgrade_succeeds_without_force(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _install_plugin(ws, "demo", version=1, version_name="1.0.0")
+        source = _make_source_dir(tmp_path, version=2, version_name="2.0.0", script="NEW\n")
+
+        result = PluginInstallUseCase(ws).execute(PluginInstallRequest(str(source)))
+
+        assert result.issues == ()
+        assert result.installed is True
+        assert result.version == 2
+        assert result.version_name == "2.0.0"
+        assert (ws.plugins / "demo" / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
+
+    def test_downgrade_is_reported(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _install_plugin(ws, "demo", version=2, version_name="2.0.0")
+        source = _make_source_dir(tmp_path, version=1, version_name="1.0.0", script="NEW\n")
+
+        result = PluginInstallUseCase(ws).execute(PluginInstallRequest(str(source)))
+
+        assert result.installed is False
+        # Failure keeps the version fields at their defaults.
+        assert result.version == 0
+        assert result.version_name == ""
+        assert _codes(result) == ["plugin.downgrade"]
+        assert "2" in result.issues[0].message
+        assert "1" in result.issues[0].message
+        # The installed copy is untouched.
+        assert (ws.plugins / "demo" / "run.cmd").read_text(encoding="utf-8") == "@echo off\n"
+
+    def test_downgrade_with_force_installs(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        _install_plugin(ws, "demo", version=2, version_name="2.0.0")
+        source = _make_source_dir(tmp_path, version=1, version_name="1.0.0", script="NEW\n")
+
+        result = PluginInstallUseCase(ws).execute(PluginInstallRequest(str(source), force=True))
+
+        assert result.issues == ()
+        assert result.installed is True
+        assert result.version == 1
+        assert (ws.plugins / "demo" / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
+
+    def test_unreadable_installed_manifest_falls_back_to_exists(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        plugin_dir = _install_plugin(ws, "demo", version=2)
+        (plugin_dir / PLUGIN_MANIFEST_NAME).unlink()
+        source = _make_source_dir(tmp_path, version=1)
 
         result = PluginInstallUseCase(ws).execute(PluginInstallRequest(str(source)))
 
         assert result.installed is False
         assert _codes(result) == ["plugin.exists"]
+
+    def test_unreadable_installed_manifest_with_force_installs(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        plugin_dir = _install_plugin(ws, "demo", version=2)
+        (plugin_dir / PLUGIN_MANIFEST_NAME).unlink()
+        source = _make_source_dir(tmp_path, version=1, script="NEW\n")
+
+        result = PluginInstallUseCase(ws).execute(PluginInstallRequest(str(source), force=True))
+
+        assert result.issues == ()
+        assert result.installed is True
+        assert (plugin_dir / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
 
     def test_force_reinstalls(self, tmp_path: Path) -> None:
         ws = _make_workspace(tmp_path)

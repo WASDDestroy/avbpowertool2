@@ -658,12 +658,15 @@ class PluginListItem:
 
     ``name`` is already resolved for the language injected into the use
     case, so the presentation layer never needs to look at the manifest
-    itself.
+    itself.  ``version`` / ``version_name`` are the manifest's declared
+    version (``0`` / ``""`` for a plugin that declares none).
     """
 
     plugin_id: str = ""
     name: str = ""
     entry: str = ""
+    version: int = 0
+    version_name: str = ""
     path: str = ""
 
 
@@ -698,12 +701,15 @@ class PluginInstallResult:
 
     ``plugin_id`` is the id declared by the installed manifest;
     ``file_count`` counts the regular files that ended up in
-    ``plugins/<plugin_id>/``.
+    ``plugins/<plugin_id>/``.  ``version`` / ``version_name`` describe what
+    was installed and keep their defaults when nothing was installed.
     """
 
     plugin_id: str = ""
     installed: bool = False
     file_count: int = 0
+    version: int = 0
+    version_name: str = ""
     issues: tuple[OperationIssue, ...] = ()
 
 

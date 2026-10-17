@@ -19,15 +19,25 @@ _FALLBACK_LANGUAGE = "en"
 
 @dataclass(frozen=True)
 class PluginManifest:
-    """A plugin's declared identity and entry point.
+    """A plugin's declared identity, version, and entry point.
 
     ``names`` / ``descriptions`` keep the document order of the manifest,
     so the first non-empty entry doubles as the last-resort fallback when
     neither the requested language nor ``en`` matches.
+
+    ``version`` is a **monotonically increasing integer** maintained by the
+    plugin author: it is what decides whether an install is an upgrade, a
+    same-version reinstall, or a refused downgrade.  A manifest without a
+    ``<version>`` element is version ``0``, so an unversioned plugin can be
+    installed and upgraded from without any special casing.  ``version_name``
+    is a free-form human-readable label (``"1.1.0"``, ``"2024-06 beta"``, …)
+    and never participates in the comparison.
     """
 
     plugin_id: str
     entry: str
+    version: int = 0
+    version_name: str = ""
     names: tuple[tuple[str, str], ...] = ()  # (lang, name)
     descriptions: tuple[tuple[str, str], ...] = ()
     schema_version: int = 1

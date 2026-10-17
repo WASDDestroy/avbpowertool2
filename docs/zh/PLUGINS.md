@@ -53,6 +53,8 @@ AVBPowerTool2 的插件是一个**放在工作区 `plugins/<id>/` 里的目录**
 <?xml version="1.0" encoding="UTF-8"?>
 <avbpowertool_plugin schema_version="1">
   <id>testkey_config_gen</id>
+  <version>1</version>
+  <version_name>1.0.0</version_name>
   <entry>make-testkey-config.cmd</entry>
   <names>
     <name lang="en">Test-key config generator</name>
@@ -68,6 +70,8 @@ AVBPowerTool2 的插件是一个**放在工作区 `plugins/<id>/` 里的目录**
 | 根元素 `avbpowertool_plugin` | 是 | 根元素名写错 → `plugin.manifest_invalid` |
 | `schema_version`（属性） | 否 | 省略视为 `1`（当前唯一支持的版本）。不是数字或不是 `1` → `plugin.manifest_invalid` |
 | `<id>` | 是 | 插件 id，**必须与安装目录名一致**（`plugin install` 用它决定复制到哪个目录）。为空 → `plugin.manifest_invalid`；含非法字符 → `plugin.id_invalid` |
+| `<version>` | 否 | 插件版本的**单调递增整数**；省略视为 `0`（没有版本信息的老插件就是 v0）。不是非负整数（`-1`、`abc`、`1.5`）→ `plugin.manifest_invalid`。它决定升级 / 降级判断，见第 3 节 |
+| `<version_name>` | 否 | **任意字符串**版本名（`1.1.0`、`2026 春节版`…），省略视为 `""`。不做任何格式校验，也**不参与版本比较**，只用于展示 |
 | `<entry>` | 是 | 入口脚本的**裸文件名**，必须在插件目录内。为空 → `plugin.entry_missing`；含 `/` 或 `\`（想指向目录外）→ `plugin.entry_invalid` |
 | `<names><name lang="…">` | 是 | 多语言显示名，至少一条。**一条都没有 → `plugin.manifest_invalid`** |
 | `<description lang="…">` | 否 | 多语言描述，当前 CLI 不展示，供 TUI / 未来的列表界面使用 |
@@ -121,13 +125,43 @@ avbpowertool plugin install ./my_plugin.zip --json
 
 安装行为：
 
-- 目标 `plugins/<id>/` 已存在且没给 `--force` → `plugin.exists`（退出码 1），
-  **什么都不覆盖**；
-- 给了 `--force` → 覆盖安装（`copytree(dirs_exist_ok=True)`）；
+- 目标目录不存在 → 直接安装；
+- 目标 `plugins/<id>/` 已存在时由**版本**决定（见下方「版本与降级」）：
+  新版本或同版本**无需** `--force` 直接覆盖；旧版本 → `plugin.downgrade`；
+- 给了 `--force` → 一律覆盖（含降级）；
+- 已安装清单读不出来（缺失、损坏、或声明的 id 与目录不符）→ 版本无法判断，
+  退回旧语义：没给 `--force` 就报 `plugin.exists`；
 - zip 在**解压任何字节之前**先校验所有成员：绝对路径、盘符、`:`（NTFS ADS）、
   以及任何 `..` 段都会被拒绝（`plugin.install_failed`），因此不会出现「解压到一半」
   的半成品目录，也不会有文件落到目标目录之外；
 - `SOURCE` 既不是目录也不是合法 zip → `plugin.install_failed`。
+
+### 版本与降级
+
+`<version>` 是**由插件作者自行维护的单调递增整数**——工具不会自己生成、自增或改写它。
+`<version_name>` 是自由格式的展示用标签（`plugin list` 里显示成 `v2 (2.1.0)`），
+**不参与任何比较**。
+
+| 已安装 | 待安装 | 结果 |
+|---|---|---|
+| 无 | 任意版本 | 安装 |
+| v1 | v2 | **升级**，直接覆盖安装，**不需要** `--force` |
+| v2 | v2 | **同版本重装**，直接覆盖，**不需要** `--force` |
+| v2 | v1 | **拒绝降级**：`plugin.downgrade`，退出码 1，**一个字节都不写** |
+| v2 | v1 + `--force` | 执行降级 |
+| 清单读不出来 | 任意版本 | `plugin.exists`（版本未知），需要 `--force` |
+| 任意 | 任意 + `--force` | 覆盖 |
+
+- 默认拒绝降级，因为降级会悄悄丢掉用户已经装上的修复与功能。错误消息里同时给出
+  **两边的版本**（版本号与 `version_name`）并提示用 `--force`。
+- `plugin.downgrade` 是**新增错误码**（退出码 1，与其它 `plugin.*` 一致）。它接管了
+  「已安装」这一场景，`plugin.exists` 从此只表示「目录在，但版本无法判断」。
+- 降级必须显式确认：CLI 上用 `--force`，或在 TUI 里接受降级确认对话框
+  （TUI 的安装入口目前仍是 CLI-only，见第 8 节）。
+- 清单里**没有** `<version>` 就是版本 `0`，因此没有版本信息的老插件照常安装、照常升级，
+  不会因为缺字段而装不上。
+- 覆盖安装是**合并**语义（与 `--force` 一直以来的行为一致）：新包里没有的文件会留在原地。
+  需要干净安装时先 `plugin uninstall <id> --yes` 再装。
 
 卸载：
 
@@ -257,14 +291,17 @@ result = PluginListUseCase(workspace, language=os.environ["AVBPOWERTOOL_LANG"]).
 ## 7. 安装 / 卸载 / 运行示例
 
 ```shell
-# 列出已安装的插件（name 已按当前语言解析）
+# 列出已安装的插件（name 已按当前语言解析，版本显示为 v<version> [(<version_name>)])
 avbpowertool plugin list
 avbpowertool plugin list --json
 
 # 从目录安装
 avbpowertool plugin install ./my_plugin --json
 
-# 从 zip 安装（已存在时先 --force）
+# 升级（或同版本重装）：不需要 --force
+avbpowertool plugin install ./my_plugin.zip --json
+
+# 降级：默认拒绝，用 --force 显式确认
 avbpowertool plugin install ./my_plugin.zip --force --json
 
 # 运行：-- 之后是插件自己的参数
@@ -280,8 +317,8 @@ avbpowertool plugin uninstall my_plugin --yes --json
 
 | 命令 | 顶层键 |
 |---|---|
-| `plugin list` | `plugins[]`（`plugin_id` / `name` / `entry` / `path`）、`issues[]` |
-| `plugin install` | `plugin_id`、`installed`、`file_count`、`issues[]` |
+| `plugin list` | `plugins[]`（`plugin_id` / `name` / `entry` / `version` / `version_name` / `path`）、`issues[]` |
+| `plugin install` | `plugin_id`、`installed`、`file_count`、`version`、`version_name`、`issues[]` |
 | `plugin uninstall` | `plugin_id`、`removed`、`removed_files`、`removed_bytes`、`issues[]` |
 | `plugin run` | `plugin_id`、`exit_code`、`issues[]` |
 

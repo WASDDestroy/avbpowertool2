@@ -650,24 +650,36 @@ dispatch, environment contract, security statement) is documented in
 
 **`plugin list`** — lists the plugins under `plugins/`, sorted by id. `name` is
 already resolved for the current language (`settings.json`'s `language`, default
-`en`). With no plugins the text mode prints `No plugins installed.`. A directory
-whose manifest is broken shows up in `issues[]` (`plugin.manifest_*`) and is never
-silently dropped.
-`--json` keys: `plugins[]` (`plugin_id` / `name` / `entry` / `path`), `issues[]`.
+`en`). With no plugins the text mode prints `No plugins installed.`. Text mode
+appends the manifest version to the name: `v<version>`, or
+`v<version> (<version_name>)` when the manifest declares a version name. A
+directory whose manifest is broken shows up in `issues[]` (`plugin.manifest_*`)
+and is never silently dropped.
+`--json` keys: `plugins[]` (`plugin_id` / `name` / `entry` / `version` /
+`version_name` / `path`), `issues[]`.
 
 **`plugin install <SOURCE>`** — installs from a directory or a zip. `SOURCE` is a
 plugin directory or a `.zip`; a zip may use the "root layout" or the "exactly one
 directory level" layout (the latter is what `Compress-Archive` produces). When the
-target `plugins/<id>/` already exists:
+target `plugins/<id>/` already exists, the manifest **versions** decide:
 
-| Flag | Semantics |
+| Flag / situation | Semantics |
 |---|---|
-| (default) | Report `plugin.exists`, exit 1, **overwrite nothing** |
-| `--force` | Overwrite the installation |
+| target missing | Installed |
+| incoming `version` > installed | Upgrade: overwritten, **no `--force` needed** |
+| incoming `version` == installed | Same-version reinstall: overwritten, **no `--force` needed** |
+| incoming `version` < installed | Downgrade refused: `plugin.downgrade`, exit 1, **nothing written** |
+| installed manifest unreadable | `plugin.exists`, exit 1 (the version is unknown) |
+| `--force` | Always overwritten, downgrades included |
 
-`--json` keys: `plugin_id`, `installed`, `file_count`, `issues[]`. An unsafe archive
-(absolute path / drive letter / `:` / `..`) is refused before a single byte is
-extracted (`plugin.install_failed`) and leaves no half-installed directory.
+`--force` therefore means "overwrite regardless of version". A manifest without
+`<version>` is version `0`; `plugin.exists` is now only the fallback for a target
+whose manifest is missing, malformed, or declares another id.
+`--json` keys: `plugin_id`, `installed`, `file_count`, `version`, `version_name`,
+`issues[]` (the version fields keep their defaults `0` / `""` when nothing was
+installed). An unsafe archive (absolute path / drive letter / `:` / `..`) is
+refused before a single byte is extracted (`plugin.install_failed`) and leaves no
+half-installed directory.
 
 **`plugin uninstall <PLUGIN_ID>`** — removes the whole `plugins/<PLUGIN_ID>/`
 directory. `--yes` is a **hard gate**: without it stderr gets
@@ -797,10 +809,11 @@ result of the `exit_code_from_issues` mapping.
 | Error code | Meaning |
 |---|---|
 | `plugin.not_found` | `plugins/<id>/` does not exist (the `plugin uninstall` / `plugin run` id is not installed) |
-| `plugin.exists` | The target plugin is already installed and `--force` was not given (`plugin install` overwrites nothing) |
+| `plugin.downgrade` | **New.** `plugin install` was given a lower `<version>` than the installed one. Nothing is written; confirm the downgrade with `--force` (or accept the TUI's confirmation, once the TUI install entry exists) |
+| `plugin.exists` | The target plugin is already installed and its version **cannot be determined** (the installed manifest is missing, malformed, or declares another id), and `--force` was not given |
 | `plugin.id_invalid` | Illegal plugin id: empty, `.`, `..`, containing `/` or `\`, or not resolving to a direct child of `plugins/` |
 | `plugin.manifest_missing` | No `avbpowertool_plugin_config.xml` in the install source (directory or archive) |
-| `plugin.manifest_invalid` | The manifest XML cannot be parsed, the root element name is wrong, `schema_version` is unsupported, the id is empty, or no `<name>` is declared |
+| `plugin.manifest_invalid` | The manifest XML cannot be parsed, the root element name is wrong, `schema_version` is unsupported, the id is empty, `<version>` is not a non-negative integer, or no `<name>` is declared |
 | `plugin.entry_missing` | The manifest's `<entry>` is empty |
 | `plugin.entry_invalid` | `<entry>` contains `/` or `\` (an attempt to point outside the plugin directory) |
 | `plugin.entry_not_found` | The entry file the manifest points at does not exist in the plugin directory (`plugin run`) |

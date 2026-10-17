@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import zipfile
 from pathlib import Path
 
@@ -23,31 +24,57 @@ def _manifest_xml(
     plugin_id: str = "demo",
     entry: str = "run.cmd",
     names: tuple[tuple[str, str], ...] = (("en", "Demo"),),
+    version: int | None = None,
+    version_name: str | None = None,
 ) -> bytes:
+    """Build a manifest; ``None`` omits the element (a legacy manifest)."""
     body = "".join(f'<name lang="{lang}">{text}</name>' for lang, text in names)
+    version_xml = "" if version is None else f"<version>{version}</version>"
+    version_name_xml = (
+        "" if version_name is None else f"<version_name>{version_name}</version_name>"
+    )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<avbpowertool_plugin schema_version="1">'
-        f"<id>{plugin_id}</id><entry>{entry}</entry><names>{body}</names>"
+        f"<id>{plugin_id}</id>{version_xml}{version_name_xml}"
+        f"<entry>{entry}</entry><names>{body}</names>"
         "</avbpowertool_plugin>"
     ).encode("utf-8")
 
 
-def _make_plugin(plugins_dir: Path, plugin_id: str = "demo", entry: str = "run.cmd") -> Path:
+def _make_plugin(
+    plugins_dir: Path,
+    plugin_id: str = "demo",
+    entry: str = "run.cmd",
+    version: int | None = None,
+    version_name: str | None = None,
+    script: str = "@echo off\n",
+) -> Path:
     """Create an installed-looking plugin directory."""
     plugin_dir = plugins_dir / plugin_id
     plugin_dir.mkdir(parents=True)
-    (plugin_dir / PLUGIN_MANIFEST_NAME).write_bytes(_manifest_xml(plugin_id, entry))
-    (plugin_dir / entry).write_text("@echo off\n", encoding="utf-8")
+    (plugin_dir / PLUGIN_MANIFEST_NAME).write_bytes(
+        _manifest_xml(plugin_id, entry, version=version, version_name=version_name)
+    )
+    (plugin_dir / entry).write_text(script, encoding="utf-8")
     return plugin_dir
 
 
-def _make_source(tmp_path: Path, plugin_id: str = "demo", entry: str = "run.cmd") -> Path:
+def _make_source(
+    tmp_path: Path,
+    plugin_id: str = "demo",
+    entry: str = "run.cmd",
+    version: int | None = None,
+    version_name: str | None = None,
+    script: str = "@echo off\n",
+) -> Path:
     """Create an installable plugin directory outside plugins/."""
     source = tmp_path / "src" / plugin_id
     source.mkdir(parents=True)
-    (source / PLUGIN_MANIFEST_NAME).write_bytes(_manifest_xml(plugin_id, entry))
-    (source / entry).write_text("@echo off\n", encoding="utf-8")
+    (source / PLUGIN_MANIFEST_NAME).write_bytes(
+        _manifest_xml(plugin_id, entry, version=version, version_name=version_name)
+    )
+    (source / entry).write_text(script, encoding="utf-8")
     (source / "README.md").write_text("hi\n", encoding="utf-8")
     return source
 
@@ -57,6 +84,15 @@ def _make_zip(path: Path, members: dict[str, bytes]) -> Path:
         for name, data in members.items():
             archive.writestr(name, data)
     return path
+
+
+def _snapshot(directory: Path) -> dict[str, str]:
+    """Map every file under *directory* to a hash of its content."""
+    return {
+        path.relative_to(directory).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(directory.rglob("*"))
+        if path.is_file()
+    }
 
 
 def _code(exc_info: pytest.ExceptionInfo[ConfigError]) -> str:
@@ -201,18 +237,17 @@ class TestInstallDirectory:
         assert _code(exc_info) == "plugin.manifest_missing"
         assert not (plugins_dir / "demo").exists()
 
-    def test_existing_plugin_is_refused_without_force(self, tmp_path: Path) -> None:
+    def test_same_version_reinstall_overwrites_without_force(self, tmp_path: Path) -> None:
+        """A reinstall of the same version is an upgrade of nothing: allowed."""
         plugins_dir = tmp_path / "plugins"
         _make_plugin(plugins_dir, "demo")
         source = _make_source(tmp_path)
         (source / "run.cmd").write_text("NEW\n", encoding="utf-8")
 
-        with pytest.raises(ConfigError) as exc_info:
-            PluginRepository(plugins_dir).install(source, force=False)
+        _manifest, file_count = PluginRepository(plugins_dir).install(source, force=False)
 
-        assert _code(exc_info) == "plugin.exists"
-        # The installed copy is untouched.
-        assert (plugins_dir / "demo" / "run.cmd").read_text(encoding="utf-8") == "@echo off\n"
+        assert file_count == 3
+        assert (plugins_dir / "demo" / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
 
     def test_force_overwrites_the_installed_copy(self, tmp_path: Path) -> None:
         plugins_dir = tmp_path / "plugins"
@@ -395,7 +430,7 @@ class TestInstallZip:
 
         assert _code(exc_info) == "plugin.install_failed"
 
-    def test_existing_plugin_is_refused_without_force(self, tmp_path: Path) -> None:
+    def test_same_version_zip_reinstall_overwrites_without_force(self, tmp_path: Path) -> None:
         plugins_dir = tmp_path / "plugins"
         _make_plugin(plugins_dir, "demo")
         archive = _make_zip(
@@ -403,11 +438,9 @@ class TestInstallZip:
             {PLUGIN_MANIFEST_NAME: _manifest_xml(), "run.cmd": b"NEW\n"},
         )
 
-        with pytest.raises(ConfigError) as exc_info:
-            PluginRepository(plugins_dir).install(archive, force=False)
+        PluginRepository(plugins_dir).install(archive, force=False)
 
-        assert _code(exc_info) == "plugin.exists"
-        assert (plugins_dir / "demo" / "run.cmd").read_text(encoding="utf-8") == "@echo off\n"
+        assert (plugins_dir / "demo" / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
 
     def test_force_overwrites_through_a_zip(self, tmp_path: Path) -> None:
         plugins_dir = tmp_path / "plugins"
@@ -420,6 +453,211 @@ class TestInstallZip:
         PluginRepository(plugins_dir).install(archive, force=True)
 
         assert (plugins_dir / "demo" / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
+
+
+# ---------------------------------------------------------------------------
+# install versioning: upgrade / same version / downgrade
+# ---------------------------------------------------------------------------
+
+
+class TestInstallVersioning:
+    def test_fresh_install_reports_the_incoming_version(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        source = _make_source(tmp_path, version=3, version_name="3.0.0")
+
+        manifest, file_count = PluginRepository(plugins_dir).install(source, force=False)
+
+        assert manifest.version == 3
+        assert manifest.version_name == "3.0.0"
+        assert file_count == 3
+        assert (plugins_dir / "demo" / PLUGIN_MANIFEST_NAME).is_file()
+
+    def test_fresh_install_of_a_legacy_manifest_reports_version_zero(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        source = _make_source(tmp_path)
+
+        manifest, _file_count = PluginRepository(plugins_dir).install(source, force=False)
+
+        assert manifest.version == 0
+        assert manifest.version_name == ""
+
+    def test_downgrade_is_refused_without_force(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo", version=2, version_name="2.0.0")
+        source = _make_source(tmp_path, version=1, version_name="1.0.0", script="NEW\n")
+        before = _snapshot(plugin_dir)
+
+        with pytest.raises(ConfigError) as exc_info:
+            PluginRepository(plugins_dir).install(source, force=False)
+
+        assert _code(exc_info) == "plugin.downgrade"
+        message = str(exc_info.value)
+        # Both versions (number and name) are named in the message.
+        assert "version 2 (2.0.0)" in message
+        assert "version 1 (1.0.0)" in message
+        assert "--force" in message
+        # The refused install wrote nothing at all.
+        assert _snapshot(plugin_dir) == before
+
+    def test_downgrade_with_force_overwrites(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo", version=2, version_name="2.0.0")
+        source = _make_source(tmp_path, version=1, version_name="1.0.0", script="NEW\n")
+
+        manifest, _file_count = PluginRepository(plugins_dir).install(source, force=True)
+
+        assert manifest.version == 1
+        assert manifest.version_name == "1.0.0"
+        assert (plugin_dir / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
+
+    def test_upgrade_needs_no_force(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo", version=1, version_name="1.0.0")
+        source = _make_source(tmp_path, version=2, version_name="2.0.0", script="NEW\n")
+
+        manifest, _file_count = PluginRepository(plugins_dir).install(source, force=False)
+
+        assert manifest.version == 2
+        assert (plugin_dir / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
+
+    def test_same_version_needs_no_force(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo", version=1, version_name="1.0.0")
+        source = _make_source(tmp_path, version=1, version_name="1.0.0", script="NEW\n")
+
+        manifest, _file_count = PluginRepository(plugins_dir).install(source, force=False)
+
+        assert manifest.version == 1
+        assert (plugin_dir / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
+
+    def test_zip_downgrade_is_refused_without_force(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo", version=2, version_name="2.0.0")
+        archive = _make_zip(
+            tmp_path / "demo.zip",
+            {
+                PLUGIN_MANIFEST_NAME: _manifest_xml(version=1, version_name="1.0.0"),
+                "run.cmd": b"NEW\n",
+            },
+        )
+        before = _snapshot(plugin_dir)
+
+        with pytest.raises(ConfigError) as exc_info:
+            PluginRepository(plugins_dir).install(archive, force=False)
+
+        assert _code(exc_info) == "plugin.downgrade"
+        assert _snapshot(plugin_dir) == before
+
+    def test_zip_downgrade_with_force_overwrites(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo", version=2, version_name="2.0.0")
+        archive = _make_zip(
+            tmp_path / "demo.zip",
+            {PLUGIN_MANIFEST_NAME: _manifest_xml(version=1), "run.cmd": b"NEW\n"},
+        )
+
+        manifest, _file_count = PluginRepository(plugins_dir).install(archive, force=True)
+
+        assert manifest.version == 1
+        assert (plugin_dir / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
+
+    def test_zip_upgrade_needs_no_force(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo", version=1)
+        archive = _make_zip(
+            tmp_path / "demo.zip",
+            {PLUGIN_MANIFEST_NAME: _manifest_xml(version=2), "run.cmd": b"NEW\n"},
+        )
+
+        PluginRepository(plugins_dir).install(archive, force=False)
+
+        assert (plugin_dir / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
+
+    def test_legacy_installed_manifest_counts_as_version_zero_upgrade(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo")  # no <version> element
+        source = _make_source(tmp_path, version=1, version_name="1.0.0", script="NEW\n")
+
+        manifest, _file_count = PluginRepository(plugins_dir).install(source, force=False)
+
+        assert manifest.version == 1
+        assert (plugin_dir / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
+
+    def test_legacy_installed_manifest_counts_as_version_zero_same(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo")  # no <version> element
+        source = _make_source(tmp_path, version=0, script="NEW\n")
+
+        _manifest, _file_count = PluginRepository(plugins_dir).install(source, force=False)
+
+        assert (plugin_dir / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
+
+    def test_missing_installed_manifest_falls_back_to_exists(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo")
+        (plugin_dir / PLUGIN_MANIFEST_NAME).unlink()
+        source = _make_source(tmp_path, version=1)
+
+        with pytest.raises(ConfigError) as exc_info:
+            PluginRepository(plugins_dir).install(source, force=False)
+
+        assert _code(exc_info) == "plugin.exists"
+        assert "--force" in str(exc_info.value)
+
+    def test_missing_installed_manifest_with_force_installs(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo")
+        (plugin_dir / PLUGIN_MANIFEST_NAME).unlink()
+        source = _make_source(tmp_path, version=1)
+
+        manifest, _file_count = PluginRepository(plugins_dir).install(source, force=True)
+
+        assert manifest.version == 1
+        assert (plugin_dir / PLUGIN_MANIFEST_NAME).is_file()
+
+    def test_corrupt_installed_manifest_falls_back_to_exists(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo", version=5)
+        (plugin_dir / PLUGIN_MANIFEST_NAME).write_text("not xml at all", encoding="utf-8")
+        source = _make_source(tmp_path, version=1)
+
+        with pytest.raises(ConfigError) as exc_info:
+            PluginRepository(plugins_dir).install(source, force=False)
+
+        assert _code(exc_info) == "plugin.exists"
+
+    def test_corrupt_installed_manifest_with_force_installs(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo", version=5)
+        (plugin_dir / PLUGIN_MANIFEST_NAME).write_text("not xml at all", encoding="utf-8")
+        source = _make_source(tmp_path, version=1, script="NEW\n")
+
+        _manifest, _file_count = PluginRepository(plugins_dir).install(source, force=True)
+
+        assert (plugin_dir / "run.cmd").read_text(encoding="utf-8") == "NEW\n"
+
+    def test_installed_manifest_of_another_id_falls_back_to_exists(self, tmp_path: Path) -> None:
+        """The version of a manifest that is not this plugin's is unknown."""
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = _make_plugin(plugins_dir, "demo")
+        (plugin_dir / PLUGIN_MANIFEST_NAME).write_bytes(_manifest_xml(plugin_id="other", version=9))
+        source = _make_source(tmp_path, version=1)
+
+        with pytest.raises(ConfigError) as exc_info:
+            PluginRepository(plugins_dir).install(source, force=False)
+
+        assert _code(exc_info) == "plugin.exists"
+
+    def test_in_place_install_of_the_same_version_needs_no_force(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        _make_plugin(plugins_dir, "demo", version=1)
+
+        manifest, file_count = PluginRepository(plugins_dir).install(
+            plugins_dir / "demo", force=False
+        )
+
+        assert manifest.version == 1
+        assert file_count == 2
 
 
 class TestInstallRejectsOtherSources:
