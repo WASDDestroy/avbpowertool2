@@ -14,12 +14,18 @@
       5. config edit：vbmeta flags/链式分区、vbmeta_system 换 2048 密钥、其余分区 key_id、
          included_partitions 剪枝
       6. 自检：config validate + config check-chains
-      7. 交互改名（可跳过）
-      8. 导出 zip（可跳过）
+      7. 交互改名：分别询问配置 ID 与配置名称（对应 profile.json 的 id / name，可跳过）
+      8. 导出 zip（默认导出；--no_export 跳过，--export 显式要求）
       9. 签名 dry-run 预览（只读，可跳过）
      10. 收尾摘要
+     11. 可选暂停：--interactive 时在全部输出结束后按回车退出（stdin 被重定向 /
+         --no_interactive 时自动跳过）
 
     本脚本**只生成配置**，不签名、不写 Images/。
+
+    既可作为插件被 TUI / `plugin run` 调用，也可单独拆出来当自动化工具：
+    自动化场景直接调 .ps1 并给 --no_prompt --no_export --no_sign_preview
+    （.ps1 自身默认不暂停，只有 .cmd 包装脚本默认追加 --interactive --no_export）。
 
 .NOTES
     参数采用用户原来的 --flag 风格，由本脚本自行解析（见 -Help）。
@@ -106,12 +112,19 @@ function Write-Usage {
         '',
         '其它旗标:',
         '  --8e                 额外追加 data_ext（可与上面任意一个共存）',
-        '  --no_prompt          跳过改名交互',
-        '  --no_export          跳过导出 zip',
+        '  --id <v>             配置 ID，即 profile.json 的 id，也是 profiles/<id>/ 目录名。',
+        '                       给出时从第 2 步起就生效（--force 可复用已存在的同名目录），',
+        '                       默认 <yyyyMMdd-HHmmss>_testkey',
+        '  --name <v>           配置名称，即 profile.json 的 name。默认等于 id',
+        '  --no_prompt          跳过改名交互（不再分别询问 ID 与名称）',
+        '  --interactive        全部输出结束后暂停，按回车才退出；方便在 TUI 里通过插件',
+        '                       入口运行时预览 dry-run 结果（包装脚本 .cmd 默认传入）',
+        '  --no_interactive     显式关闭暂停（优先级最高）。stdin 被重定向（管道 / CI /',
+        '                       自动化）时也会自动跳过，避免把调用方卡死',
+        '  --export             显式要求导出 zip；与 --no_export 同时出现时以本旗标为准',
+        '  --no_export          跳过导出 zip（.cmd 默认传入，可用 --export 覆盖）',
         '  --no_sign_preview    跳过签名 dry-run 预览',
         '  --force              允许复用已存在的同名 profile 目录',
-        '  --id <v>             配置 id（默认 <yyyyMMdd-HHmmss>_testkey）',
-        '  --name <v>           配置显示名（默认等于 id）',
         '  --images a,b,c       显式镜像集合（给出时忽略集合旗标；名字可带或不带 .img）',
         '  --output <dir>       导出目录（默认仓库根）',
         '  --repo-root <dir>    仓库根。默认从脚本所在目录逐级向上查找，取第一个同时含',
@@ -139,7 +152,40 @@ function Stop-Usage {
     Write-Err $Message
     Write-Host ''
     Write-Usage
+    Invoke-ExitPause
     exit 2
+}
+
+# ---------------------------------------------------------------------------
+# 退出前暂停（--interactive）
+# ---------------------------------------------------------------------------
+
+function Test-ShouldPause {
+    <#
+        是否需要暂停：
+          - --no_interactive 显式关闭，优先级最高；
+          - 没给 --interactive 就不暂停（.ps1 自身默认不暂停）；
+          - stdin 被重定向（管道 / CI / 自动化）时一律不暂停，否则会把调用方卡死。
+    #>
+    if ($script:options['NoInteractive']) { return $false }
+    if (-not $script:options['Interactive']) { return $false }
+    if ([Console]::IsInputRedirected) { return $false }
+    return $true
+}
+
+function Invoke-ExitPause {
+    <#
+        在全部输出结束后暂停，按回车才退出。幂等：主流程的 finally 与
+        用法错误路径都可能调用它，只有第一次真正生效。
+        提示用 Write-Host -NoNewline + 裸 Read-Host：Read-Host 自带的 -Prompt
+        直接写控制台设备，输出被重定向时会丢失。
+    #>
+    if ($script:pauseDone) { return }
+    $script:pauseDone = $true
+    if (-not (Test-ShouldPause)) { return }
+    Write-Host ''
+    Write-Host '按回车键退出… ' -NoNewline
+    $null = Read-Host
 }
 
 # ---------------------------------------------------------------------------
@@ -349,6 +395,9 @@ $selectedModes = [System.Collections.Generic.List[string]]::new()
 $options = @{
     EightE        = $false
     NoPrompt      = $false
+    Interactive   = $false
+    NoInteractive = $false
+    Export        = $false
     NoExport      = $false
     NoSignPreview = $false
     Force         = $false
@@ -359,6 +408,9 @@ $options = @{
     RepoRoot      = $null
     KeyDir        = $null
 }
+
+# 退出前暂停只真正执行一次（finally 与用法错误路径都可能调用 Invoke-ExitPause）。
+$script:pauseDone = $false
 
 $index = 0
 while ($index -lt $RemainingArgs.Count) {
@@ -381,6 +433,12 @@ while ($index -lt $RemainingArgs.Count) {
         $options['EightE'] = $true
     } elseif ($name -eq '--no_prompt') {
         $options['NoPrompt'] = $true
+    } elseif ($name -eq '--interactive') {
+        $options['Interactive'] = $true
+    } elseif ($name -eq '--no_interactive') {
+        $options['NoInteractive'] = $true
+    } elseif ($name -eq '--export') {
+        $options['Export'] = $true
     } elseif ($name -eq '--no_export') {
         $options['NoExport'] = $true
     } elseif ($name -eq '--no_sign_preview') {
@@ -389,6 +447,7 @@ while ($index -lt $RemainingArgs.Count) {
         $options['Force'] = $true
     } elseif ($name -in @('--help', '-h')) {
         Write-Usage
+        Invoke-ExitPause
         exit 0
     } elseif ($name -in @('--id', '--name', '--images', '--output', '--repo-root', '--key-dir')) {
         $value = $inlineValue
@@ -428,34 +487,47 @@ if ([string]::IsNullOrWhiteSpace($scriptDir)) {
     $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 }
 
-$repoRoot = Resolve-RepoRoot -Explicit ([string] $options['RepoRoot']) -StartDir $scriptDir
-
-$profileId = if ($options['Id']) { [string] $options['Id'] } else { (Get-Date).ToString('yyyyMMdd-HHmmss') + '_testkey' }
-$profileName = if ($options['Name']) { [string] $options['Name'] } else { $profileId }
-
-# 与 CLI 的 config.invalid_profile_id 同一套规则；提前拦下可以避免
-# --force 复用分支把 profiles/ 之外的目录当成 profile 目录。
-if ($profileId -notmatch '^[A-Za-z0-9_.-]+$') {
-    Stop-Script 1 "非法的 --id（只允许字母、数字、_、-、.）: $profileId"
-}
-
-$outputDir = if ($options['Output']) {
-    [System.IO.Path]::GetFullPath([string] $options['Output'])
-} else {
-    $repoRoot
-}
-
 # ---------------------------------------------------------------------------
 # 主流程
+#
+# 仓库根 / 密钥目录的解析、以及 profile ID 校验都会以非 0 退出，因此整段
+# （含默认值计算）都放在 try 里：finally 负责恢复 cwd 并在 --interactive 时
+# 暂停，异常路径也不会跳过。
 # ---------------------------------------------------------------------------
 
 $originalLocation = (Get-Location).Path
-$finalProfileId = $profileId
+$finalProfileId = ''
+$profileName = ''
 $zipPath = $null
 $partitionNames = @()
 $chainEntries = @()
 
 try {
+    $repoRoot = Resolve-RepoRoot -Explicit ([string] $options['RepoRoot']) -StartDir $scriptDir
+
+    # --id / --name 直接就是最终的 profile.id / profile.name，从创建起就生效：
+    # 给了 --id 时第 2 步不再用 <yyyyMMdd-HHmmss>_testkey 临时名，因此 --force
+    # 可以复用已存在的 profiles/<id>/（自动化重跑场景）。
+    $profileId = if ($options['Id']) {
+        [string] $options['Id']
+    } else {
+        (Get-Date).ToString('yyyyMMdd-HHmmss') + '_testkey'
+    }
+    $profileName = if ($options['Name']) { [string] $options['Name'] } else { $profileId }
+    $finalProfileId = $profileId
+
+    # 与 CLI 的 config.invalid_profile_id 同一套规则；提前拦下可以避免
+    # --force 复用分支把 profiles/ 之外的目录当成 profile 目录。
+    if ($profileId -notmatch '^[A-Za-z0-9_.-]+$') {
+        Stop-Script 1 "非法的 --id（只允许字母、数字、_、-、.）: $profileId"
+    }
+
+    $outputDir = if ($options['Output']) {
+        [System.IO.Path]::GetFullPath([string] $options['Output'])
+    } else {
+        $repoRoot
+    }
+
     # -----------------------------------------------------------------
     # 步骤 0：前置检查
     # -----------------------------------------------------------------
@@ -616,7 +688,8 @@ try {
     # -----------------------------------------------------------------
     Write-Step '步骤 4/10：从镜像生成分区配置'
     $createResult = Invoke-AvbCliChecked -What 'config create --from-images' -CliArgs @(
-        'config', 'create', '--id', $profileId, '--from-images', '--overwrite',
+        'config', 'create', '--id', $profileId, '--name', $profileName,
+        '--from-images', '--overwrite',
         '--images', ($imageSet -join ','), '--json'
     )
     $partitionCount = Get-JsonMember -Json $createResult.Json -Name 'partition_count'
@@ -721,25 +794,47 @@ try {
     Write-Ok 'config check-chains 通过'
 
     # -----------------------------------------------------------------
-    # 步骤 7：改名
+    # 步骤 7：改名（ID 与名称分开询问）
     # -----------------------------------------------------------------
     Write-Step '步骤 7/10：改名'
     if ($options['NoPrompt']) {
-        Write-Note '--no_prompt: 跳过改名，保留 id'
+        Write-Note "--no_prompt: 跳过改名，保留当前 ID 与名称: $finalProfileId / $profileName"
     } else {
         # 提示用 Write-Host 单独输出：Read-Host 自带的 -Prompt 直接写控制台设备，
         # 输出被重定向（日志/CI）时会丢失，这里保证提示始终可见。
-        Write-Host "输入新的配置名（直接回车保留 '$finalProfileId'）: " -NoNewline
-        $newName = Read-Host
-        if ($null -ne $newName) { $newName = $newName.Trim() }
-        if ([string]::IsNullOrWhiteSpace($newName)) {
-            Write-Ok "保留当前 id: $finalProfileId"
+        # 两个输入分别对应 profile.json 的 id 与 name，不要混在一起问。
+        Write-Note 'ID 与名称分别对应 profile.json 的 id 与 name；直接回车保留当前值。'
+
+        Write-Host "配置 ID（回车保留 '$finalProfileId'）： " -NoNewline
+        $inputId = Read-Host
+        if ($null -ne $inputId) { $inputId = $inputId.Trim() }
+        if ([string]::IsNullOrWhiteSpace($inputId)) { $inputId = $finalProfileId }
+
+        Write-Host "配置名称（回车保留 '$profileName'）： " -NoNewline
+        $inputName = Read-Host
+        if ($null -ne $inputName) { $inputName = $inputName.Trim() }
+        if ([string]::IsNullOrWhiteSpace($inputName)) { $inputName = $profileName }
+
+        $idChanged = $inputId -ne $finalProfileId
+        $nameChanged = $inputName -ne $profileName
+
+        if (-not $idChanged -and -not $nameChanged) {
+            Write-Ok "保留当前 ID 与名称: $finalProfileId / $profileName"
         } else {
-            $renameResult = Invoke-AvbCliChecked -What 'config rename' -CliArgs @(
-                'config', 'rename', $finalProfileId, $newName, '--json'
+            # 只有名称变时用同一个 id（CLI 支持同 id 只改显示名）；只有 ID 变时
+            # 也一并把名称传过去，避免名称被重置。
+            $renameResult = Invoke-AvbCliChecked -What 'config rename' -Hint (
+                "换一个 ID，或先 uv run avbpowertool config delete $inputId --yes 清理已有配置。"
+            ) -CliArgs @(
+                'config', 'rename', $finalProfileId, $inputId, '--name', $inputName, '--json'
             )
             $finalProfileId = [string] (Get-JsonMember -Json $renameResult.Json -Name 'profile_id')
-            Write-Ok "已改名为: $finalProfileId"
+            $profileName = $inputName
+            if ($idChanged) {
+                Write-Ok "已改 ID: $finalProfileId（名称: $profileName）"
+            } else {
+                Write-Ok "已改名称: $profileName（ID 仍为 $finalProfileId）"
+            }
         }
     }
 
@@ -747,9 +842,15 @@ try {
     # 步骤 8：导出
     # -----------------------------------------------------------------
     Write-Step '步骤 8/10：导出 zip'
-    if ($options['NoExport']) {
-        Write-Note '--no_export: 跳过导出'
+    # --export 显式要求导出，优先于 --no_export（这样 .cmd 默认传 --no_export
+    # 之后，用户仍可用 --export 覆盖）。.ps1 自身默认导出。
+    $shouldExport = $options['Export'] -or (-not $options['NoExport'])
+    if (-not $shouldExport) {
+        Write-Note '--no_export: 跳过导出（如需导出请加 --export）'
     } else {
+        if ($options['Export'] -and $options['NoExport']) {
+            Write-Note '--export 与 --no_export 同时给出：以 --export 为准，仍然导出'
+        }
         if (-not (Test-Path -LiteralPath $outputDir -PathType Container)) {
             $null = New-Item -ItemType Directory -Path $outputDir -Force
         }
@@ -818,6 +919,7 @@ try {
 
     Write-Info ''
     Write-Info "  profile id      : $finalProfileId"
+    Write-Info "  profile 名称    : $profileName"
     Write-Info "  分区数          : $($partitionNames.Count)"
     Write-Info "  链式条目        : $($chainEntries.Count)"
     foreach ($entry in $chainEntries) { Write-Info "                    - $entry" }
@@ -835,5 +937,7 @@ try {
     Write-Info '  注意：本脚本只生成配置，不签名、不写 Images/。'
     exit 0
 } finally {
-    Set-Location -LiteralPath $originalLocation
+    # 恢复 cwd 失败不应掩盖真正的错误，也不应跳过暂停。
+    try { Set-Location -LiteralPath $originalLocation } catch { }
+    Invoke-ExitPause
 }

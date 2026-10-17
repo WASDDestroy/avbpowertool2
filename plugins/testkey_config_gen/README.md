@@ -3,11 +3,15 @@
 `make-testkey-config.cmd` / `make-testkey-config.ps1` 把「6 步 OEM 测试密钥
 （testkey）配置打包流程」封装成一次调用：按旗标表算出镜像集合 → 安装
 本插件自带的 / `--key-dir` 指定的两把 testkey → 从镜像生成配置 → 写死链式分区 /
-flags / 密钥 / 算法 → 剪枝内嵌描述符 → 自检 → （可选）改名 → （可选）导出 zip →
-（可选）签名 dry-run 预览。
+flags / 密钥 / 算法 → 剪枝内嵌描述符 → 自检 → （可选）交互改名 → （可选）导出 zip →
+（可选）签名 dry-run 预览 → （可选）暂停。
 
 **本脚本只生成配置，不签名、不写 `Images/`。** 真正的签名要另外显式执行
 `image sign ... --execute --yes`。
+
+插件入口（`.cmd`）默认追加 `--interactive --no_export`：跑完暂停，方便在 TUI 里
+查看 dry-run 预览；默认不出 zip，需要时加 `--export`。直接调 `.ps1` 则默认不暂停、
+默认导出。详见下面「[自动化用法](#自动化用法)」。
 
 > **本目录同时是插件安装位置。** 插件按 `plugins/<id>/` 布局安装（本插件
 > `id = testkey_config_gen`），清单见 `avbpowertool_plugin_config.xml`，
@@ -17,7 +21,7 @@ flags / 密钥 / 算法 → 剪枝内嵌描述符 → 自检 → （可选）改
 > `keys/` 里的 testkey PEM 是本地密钥材料，被 `.gitignore` 的
 > `plugins/*/keys/` 规则排除，**不入库**；清单 XML、两个脚本与本文档都在版本控制内。
 
-**当前插件版本：`<version>1</version>` / `<version_name>1.0.0</version_name>`。**
+**当前插件版本：`<version>2</version>` / `<version_name>1.1.0</version_name>`。**
 `<version>` 是单调递增的整数，`plugin install` 用它判断升级 / 同版本重装 / 降级
 （降级默认拒绝，需 `--force`）。**改插件内容时请递增 `<version>`**，并按语义更新
 `<version_name>`（例如 `1.0.0` → `1.1.0`），否则已安装的用户重新安装旧包会被当成
@@ -82,7 +86,14 @@ pwsh -NoProfile -File F:\GitHub\avbpowertool2\plugins\testkey_config_gen\make-te
 pwsh -NoProfile -File plugins\testkey_config_gen\make-testkey-config.ps1 --key-dir D:\testkeys
 ```
 
-因为 ps1 自己解析 `--flag`，`.cmd` 不做任何参数翻译，`%ERRORLEVEL%` 原样透传。
+因为 ps1 自己解析 `--flag`，`.cmd` 只做一件事：在 `%*` **前面**追加
+`--interactive --no_export` 两个默认值，然后把用户参数原样转发，`%ERRORLEVEL%`
+原样透传。所以：
+
+- **包装脚本（`.cmd`）默认 `--interactive --no_export`**：跑完暂停、默认不导出 zip；
+- 用户写在后面的 `--export` / `--no_interactive` 会覆盖这两个默认值（同名旗标
+  `--export` 优先于 `--no_export`）；
+- `.ps1` 自身默认**不暂停**、默认**导出 zip**，适合被单独拆出来当自动化工具。
 
 ## 旗标表
 
@@ -104,22 +115,31 @@ pwsh -NoProfile -File plugins\testkey_config_gen\make-testkey-config.ps1 --key-d
 
 ### 其它旗标
 
-| 旗标 | 语义 |
-|---|---|
-| `--8e` | 额外追加 `data_ext`（可与任意集合旗标共存） |
-| `--no_prompt` | 跳过第 7 步的交互改名 |
-| `--no_export` | 跳过导出 zip |
-| `--no_sign_preview` | 跳过末尾的签名 dry-run 预览 |
-| `--force` | 允许复用已存在的同名 `profiles/<id>/`（跳过创建，但继续拷密钥 / 发现 / 生成） |
-| `--id <v>` | 配置 id，默认 `<yyyyMMdd-HHmmss>_testkey`（24 小时制） |
-| `--name <v>` | 配置显示名，默认等于 id |
-| `--images a,b,c` | 显式镜像集合。**给出时忽略集合旗标**（仍做存在性检查）；名字可带或不带 `.img` |
-| `--output <dir>` | 导出目录，默认仓库根（导出到 `<dir>\<id>.zip`） |
-| `--repo-root <dir>` | 仓库根。显式给出时必须含 `avbtool.py`；不给则从脚本目录向上查找（见上） |
-| `--key-dir <dir>` | 存放两把 testkey PEM 的目录。不给则按 `<脚本目录>/keys` → `<脚本目录>` → `<仓库根>/for_agents` 顺序探测（见上） |
-| `-h`, `--help` | 打印用法 |
+| 旗标 | 语义 | 默认 |
+|---|---|---|
+| `--8e` | 额外追加 `data_ext`（可与任意集合旗标共存） | 关 |
+| `--id <v>` | **配置 ID**，即 `profile.json` 的 `id`，也是 `profiles/<id>/` 的目录名。给出时**从第 2 步起就生效**（不再用时间戳临时名），因此 `--force` 可复用已存在的 `profiles/<id>/` | `<yyyyMMdd-HHmmss>_testkey`（24 小时制） |
+| `--name <v>` | **配置名称**，即 `profile.json` 的 `name`（显示名，可与 `id` 不同） | 等于 `id` |
+| `--no_prompt` | 跳过第 7 步的交互改名（不再分别询问 ID 与名称） | 关（会交互询问） |
+| `--interactive` | **全部输出结束后暂停**，按回车才退出；方便在 TUI 里通过插件入口运行时预览 dry-run 结果 | `.ps1` 关 / `.cmd` **开** |
+| `--no_interactive` | 显式关闭暂停，**优先级最高** | 关 |
+| `--export` | **显式要求导出 zip**，优先于 `--no_export`（两者同时给出时以 `--export` 为准） | `.ps1` 导出 / `.cmd` 不导出 |
+| `--no_export` | 跳过导出 zip | 关（`.cmd` 会传） |
+| `--no_sign_preview` | 跳过末尾的签名 dry-run 预览 | 关（会预览） |
+| `--force` | 允许复用已存在的同名 `profiles/<id>/`（跳过创建，但继续拷密钥 / 发现 / 生成） | 关（已存在则报错退出 1） |
+| `--images a,b,c` | 显式镜像集合。**给出时忽略集合旗标**（仍做存在性检查）；名字可带或不带 `.img` | 由集合旗标决定 |
+| `--output <dir>` | 导出目录（导出到 `<dir>\<id>.zip`） | 仓库根 |
+| `--repo-root <dir>` | 仓库根。显式给出时必须含 `avbtool.py`；不给则从脚本目录向上查找（见上） | 自动向上查找 |
+| `--key-dir <dir>` | 存放两把 testkey PEM 的目录。不给则按 `<脚本目录>/keys` → `<脚本目录>` → `<仓库根>/for_agents` 顺序探测（见上） | 自动探测 |
+| `-h`, `--help` | 打印用法 | — |
 
 `--flag value` 与 `--flag=value` 两种写法都接受。未知参数 → 用法错误 + usage，退出码 2。
+
+**暂停的自动跳过规则**（`--interactive` 生效时也会跳过）：
+
+1. 给了 `--no_interactive`（优先级最高）；
+2. `[Console]::IsInputRedirected` 为真——即 stdin 被重定向（管道 / `|` / CI / 自动化
+   调用）。这条保证 `"..." | pwsh -File ... --interactive` 这类调用不会卡死。
 
 > **`--images` 的注意点**：第 5 步会**无条件**把 `boot:3` / `recovery:1` /
 > `vbmeta_system:2` 三条链写进 `vbmeta`，并给 `vbmeta` / `vbmeta_system` 设
@@ -139,25 +159,72 @@ pwsh -NoProfile -File plugins\testkey_config_gen\make-testkey-config.ps1 --key-d
 |---|---|
 | `--id` | `<yyyyMMdd-HHmmss>_testkey`，如 `20260101-120000_testkey` |
 | `--name` | 等于 `--id` |
+| 交互改名 | 开（分别询问 ID 与名称）；`--no_prompt` 关 |
+| 暂停 | `.ps1` 关；`.cmd` 默认 `--interactive`（开）。stdin 被重定向时自动跳过 |
+| 导出 zip | `.ps1` 导出；`.cmd` 默认 `--no_export`（不导出）。`--export` 可覆盖 |
+| 签名 dry-run 预览 | 开；`--no_sign_preview` 关 |
 | `--repo-root` | 从脚本所在目录向上找到的第一个同时含 `avbtool.py` 与 `profiles/` 的目录 |
 | `--key-dir` | 第一个同时含两把 PEM 的目录：`<脚本目录>/keys` → `<脚本目录>` → `<仓库根>/for_agents` |
 | `--output` | `--repo-root` |
 | 镜像集合 | `--no_hashtree_core` |
 
+## 交互流程
+
+第 7 步（`--no_prompt` 时整段跳过）会**分别**提示两个输入，对应 `profile.json` 的
+两个键，**不要混在一起问**：
+
+```text
+配置 ID（回车保留 '<当前 id>'）：
+配置名称（回车保留 '<当前名称>'）：
+```
+
+| 输入情况 | 动作 |
+|---|---|
+| ID 与名称都回车 | 不调用 `config rename`，打印「保留当前 ID 与名称」 |
+| 只改 ID | `config rename <旧id> <新id> --name <名称>`（名称一并传，确保不丢） |
+| 只改名称 | `config rename <id> <id> --name <新名称>`（CLI 支持同 id 只改显示名） |
+| 目标 ID 已存在 | CLI 返回 `config.profile_exists`，脚本打印 issue 并以非 0 退出，提示「换一个 ID，或先 `uv run avbpowertool config delete <id> --yes`」。**不会自动删除任何已有配置** |
+
+改完之后，导出 zip 名、dry-run 预览、收尾摘要与 `config delete` 提示都用**最终** id。
+
+`--interactive` 的暂停发生在**全部输出结束之后**（含失败路径：错误信息打印完才暂停），
+提示为 `按回车键退出…`，按回车才真正退出——这样在 TUI 里通过插件入口运行时，
+dry-run 预览不会一闪而过直接回到 TUI。
+
+## 自动化用法
+
+```bat
+:: 非交互（脚本/CI）：直接调 .ps1，不暂停、不导出
+pwsh -NoProfile -File plugins\testkey_config_gen\make-testkey-config.ps1 --id my_testkey --name "My Testkey" --no_prompt --no_export --no_sign_preview
+
+:: 通过插件入口（TUI 或 plugin run）：默认暂停、默认不导出
+avbpowertool plugin run testkey_config_gen -- --id my_testkey --name "My Testkey" --no_prompt
+:: 需要导出时
+avbpowertool plugin run testkey_config_gen -- --id my_testkey --name "My Testkey" --no_prompt --export
+```
+
+要点：
+
+- **包装脚本（`.cmd`）默认 `--interactive --no_export`**：跑完暂停、默认不出 zip；
+  想导出就在后面加 `--export`，想不暂停就加 `--no_interactive`。
+- **stdin 被重定向时不会暂停**：`something | pwsh -File ...` 或 CI 里直接调 `.ps1`
+  都不会卡在 `按回车键退出…`。
+- 自动化重跑同一个 `--id` 时加 `--force` 复用已存在的 `profiles/<id>/`（保留密钥库）。
+
 ## 示例
 
 ```bat
-:: 1) 默认：基础 8 个分区，走完改名 / 导出 / 预览
+:: 1) 默认：基础 8 个分区，走完改名，跑完暂停（.cmd 默认不导出 zip）
 plugins\testkey_config_gen\make-testkey-config.cmd
 
 :: 2) 核心 + 8e（含 odm_dlkm / data_ext），不交互、直接出 zip
-plugins\testkey_config_gen\make-testkey-config.cmd --core --8e --no_prompt
+plugins\testkey_config_gen\make-testkey-config.cmd --core --8e --no_prompt --export
 
 :: 3) 只写配置，不导出、不预览（给 CI / 批处理用）
-plugins\testkey_config_gen\make-testkey-config.cmd --no_prompt --no_export --no_sign_preview
+pwsh -NoProfile -File plugins\testkey_config_gen\make-testkey-config.ps1 --no_prompt --no_export --no_sign_preview
 
-:: 4) 复用已存在的 profile 目录（保留其密钥库，替换分区集合）
-plugins\testkey_config_gen\make-testkey-config.cmd --id 20260101-120000_testkey --force --no_prompt
+:: 4) 显式 ID + 名称，复用已存在的 profile 目录（保留其密钥库，替换分区集合）
+plugins\testkey_config_gen\make-testkey-config.cmd --id 20260101-120000_testkey --name "My Testkey" --force --no_prompt
 
 :: 5) 显式指定密钥目录
 plugins\testkey_config_gen\make-testkey-config.cmd --key-dir D:\testkeys --no_prompt
@@ -168,36 +235,43 @@ plugins\testkey_config_gen\make-testkey-config.cmd --key-dir D:\testkeys --no_pr
 | 退出码 | 触发条件 |
 |---|---|
 | `0` | 成功 |
-| `1` | 前置条件不满足（含定位不到仓库根 / 密钥目录）、镜像缺失、profile 目录已存在且没给 `--force`、或任意一步 CLI 返回非 0（原样透传 CLI 的退出码，通常也是 1） |
+| `1` | 前置条件不满足（含定位不到仓库根 / 密钥目录）、镜像缺失、profile 目录已存在且没给 `--force`、改名目标 ID 已存在（`config.profile_exists`）、或任意一步 CLI 返回非 0（原样透传 CLI 的退出码，通常也是 1） |
 | `2` | 用法错误：未知参数、集合旗标互斥、缺参数值 |
 
 失败时脚本会打印 CLI `--json` 输出里的 `issues[].error_code` + `message`。
 
-## 脚本做了什么（10 步）
+## 脚本做了什么（10 步 + 可选暂停）
 
 0. 前置检查（`avbtool.py` / `Images/` / testkey 密钥目录 / `uv`），并解析仓库根与密钥目录
 1. 按旗标表算镜像集合，检查存在性；profile 目录冲突检查
-2. `config create --id <id> --name <name> --allow-empty --json`（仅在目录不存在时）
+2. `config create --id <id> --name <name> --allow-empty --json`（仅在目录不存在时；
+   `--id` / `--name` 从这里开始就生效，不是临时名）
 3. 把两把 PEM 从解析出的密钥目录拷进 `profiles/<id>/keys/` → `keys discover` → `keys ensure-public`
-4. `config create --id <id> --from-images --overwrite --images <集合> --json`（保留密钥库；
-   解析不到的链式公钥只记入 `chain_issues`，信息性、不影响退出码，脚本打印一条 `[提示]`）
+4. `config create --id <id> --name <name> --from-images --overwrite --images <集合> --json`
+   （保留密钥库；解析不到的链式公钥只记入 `chain_issues`，信息性、不影响退出码，
+   脚本打印一条 `[提示]`）
 5. `config edit`：`vbmeta` 的 `flags=1` + 三条链式分区、`vbmeta_system` 换
    `testkey_rsa2048` / `SHA256_RSA2048`、其余分区 `key_id=testkey_rsa4096`、
    `vbmeta` / `vbmeta_system` 的 `included_partitions` 剪枝（幂等）
 6. 自检：`config validate` + `config check-chains` 都必须退出 0
-7. （可跳过）交互改名 `config rename`，之后步骤都用新 id
-8. （可跳过）`config export <id> --output <output>\<id>.zip`
+7. （可跳过）交互改名：分别询问**配置 ID** 与**配置名称**，必要时调用 `config rename`，
+   之后步骤都用最终 id
+8. （可跳过）`config export <id> --output <output>\<id>.zip`（`.ps1` 默认做；`--no_export`
+   跳过；`--export` 优先于 `--no_export`）
 9. （可跳过）`image sign <全部分区> --profile <id> --dry-run --json`，
    打印每步的 `operation` / `partition_name` / `command`（**只读，不写盘**）
-10. 收尾摘要：profile id、分区数、链式条目、zip 路径、后续可用命令
+10. 收尾摘要：profile id / 名称、分区数、链式条目、zip 路径、后续可用命令
+11. （可选）`--interactive`：全部输出结束后 `按回车键退出…`，按回车才退出
+    （stdin 被重定向或 `--no_interactive` 时自动跳过）
 
 ## 产物与副作用
 
 - `profiles/<id>/`（含 `keys/`、`profile.json`）
-- `<output>\<id>.zip`（除非 `--no_export`）
+- `<output>\<id>.zip`（`--export` 或默认导出时；`.cmd` 默认不导出）
 - `Logs/`（CLI 自己的运行日志）
 
-**不写 `Images/`**，不回显密钥内容。整个流程用 `try/finally` 恢复原始工作目录。
+**不写 `Images/`**，不回显密钥内容。整个流程用 `try/finally` 恢复原始工作目录，
+并在 `--interactive` 时于 `finally` 里暂停（失败路径也一样）。
 
 ## 相关文档
 
