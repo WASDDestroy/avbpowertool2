@@ -164,8 +164,8 @@ is a free-form label shown next to the number (`plugin list` prints
   case: `plugin.exists` now means only "there is something there, but its
   version cannot be determined".
 - A downgrade must be confirmed explicitly: with `--force` on the CLI, or by
-  accepting the TUI's downgrade confirmation (the TUI install entry itself is
-  still CLI-only today — see section 8).
+  answering the TUI's downgrade question (see section 8). Declining it writes
+  nothing.
 - A manifest **without** `<version>` is version `0`, so an old unversioned plugin
   installs and upgrades normally instead of failing on a missing element.
 - Installing over an existing directory **merges** the files, exactly like
@@ -413,7 +413,7 @@ avbpowertool plugin uninstall my_plugin --yes --json
 
 ## 8. TUI
 
-The TUI has a **plugins page** that does exactly two things: list and run. Path to it:
+The TUI has a **plugins page** that runs, installs, and uninstalls plugins. Path to it:
 
 ```
 Home
@@ -421,9 +421,18 @@ Home
         [P] Plugins           <- action:plugin.manage
 ```
 
-- **Selecting runs it**: every row is `display name (plugin_id)` (the display name is
-  resolved from the manifest for the current language — see the resolution rules in
-  section 2). Choosing a row asks for one confirmation and then runs that plugin.
+The page is **one selector**. Its rows, in order:
+
+1. every installed plugin — `display name (plugin_id) v<version>`, plus `(<version_name>)`
+   when the manifest declares one (the display name is resolved from the manifest for
+   the current language — see the resolution rules in section 2);
+2. `Install a plugin...`;
+3. `Uninstall a plugin...`.
+
+Broken manifests are listed after those rows (see below).
+
+- **Choosing a plugin runs it**: the page asks for one confirmation and then runs that
+  plugin.
 - **An interactive plugin takes over the terminal**: curses is suspended before the run
   (`def_prog_mode` + `endwin`) and the terminal belongs entirely to the plugin — it may
   print progress and ask questions. When it exits, the curses state is restored
@@ -436,16 +445,34 @@ Home
   avbpowertool plugin run testkey_config_gen -- --core --8e --no_prompt
   ```
 
-- **Install / uninstall are CLI-only**: the TUI has no install or uninstall entry (both
-  need a source path and an explicit confirmation — see section 3). With no plugins
-  installed, the page points at `avbpowertool plugin install <dir|zip>`.
+- **Install asks for a path**: the TUI has no file browser, so `Install a plugin...`
+  opens an input prompt — type the path of a plugin **directory** or of a **zip
+  archive** (the same two sources `plugin install` accepts). Confirming an empty line
+  (or Esc) cancels and calls nothing. Installing is a plain use-case call, so curses is
+  *not* suspended: no child process is started.
+- **A downgrade is asked about, never silent**: when the incoming `<version>` is lower
+  than the installed one, the page first shows the `plugin.downgrade` message (with
+  **both** versions, number and `version_name`) and then asks. Confirming retries the
+  install with `force` and the result screen says the downgrade was confirmed;
+  declining shows `Cancelled - nothing was changed.` and **writes nothing**.
+  `avbpowertool plugin install <dir|zip> --force` remains the equivalent for scripted
+  use (CI, batch files) where no one is there to answer the question.
+- **Uninstall picks and confirms**: `Uninstall a plugin...` opens a second selector with
+  the installed plugins; choosing one asks `Uninstall plugin <id>?` and only a
+  confirmation removes `plugins/<id>/`. The result screen reports the number of removed
+  files and the bytes freed. With no plugins installed the entry only says so.
+- **With no plugins installed** the page shows `No plugins installed.` (and any manifest
+  issues) and then **still offers the install and uninstall entries**, so the page is
+  never a dead end.
 - **Plugins with a broken manifest**: a directory whose manifest cannot be parsed is
   never dropped silently — it is listed, as `[error_code] message` lines, both in the
   list screen and on the result screen. Those rows are not runnable plugins; choosing
   one only shows those messages.
 - **The result screen**: it shows the plugin name/id, the `exit code`, and every issue
   (if any). **A non-zero exit code is not a tool error** — it is the plugin's own
-  verdict; only a non-empty `issues[]` means the plugin never started.
+  verdict; only a non-empty `issues[]` means the plugin never started. The install and
+  uninstall result screens report what happened (`id`, `version`, file count / bytes) or
+  the `[error_code] message` lines of every issue.
 
 ## 9. Security
 

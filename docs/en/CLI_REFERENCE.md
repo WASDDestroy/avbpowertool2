@@ -826,7 +826,7 @@ result of the `exit_code_from_issues` mapping.
 | Error code | Meaning |
 |---|---|
 | `plugin.not_found` | `plugins/<id>/` does not exist (the `plugin uninstall` / `plugin run` id is not installed), or the `plugin pack` source is neither a directory nor an installed id |
-| `plugin.downgrade` | **New.** `plugin install` was given a lower `<version>` than the installed one. Nothing is written; confirm the downgrade with `--force` (or accept the TUI's confirmation, once the TUI install entry exists) |
+| `plugin.downgrade` | **New.** `plugin install` was given a lower `<version>` than the installed one. Nothing is written; confirm the downgrade with `--force`, or answer the TUI's downgrade question (see [Plugins § TUI](PLUGINS.md#8-tui)) |
 | `plugin.exists` | The target plugin is already installed and its version **cannot be determined** (the installed manifest is missing, malformed, or declares another id), and `--force` was not given |
 | `plugin.id_invalid` | Illegal plugin id: empty, `.`, `..`, containing `/` or `\`, or not resolving to a direct child of `plugins/` |
 | `plugin.manifest_missing` | No `avbpowertool_plugin_config.xml` in the install source or the `plugin pack` source (directory or archive) |

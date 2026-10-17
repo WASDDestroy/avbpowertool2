@@ -730,7 +730,7 @@ avbpowertool about [-h]
 | 错误码 | 含义 |
 |---|---|
 | `plugin.not_found` | `plugins/<id>/` 不存在（`plugin uninstall` / `plugin run` 的 id 没装），或 `plugin pack` 的 `SOURCE` 既不是目录也不是已安装的 id |
-| `plugin.downgrade` | **新增**。`plugin install` 的 `<version>` 比已安装的低。什么都不写；用 `--force`（或将来在 TUI 里确认）才能降级 |
+| `plugin.downgrade` | **新增**。`plugin install` 的 `<version>` 比已安装的低。什么都不写；用 `--force`，或在 TUI 的降级询问里确认（见[插件 § TUI](PLUGINS.md#8-tui)）才能降级 |
 | `plugin.exists` | 目标插件已安装但**版本无法判断**（已安装清单缺失、损坏，或声明的 id 与目录不符），且没给 `--force` |
 | `plugin.id_invalid` | 插件 id 非法：为空、`.`、`..`、含 `/` 或 `\`，或解析后不是 `plugins/` 的直接子目录 |
 | `plugin.manifest_missing` | 安装源或 `plugin pack` 的打包源里找不到 `avbpowertool_plugin_config.xml`（目录或归档） |

@@ -28,6 +28,18 @@ NEW_MSGIDS = (
     "plugin.run_failed",
     "plugin.interrupted",
     "plugin.manifest_issues",
+    "plugin.install",
+    "plugin.uninstall",
+    "plugin.install_path",
+    "plugin.install_title",
+    "plugin.installed_ok",
+    "plugin.uninstall_title",
+    "plugin.uninstalled_ok",
+    "plugin.uninstall_confirm",
+    "plugin.downgrade_title",
+    "plugin.downgrade_confirm",
+    "plugin.downgrade_installed",
+    "plugin.cancelled",
 )
 
 
@@ -135,3 +147,22 @@ class TestPluginsI18n:
             init_i18n("en")
         assert missing == {}
         assert [msgid for msgid in NEW_MSGIDS if msgid in missing] == []
+
+    def test_placeholders_are_substituted_in_both_languages(self) -> None:
+        """``_()`` formats with kwargs: no placeholder may survive in the output."""
+        for language in ("en", "zh"):
+            try:
+                init_i18n(language)
+                installed = _("plugin.installed_ok", id="alpha", version="2 (2.1.0)", files=3)
+                uninstalled = _("plugin.uninstalled_ok", id="alpha", files=7, bytes=64)
+                confirm = _("plugin.uninstall_confirm", id="alpha")
+            finally:
+                init_i18n("en")
+            for rendered in (installed, uninstalled, confirm):
+                assert "{" not in rendered and "}" not in rendered
+            assert "alpha" in installed
+            assert "2 (2.1.0)" in installed
+            assert "3" in installed
+            assert "7" in uninstalled
+            assert "64" in uninstalled
+            assert "alpha" in confirm

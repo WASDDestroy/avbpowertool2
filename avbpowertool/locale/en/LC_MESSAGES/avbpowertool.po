@@ -738,7 +738,7 @@ msgid "plugin.none_hint"
 msgstr "Install one from the CLI: avbpowertool plugin install <dir|zip>"
 
 msgid "plugin.select"
-msgstr "Select a plugin to run"
+msgstr "Select a plugin to run, install, or uninstall"
 
 msgid "plugin.confirm_run"
 msgstr "Run this plugin? The terminal is handed over to it while it runs."
@@ -757,3 +757,39 @@ msgstr "Plugin run was interrupted."
 
 msgid "plugin.manifest_issues"
 msgstr "Plugins with an unreadable manifest:"
+
+msgid "plugin.install"
+msgstr "Install a plugin..."
+
+msgid "plugin.uninstall"
+msgstr "Uninstall a plugin..."
+
+msgid "plugin.install_path"
+msgstr "Plugin source (the path of a directory or a zip archive; the TUI has no file browser):"
+
+msgid "plugin.install_title"
+msgstr "Plugin Install Result"
+
+msgid "plugin.installed_ok"
+msgstr "Installed plugin {id} - version {version}, {files} file(s)."
+
+msgid "plugin.uninstall_title"
+msgstr "Plugin Uninstall Result"
+
+msgid "plugin.uninstalled_ok"
+msgstr "Uninstalled plugin {id} - {files} file(s) removed, {bytes} bytes freed."
+
+msgid "plugin.uninstall_confirm"
+msgstr "Uninstall plugin {id}? Its directory under plugins/ is deleted."
+
+msgid "plugin.downgrade_title"
+msgstr "Downgrade Refused"
+
+msgid "plugin.downgrade_confirm"
+msgstr "The version being installed is older than the installed one. Install it anyway (downgrade)?"
+
+msgid "plugin.downgrade_installed"
+msgstr "Installed as a confirmed downgrade."
+
+msgid "plugin.cancelled"
+msgstr "Cancelled - nothing was changed."

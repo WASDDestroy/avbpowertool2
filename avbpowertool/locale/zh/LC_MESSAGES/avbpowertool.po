@@ -738,7 +738,7 @@ msgid "plugin.none_hint"
 msgstr "请在 CLI 中安装：avbpowertool plugin install <目录|zip>"
 
 msgid "plugin.select"
-msgstr "选择要运行的插件"
+msgstr "选择要运行的插件，或安装 / 卸载插件"
 
 msgid "plugin.confirm_run"
 msgstr "运行该插件吗？运行期间终端将交给插件使用。"
@@ -757,3 +757,39 @@ msgstr "插件运行被中断。"
 
 msgid "plugin.manifest_issues"
 msgstr "清单无法解析的插件："
+
+msgid "plugin.install"
+msgstr "安装插件…"
+
+msgid "plugin.uninstall"
+msgstr "卸载插件…"
+
+msgid "plugin.install_path"
+msgstr "插件来源（目录或 zip 归档的路径；TUI 没有文件浏览器）："
+
+msgid "plugin.install_title"
+msgstr "插件安装结果"
+
+msgid "plugin.installed_ok"
+msgstr "已安装插件 {id} —— 版本 {version}，共 {files} 个文件。"
+
+msgid "plugin.uninstall_title"
+msgstr "插件卸载结果"
+
+msgid "plugin.uninstalled_ok"
+msgstr "已卸载插件 {id} —— 删除 {files} 个文件，释放 {bytes} 字节。"
+
+msgid "plugin.uninstall_confirm"
+msgstr "卸载插件 {id} 吗？它在 plugins/ 下的目录会被删除。"
+
+msgid "plugin.downgrade_title"
+msgstr "拒绝降级安装"
+
+msgid "plugin.downgrade_confirm"
+msgstr "待安装的版本比已安装的版本旧。仍要降级安装吗？"
+
+msgid "plugin.downgrade_installed"
+msgstr "已按确认执行降级安装。"
+
+msgid "plugin.cancelled"
+msgstr "已取消，未做任何改动。"
