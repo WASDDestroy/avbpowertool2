@@ -234,6 +234,11 @@ This deletes the plugin directory including any bundled files. Use --yes to conf
 
 解释器本身找不到（例如没有 `pwsh`）→ `plugin.run_failed`。
 
+> **`.cmd` / `.bat` 入口必须是纯 ASCII。** cmd.exe 按 OEM 代码页读取批处理文件，
+> 非 ASCII 字节（例如中文注释）会让字节流错位、行解析被切断，片段被当成命令执行，
+> 启动器以 **9009** 退出。多语言文案请放在 `.ps1` / `.py` 入口或插件 README 里。
+> 仓库的 `tests/contract/test_plugin_launchers.py` 会检查 `plugins/` 下的批处理文件。
+
 ## 5. 插件与工具的契约
 
 插件进程由本工具直接拉起，契约如下：

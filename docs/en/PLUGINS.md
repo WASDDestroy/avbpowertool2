@@ -266,6 +266,13 @@ The `entry` suffix picks the interpreter
 
 A missing interpreter (no `pwsh`, for example) gives `plugin.run_failed`.
 
+> **`.cmd` / `.bat` entries must be pure ASCII.** cmd.exe reads batch files with the
+> OEM code page, so non-ASCII bytes (Chinese comments, for instance) shift the byte
+> stream, break line parsing, and the leftover fragments run as commands — the
+> launcher then exits with **9009** ("is not recognized as an internal or external
+> command"). Put translated text in the `.ps1` / `.py` entry or in the plugin README.
+> `tests/contract/test_plugin_launchers.py` enforces this for `plugins/`.
+
 ## 5. The Plugin ↔ Tool Contract
 
 The plugin process is started directly by this tool, with this contract:

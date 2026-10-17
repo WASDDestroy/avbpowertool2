@@ -13,6 +13,12 @@ flags / 密钥 / 算法 → 剪枝内嵌描述符 → 自检 → （可选）交
 查看 dry-run 预览；默认不出 zip，需要时加 `--export`。直接调 `.ps1` 则默认不暂停、
 默认导出。详见下面「[自动化用法](#自动化用法)」。
 
+> **`.cmd` 必须保持纯 ASCII。** cmd.exe 按 OEM 代码页（简中 Windows 上是 cp936）
+> 读取批处理文件，而不是 UTF-8：文件里出现非 ASCII 字节会让字节流错位、行解析被
+> 切断，剩下的片段会被当成命令执行，启动器以 **9009**（"不是内部或外部命令"）退出。
+> 中文说明请写进 `.ps1`（PowerShell 7 按 UTF-8 读取）或本文档。
+> `tests/contract/test_plugin_launchers.py` 会强制这条约束。
+
 > **本目录同时是插件安装位置。** 插件按 `plugins/<id>/` 布局安装（本插件
 > `id = testkey_config_gen`），清单见 `avbpowertool_plugin_config.xml`，
 > `entry` 指向 `make-testkey-config.cmd`。因此脚本不能假设「自己的父目录就是仓库根」，
@@ -21,7 +27,7 @@ flags / 密钥 / 算法 → 剪枝内嵌描述符 → 自检 → （可选）交
 > `keys/` 里的 testkey PEM 是本地密钥材料，被 `.gitignore` 的
 > `plugins/*/keys/` 规则排除，**不入库**；清单 XML、两个脚本与本文档都在版本控制内。
 
-**当前插件版本：`<version>2</version>` / `<version_name>1.1.0</version_name>`。**
+**当前插件版本：`<version>3</version>` / `<version_name>1.1.1</version_name>`。**
 `<version>` 是单调递增的整数，`plugin install` 用它判断升级 / 同版本重装 / 降级
 （降级默认拒绝，需 `--force`）。**改插件内容时请递增 `<version>`**，并按语义更新
 `<version_name>`（例如 `1.0.0` → `1.1.0`），否则已安装的用户重新安装旧包会被当成
