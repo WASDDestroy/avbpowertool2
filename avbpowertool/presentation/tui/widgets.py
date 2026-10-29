@@ -8,7 +8,9 @@ from __future__ import annotations
 import contextlib
 import curses
 import locale
+import os
 import re
+import sys
 import unicodedata
 from collections.abc import Sequence
 from typing import NamedTuple
@@ -16,14 +18,20 @@ from typing import NamedTuple
 from avbpowertool.presentation import audit
 from avbpowertool.presentation.i18n import _
 
-# PDCurses (windows-curses on Windows) accounts a line's width as one column
-# per UTF-8 byte (with a 2-column allowance for the trailing multibyte
-# character), so it silently drops trailing CJK characters once a line gets
-# close to the right edge.  ncurses (Linux/macOS) does the same when the
-# active locale is not UTF-8, and counts real terminal columns only with a
-# UTF-8 locale.  We therefore fit lines to the width the active build really
-# enforces so a drawn line is never clipped by curses.
+# Curses on Windows is PDCurses, which has no wcwidth(): every character
+# occupies one cell in its virtual window even though a CJK glyph is two
+# columns wide on screen.  Classic conhost paints that window as CHAR_INFO
+# cells, so a wide glyph needs an explicit blank trailing cell - otherwise
+# the next character is painted into the glyph's right half.  ConPTY hosts
+# (Windows Terminal, VS Code, ...), ConEmu in ANSI mode and ncurses with a
+# UTF-8 locale expand wide glyphs themselves; adding a blank there would
+# create a visible gap instead.  ``_screen_text`` inserts the blank only
+# for the classic-conhost path, keeping the drawn width equal to
+# ``_display_width`` everywhere.
 _IS_NCURSES = hasattr(curses, "ncurses_version")
+
+_console_class_cache: str | None = None
+_wide_filler: bool | None = None
 
 
 def _utf8_locale_active() -> bool:
@@ -44,15 +52,97 @@ def _curs_set(visible: bool) -> None:
         curses.curs_set(1 if visible else 0)
 
 
-def _real_columns() -> bool:
-    """True when the active curses build counts CJK as 2 real terminal columns.
+def _console_window_class() -> str:
+    """Window class of the console attached to this process ("" if unknown).
 
-    ncurses counts real columns only with a UTF-8 locale; narrow builds
-    account one cell per byte.  PDCurses (windows-curses) lays CJK out in
-    real columns too - measured against its own cursor accounting
-    (``getyx`` after ``addstr('中')`` reports column 2); the per-character
-    model only matched its row-clip quirk, and the mismatch between the
-    two models corrupts wide glyphs and misplaces the inline cursor.
+    ``ConsoleWindowClass`` is the classic conhost window; ConPTY hosts
+    (Windows Terminal, VS Code, ...) attach the process to a hidden
+    ``PseudoConsoleWindow`` instead.  The check is a per-process capability
+    signal, unlike ``WT_SESSION`` which says who launched the shell rather
+    than how its output is rendered.  It is also independent of the shell
+    version: PowerShell 5.1 and 7 report the same class when hosted by the
+    same terminal.
+    """
+    global _console_class_cache
+    if _console_class_cache is not None:
+        return _console_class_cache
+    if sys.platform != "win32" or _IS_NCURSES:
+        _console_class_cache = ""
+        return ""
+    try:
+        import ctypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        hwnd = kernel32.GetConsoleWindow()
+        if not hwnd:
+            _console_class_cache = ""
+        else:
+            name = ctypes.create_unicode_buffer(64)
+            ok = user32.GetClassNameW(hwnd, name, len(name))
+            _console_class_cache = name.value if ok else ""
+    except Exception:
+        _console_class_cache = ""
+    return _console_class_cache or ""
+
+
+def _pdcurses_uses_ansi() -> bool:
+    """Mirror PDCurses' own wincon mode switch (``pdcscrn.c``).
+
+    PDCurses picks its ANSI/VT writer when ``WT_SESSION`` exists (Windows
+    Terminal) or ``ConEmuANSI=ON``; otherwise it paints CHAR_INFO cells.
+    That decision - not general VT support of the console - determines
+    whether wide glyphs are expanded by the terminal or must be padded by
+    us.
+    """
+    # Environment names are case-insensitive on Windows, where PDCurses is
+    # the only build that consults this variable.
+    return bool(os.environ.get("WT_SESSION")) or os.environ.get("CONEMUANSI") == "ON"
+
+
+def _detect_wide_filler() -> bool:
+    """True when wide glyphs need an explicit blank trailing cell."""
+    if _IS_NCURSES or _pdcurses_uses_ansi():
+        return False
+    # Only the classic Win32 console writer treats every cell literally.
+    # ConPTY forwards the buffer as a VT stream, where a filler cell becomes
+    # a real (and visible) extra column.
+    return _console_window_class() == "ConsoleWindowClass"
+
+
+def _wide_filler_enabled() -> bool:
+    """Whether to insert blank trailing cells after wide characters."""
+    global _wide_filler
+    if _wide_filler is None:
+        _wide_filler = _detect_wide_filler()
+    return _wide_filler
+
+
+def terminal_profile() -> dict[str, object]:
+    """Describe the console capabilities that drive CJK rendering.
+
+    Useful in audit logs when a terminal-specific rendering bug is
+    reported: it separates the shell (PowerShell 5.1 vs 7) from the
+    terminal/console host, which is what actually decides how wide glyphs
+    are painted.
+    """
+    window_class = _console_window_class()
+    return {
+        "console_class": window_class or "unknown",
+        "conpty": window_class == "PseudoConsoleWindow",
+        "pdcurses_ansi": _pdcurses_uses_ansi(),
+        "wide_filler": _wide_filler_enabled(),
+    }
+
+
+def _real_columns() -> bool:
+    """True when one cell of the drawn text equals one terminal column.
+
+    ncurses counts real columns only with a UTF-8 locale.  PDCurses counts
+    one cell per character; on classic conhost ``_screen_text`` makes that
+    model correct by writing a blank trailing cell after each wide glyph,
+    and ConPTY/ANSI hosts expand the glyph themselves.  Either way a drawn
+    line occupies ``_display_width`` columns.
     """
     if _IS_NCURSES:
         return _utf8_locale_active()
@@ -64,6 +154,25 @@ def _char_width(ch: str) -> int:
     if unicodedata.combining(ch):
         return 0
     return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+
+
+def _screen_text(text: str) -> str:
+    """Text ready for ``addstr`` in the active console's cell model.
+
+    On classic conhost each wide glyph receives a blank trailing cell so
+    PDCurses' one-cell-per-character window matches the two cells the
+    console paints.  The blank is part of the glyph's width, so the result
+    still occupies exactly ``_display_width(text)`` columns and all fit
+    calculations remain valid.  Elsewhere the text is returned unchanged.
+    """
+    if not _wide_filler_enabled():
+        return text
+    out: list[str] = []
+    for ch in text:
+        out.append(ch)
+        if _char_width(ch) == 2:
+            out.append(" ")
+    return "".join(out)
 
 
 def _display_width(text: str) -> int:
@@ -116,11 +225,13 @@ def _pad_cjk_line(text: str, cols: int) -> str:
     columns, so the trailing characters get dropped unless the character
     count reaches the real column width.  Appending one trailing space per
     CJK character makes ``len(text) == real column width``, so the whole
-    line is written.  No-op on ncurses (which counts real columns) and for
-    ASCII-only lines; the padding is capped so the line never exceeds the
-    available width.
+    line is written.  No-op on ncurses and on classic conhost (where
+    ``_screen_text`` already gives every wide glyph its trailing cell, and
+    extra padding would overflow the line); ASCII-only lines are unchanged,
+    and the padding is capped so the line never exceeds the available
+    width.
     """
-    if _IS_NCURSES:
+    if _IS_NCURSES or _wide_filler_enabled():
         return text
     cjk = sum(1 for ch in text if ord(ch) > 127)
     if cjk == 0:
@@ -241,7 +352,7 @@ class SelectorWidget:
             stdscr.addstr(
                 0,
                 0,
-                _pad_cjk_line(_truncate_to_width(f"  {self.title}", cols - 1), cols),
+                _screen_text(_pad_cjk_line(_truncate_to_width(f"  {self.title}", cols - 1), cols)),
                 curses.A_BOLD,
             )
             stdscr.addstr(1, 0, "=" * min(80, cols - 1))
@@ -268,7 +379,7 @@ class SelectorWidget:
                             # Attributed rows lose trailing CJK on PDCurses;
                             # pad so the whole line is written.
                             drawn = _pad_cjk_line(drawn, cols)
-                        stdscr.addstr(row + j, 0, drawn, attr)
+                        stdscr.addstr(row + j, 0, _screen_text(drawn), attr)
                 row += len(item_lines)
 
             # Status bar
@@ -277,7 +388,9 @@ class SelectorWidget:
             if self.multi_select:
                 status = f"  {_('widget.selected_count', selected=len(self.selected), total=len(self.items))}"
                 with contextlib.suppress(curses.error):
-                    stdscr.addstr(status_row + 1, 0, _truncate_to_width(status, cols - 1))
+                    stdscr.addstr(
+                        status_row + 1, 0, _screen_text(_truncate_to_width(status, cols - 1))
+                    )
                 help_text = "  " + _("widget.help.multi_select")
             else:
                 help_text = "  " + _("widget.help.single_select")
@@ -285,7 +398,7 @@ class SelectorWidget:
                 stdscr.addstr(
                     rows - 1,
                     0,
-                    _pad_cjk_line(_truncate_to_width(help_text, cols - 1), cols),
+                    _screen_text(_pad_cjk_line(_truncate_to_width(help_text, cols - 1), cols)),
                     curses.A_DIM,
                 )
 
@@ -383,7 +496,10 @@ def message_screen(stdscr: curses.window, title: str, lines: list[str]) -> None:
         rows, cols = stdscr.getmaxyx()
 
         stdscr.addstr(
-            0, 0, _pad_cjk_line(_truncate_to_width(f"  {title}", cols - 1), cols), curses.A_BOLD
+            0,
+            0,
+            _screen_text(_pad_cjk_line(_truncate_to_width(f"  {title}", cols - 1), cols)),
+            curses.A_BOLD,
         )
         stdscr.addstr(1, 0, "=" * min(80, cols - 1))
 
@@ -402,14 +518,14 @@ def message_screen(stdscr: curses.window, title: str, lines: list[str]) -> None:
             if idx >= total:
                 break
             with contextlib.suppress(curses.error):
-                stdscr.addstr(2 + i, 0, wrapped[idx])
+                stdscr.addstr(2 + i, 0, _screen_text(wrapped[idx]))
 
         help_text = "  " + _("widget.help.message_screen")
         with contextlib.suppress(curses.error):
             stdscr.addstr(
                 rows - 1,
                 0,
-                _pad_cjk_line(_truncate_to_width(help_text, cols - 1), cols),
+                _screen_text(_pad_cjk_line(_truncate_to_width(help_text, cols - 1), cols)),
                 curses.A_DIM,
             )
 
@@ -640,18 +756,17 @@ def _draw_input_prompt(stdscr: curses.window, prompt: str, editor: _LineEditor) 
     row = 0
     for line in wrap_text([prompt], max(1, cols - 1)):
         with contextlib.suppress(curses.error):
-            stdscr.addstr(row, 0, _pad_cjk_line(line, cols), curses.A_BOLD)
+            stdscr.addstr(row, 0, _screen_text(_pad_cjk_line(line, cols)), curses.A_BOLD)
         row += 1
 
     render = _edit_line_render(editor.text(), editor.pos, avail)
     with contextlib.suppress(curses.error):
-        stdscr.addstr(row, 0, _pad_cjk_line(render.line, cols))
+        stdscr.addstr(row, 0, _screen_text(_pad_cjk_line(render.line, cols)))
 
     # Reverse-highlight the caret cell WITHOUT rewriting its character:
     # addstr()ing a CJK caret char into a half-width slot corrupts the
-    # wide glyph on the physical screen (PDCurses lays CJK out in real
-    # columns while its virtual window counts one cell per character).
-    # chgat() only flips attributes, so the glyph stays intact.
+    # wide glyph on the physical screen.  chgat() only flips attributes,
+    # so the glyph (and its filler cell on classic conhost) stays intact.
     cursor_ch = render.cursor_ch
     caret_width = _char_width(cursor_ch) if _real_columns() and _char_width(cursor_ch) > 1 else 1
     with contextlib.suppress(curses.error):
@@ -669,7 +784,7 @@ def _draw_input_prompt(stdscr: curses.window, prompt: str, editor: _LineEditor) 
         stdscr.addstr(
             min(row + 1, rows - 1),
             0,
-            _pad_cjk_line(_truncate_to_width(help_text, cols - 1), cols),
+            _screen_text(_pad_cjk_line(_truncate_to_width(help_text, cols - 1), cols)),
             curses.A_DIM,
         )
 

@@ -15,6 +15,12 @@ from avbpowertool.presentation.tui.widgets import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_wide_filler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the renderer to the no-filler path; host detection is tested below."""
+    monkeypatch.setattr(widgets, "_wide_filler", False)
+
+
 class FakeWindow:
     """Minimal curses window double for exercising message_screen."""
 
@@ -166,7 +172,85 @@ class TestWrapText:
         assert widgets._truncate_to_width(text, 30) == text
 
 
+class TestTerminalDetection:
+    def test_classic_conhost_needs_filler(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.delenv("WT_SESSION", raising=False)
+        monkeypatch.delenv("CONEMUANSI", raising=False)
+        monkeypatch.setattr(widgets, "_console_window_class", lambda: "ConsoleWindowClass")
+        assert widgets._detect_wide_filler() is True
+
+    def test_conpty_does_not_need_filler(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.delenv("WT_SESSION", raising=False)
+        monkeypatch.delenv("CONEMUANSI", raising=False)
+        monkeypatch.setattr(widgets, "_console_window_class", lambda: "PseudoConsoleWindow")
+        assert widgets._detect_wide_filler() is False
+
+    def test_pdcurses_ansi_mode_does_not_need_filler(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # PDCurses writes whole runs through WriteConsoleW in this mode and
+        # the terminal expands wide glyphs itself.
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.setenv("WT_SESSION", "0")
+        monkeypatch.delenv("CONEMUANSI", raising=False)
+        monkeypatch.setattr(widgets, "_console_window_class", lambda: "ConsoleWindowClass")
+        assert widgets._detect_wide_filler() is False
+
+    def test_conemu_ansi_mode_does_not_need_filler(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.delenv("WT_SESSION", raising=False)
+        monkeypatch.setenv("CONEMUANSI", "ON")
+        monkeypatch.setattr(widgets, "_console_window_class", lambda: "ConsoleWindowClass")
+        assert widgets._detect_wide_filler() is False
+
+    def test_unknown_host_keeps_legacy_behaviour(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(widgets, "_IS_NCURSES", False)
+        monkeypatch.delenv("WT_SESSION", raising=False)
+        monkeypatch.delenv("CONEMUANSI", raising=False)
+        monkeypatch.setattr(widgets, "_console_window_class", lambda: "")
+        assert widgets._detect_wide_filler() is False
+
+    def test_profile_is_loggable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(widgets, "_console_window_class", lambda: "ConsoleWindowClass")
+        monkeypatch.setattr(widgets, "_pdcurses_uses_ansi", lambda: False)
+        monkeypatch.setattr(widgets, "_wide_filler", True)
+        assert widgets.terminal_profile() == {
+            "console_class": "ConsoleWindowClass",
+            "conpty": False,
+            "pdcurses_ansi": False,
+            "wide_filler": True,
+        }
+
+
+class TestScreenText:
+    def test_blank_trailing_cell_added_after_wide_glyph(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(widgets, "_wide_filler", True)
+        out = widgets._screen_text("A中B文C")
+        assert out == "A中 B文 C"
+        # The filler is part of the glyph's width: cells == display columns.
+        assert len(out) == widgets._display_width("A中B文C")
+
+    def test_ascii_and_combining_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(widgets, "_wide_filler", True)
+        assert widgets._screen_text("plain ascii") == "plain ascii"
+        assert widgets._screen_text("e\u0301") == "e\u0301"
+
+    def test_no_filler_outside_classic_conhost(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(widgets, "_wide_filler", False)
+        assert widgets._screen_text("A中B") == "A中B"
+
+
 class TestPadCjkLine:
+    def test_padding_disabled_when_filler_cells_are_used(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # _screen_text already gives each wide glyph its trailing cell;
+        # padding as well would push the line past the right edge.
+        monkeypatch.setattr(widgets, "_wide_filler", True)
+        assert widgets._pad_cjk_line("  AVBPowerTool 主页", 64) == "  AVBPowerTool 主页"
+
     def test_pads_cjk_line_on_pdcurses(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # PDCurses writes attributed rows using the string's character count
         # (1 column per CJK char), so the line must be padded with one

@@ -16,6 +16,7 @@ from avbpowertool.presentation.tui.router import Router
 from avbpowertool.presentation.tui.widgets import (
     SelectorWidget,
     message_screen,
+    terminal_profile,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ class App:
 
     def _main_loop(self, stdscr: curses.window) -> None:
         """Main curses loop."""
+        audit.audit_logger().debug("tui terminal: %s", terminal_profile())
         curses.use_default_colors()
         self._router.start()
 
