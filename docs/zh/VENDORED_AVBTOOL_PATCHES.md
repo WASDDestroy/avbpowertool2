@@ -302,7 +302,9 @@ def _cryptography_verify_raw(modulus, exponent, sig_blob, expected_em):
 上游通过调用 Android `fec` 工具二进制来计算前向纠错（FEC）数据，而典型开发机
 （尤其 Windows）上没有该工具。项目自带
 [`avbpowertool/vendor/fec_encoder.py`](../../avbpowertool/vendor/fec_encoder.py)
-——跨平台 RS(255, N) 编码器（numpy 快速路径 + reedsolo 回退，二者均为包的强制依赖）。
+——AOSP `libfec` 编码器的跨平台重实现（numpy 快速路径 + reedsolo 回退，二者均为包的强制依赖）。
+它使用与 `init_rs_char(8, 0x11d, fcr=0, prim=1, nroots, pad=0)` 相同的参数，
+以及相同的 4096 字节块/轮交织布局，因此其校验数据与 `fec --encode` 逐字节一致。
 两个被补丁的函数都先尝试 Python 实现，失败再回退外部工具。
 
 ### 挂载点 1/2 — `calc_fec_data_size`
@@ -345,8 +347,14 @@ def _cryptography_verify_raw(modulus, exponent, sig_blob, expected_em):
   `avbpowertool/` 包同级，因此 `avbpowertool.vendor.fec_encoder` 可以解析。
   若把 `avbtool.py` 单独拷贝到远离包的位置，导入会抛出 `ImportError`，
   自动改用外部 `fec` 工具。
-- Python 版 `calc_fec_data_size` 是纯算术运算
-  （`num_roots * ceil(image_size / chunk_size)`），与 `fec` 工具打印的大小精确一致。
+- Python 版 `calc_fec_data_size` 是纯算术运算，与 `fec --print-fec-size` 精确一致：
+  `rounds * num_roots * 4096 + 4096`，其中
+  `rounds = ceil(ceil(image_size / 4096) / (255 - num_roots))`。多出的 4096 字节
+  是原生头部块，`avbtool` 只预留空间，不写入镜像。
+- `generate_fec_data` 只返回校验数据（不含原生 4096 字节头部块），与上游
+  `avbtool` 的 `fec_data[0:fec_size]` 切片行为一致。
+- 由原生编码器生成的已知答案夹具位于 `tests/fixtures/fec/`，
+  `tests/unit/test_fec_encoder.py` 会分别验证 numpy 与 reedsolo 两条路径。
 
 ## 上游新版本的重新打补丁流程
 

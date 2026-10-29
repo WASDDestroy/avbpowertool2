@@ -1,35 +1,46 @@
 """Cross-platform FEC encoder for AVB signing.
 
-Uses numpy for fast vectorized Reed-Solomon RS(255, N) encoding,
-with optional fallback to reedsolo (pure Python).
+This is a re-implementation of the AOSP ``libfec`` forward-error-correction
+encoder (``system/extras/libfec``) so that images can be signed on hosts
+where the Android ``fec`` binary is unavailable (notably Windows).
 
-Algorithm: RS(255, N) over GF(256) with fcr=1 (conventional RS)
-  - N = 255 - num_roots
-  - Data is split into chunks of (255 - num_roots) bytes
-  - Each chunk is independently RS-encoded, producing num_roots parity bytes
-  - Parity bytes from all chunks are concatenated to form the FEC data
+The format is *not* a plain concatenation of RS(255, N) codewords.  AOSP
+uses a fixed 4096-byte block size and a byte-interleaved layout:
+
+  * ``rsn = 255 - num_roots`` is the number of data symbols per codeword.
+  * The image is split into 4096-byte blocks; every ``rsn`` blocks form a
+    "round".  The last round is zero-padded.
+  * A round contains 4096 codewords.  Codeword ``c`` is formed by taking
+    byte ``c`` of every data block in the round, i.e. the input is read in
+    columns of ``rounds * 4096`` bytes.
+  * Each codeword is RS-encoded with the libfec parameters
+    ``init_rs_char(8, 0x11d, fcr=0, prim=1, nroots, pad=0)``, i.e. the
+    generator polynomial roots start at ``alpha**0`` (``fcr=0``).
+
+The parity bytes for the whole image are emitted codeword by codeword,
+which is exactly what ``fec --encode`` writes before its 4096-byte header
+block.  ``avbtool`` only uses that leading parity payload.
 """
 
 from __future__ import annotations
 
 import logging
 import math
-import struct
 import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants (must match system/extras/libfec)
 # ---------------------------------------------------------------------------
 
 _GF_PRIMITIVE = 0x11D
 _RS_CODEWORD_SIZE = 255
-_FEC_FOOTER_FORMAT = "<LLLLLQ32s"
-_FEC_MAGIC = 0xFECFECFE
-_FEC_FOOTER_SIZE = struct.calcsize(_FEC_FOOTER_FORMAT)
+_RS_FCR = 0  # init_rs_char(8, 0x11d, 0, 1, nroots, 0)
+_FEC_BLOCK_SIZE = 4096  # FEC_BLOCKSIZE
 _LARGE_FILE_THRESHOLD = 100 * 1024 * 1024  # 100 MB
+_BATCH_TARGET_BYTES = 64 * 1024 * 1024  # per-batch working set
 
 # ---------------------------------------------------------------------------
 # GF(256) tables
@@ -60,12 +71,9 @@ def _init_gf_tables() -> None:
     gf_log[0] = 0
 
     table = np.zeros((256, 256), dtype=np.uint8)
-    for a in range(256):
-        for b in range(256):
-            if a == 0 or b == 0:
-                table[a, b] = 0
-            else:
-                table[a, b] = gf_exp[gf_log[a] + gf_log[b]]
+    for a in range(1, 256):
+        for b in range(1, 256):
+            table[a, b] = gf_exp[gf_log[a] + gf_log[b]]
     _gf_mul_table = table
 
 
@@ -82,38 +90,51 @@ def _gf_mul_vector(a_col: object, b_scalar: int) -> object:
 
 
 # ---------------------------------------------------------------------------
-# RS encoding matrix
+# RS generator polynomial / encoding matrix
 # ---------------------------------------------------------------------------
 
 
-def _rs_generator_poly(nsym: int, fcr: int = 1) -> object:
-    """Compute generator polynomial for RS(nsym) with first root alpha^fcr."""
+def _gf_pow_two(exponent: int) -> int:
+    """Return alpha**exponent in GF(256), alpha = 2."""
     _init_gf_tables()
-    import numpy as np
+    value = 1
+    for _ in range(exponent):
+        value = int(_gf_mul_table[value, 2])  # type: ignore[index]
+    return value
 
-    g = np.zeros(nsym + 1, dtype=np.uint8)
+
+def _rs_generator_poly(nsym: int) -> list[int]:
+    """Return the libfec generator polynomial, low-order coefficient first.
+
+    ``g(x) = product(x + alpha**i) for i in [fcr, fcr + nsym)`` with fcr=0.
+    """
+    g = [0] * (nsym + 1)
     g[0] = 1
 
     for i in range(nsym):
-        r = fcr + i
-        alpha_r = 1
-        for _ in range(r):
-            alpha_r = _gf_mul_table[alpha_r, 2]  # type: ignore[index]
-
-        g_new = np.zeros(nsym + 1, dtype=np.uint8)
-        g_new[1:] = g[:-1]
-
-        for j in range(len(g)):
-            if g[j] != 0:
-                g_new[j] ^= _gf_mul_table[g[j], alpha_r]  # type: ignore[index]
-
+        root = _gf_pow_two(_RS_FCR + i)
+        g_new = [0] * (nsym + 1)
+        for degree in range(nsym + 1):
+            coeff = g[degree]
+            if coeff == 0:
+                continue
+            # g(x) * x
+            if degree + 1 <= nsym:
+                g_new[degree + 1] ^= coeff
+            # g(x) * alpha**i
+            g_new[degree] ^= int(_gf_mul_table[coeff, root])  # type: ignore[index]
         g = g_new
 
     return g
 
 
 def _compute_enc_matrix(nsym: int) -> object:
-    """Return the RS encoding matrix (chunk_size x nsym)."""
+    """Return the RS encoding matrix (chunk_size x nsym).
+
+    Row ``pos`` holds the parity contribution of the message byte at
+    position ``pos``.  The matrix is derived by reducing ``x**n`` modulo
+    the generator polynomial, which matches libfec's systematic encoder.
+    """
     if nsym in _enc_matrices:
         return _enc_matrices[nsym]
 
@@ -121,49 +142,51 @@ def _compute_enc_matrix(nsym: int) -> object:
     import numpy as np
 
     chunk_size = _RS_CODEWORD_SIZE - nsym
+    gen = _rs_generator_poly(nsym)
 
-    # Try reedsolo first for guaranteed correctness
-    try:
-        from reedsolo import RSCodec
+    # x**nsym mod g(x); g is monic, so this is g without its leading term.
+    remainder = gen[:nsym]
 
-        rs = RSCodec(nsym=nsym, fcr=1)
-        m = np.zeros((chunk_size, nsym), dtype=np.uint8)
-        msg = bytearray(chunk_size)
-        for i in range(chunk_size):
-            msg[i] = 1
-            encoded = rs.encode(bytes(msg))
-            m[i] = list(encoded[chunk_size:])
-            msg[i] = 0
-        _enc_matrices[nsym] = m
-        return m
-    except ImportError:
-        pass
+    matrix = np.zeros((chunk_size, nsym), dtype=np.uint8)
+    for pos in range(chunk_size - 1, -1, -1):
+        # Codeword layout is [message..., parity...]; parity[0] is the
+        # highest-order remainder coefficient.
+        for i in range(nsym):
+            matrix[pos, i] = remainder[nsym - 1 - i]
 
-    # Fallback: numpy LFSR
-    gen = _rs_generator_poly(nsym, fcr=1)
-    g_lower = gen[:-1].copy()  # type: ignore[union-attr]
+        # Advance to the next message position: multiply by x, then reduce.
+        overflow = remainder[nsym - 1]
+        shifted = [0] * nsym
+        for degree in range(1, nsym):
+            shifted[degree] = remainder[degree - 1]
+        if overflow:
+            for degree in range(nsym):
+                shifted[degree] ^= int(
+                    _gf_mul_table[overflow, gen[degree]]  # type: ignore[index]
+                )
+        remainder = shifted
 
-    m = np.zeros((chunk_size, nsym), dtype=np.uint8)
+    _enc_matrices[nsym] = matrix
+    return matrix
 
-    for pos in range(chunk_size):
-        total_len = chunk_size + nsym
-        par = np.zeros(total_len, dtype=np.uint8)
 
-        for j in range(nsym):
-            par[pos + 1 + j] = g_lower[j]  # type: ignore[index]
+# ---------------------------------------------------------------------------
+# FEC layout helpers
+# ---------------------------------------------------------------------------
 
-        for i in range(pos + 1, chunk_size):
-            coef = par[i]
-            if coef:
-                for j in range(nsym):
-                    idx = i + 1 + j
-                    if idx < total_len:
-                        par[idx] ^= _gf_mul_table[int(coef), int(g_lower[j])]  # type: ignore[index]
 
-        m[pos] = par[chunk_size : chunk_size + nsym]
+def _fec_layout(image_size: int, num_roots: int) -> tuple[int, int, int]:
+    """Return ``(rsn, rounds, codewords)`` for the AOSP FEC layout."""
+    if num_roots <= 0 or num_roots >= _RS_CODEWORD_SIZE:
+        raise ValueError(f"Invalid FEC roots: {num_roots}")
 
-    _enc_matrices[nsym] = m
-    return m
+    if image_size <= 0:
+        return _RS_CODEWORD_SIZE - num_roots, 0, 0
+
+    blocks = math.ceil(image_size / _FEC_BLOCK_SIZE)
+    rsn = _RS_CODEWORD_SIZE - num_roots
+    rounds = math.ceil(blocks / rsn)
+    return rsn, rounds, rounds * _FEC_BLOCK_SIZE
 
 
 # ---------------------------------------------------------------------------
@@ -173,13 +196,17 @@ def _compute_enc_matrix(nsym: int) -> object:
 
 def _generate_fec_data_numpy(image_filename: str, num_roots: int) -> bytes:
     """Generate FEC parity using numpy vectorized RS encoding."""
+    import mmap
+
     _init_gf_tables()
     import numpy as np
 
-    chunk_size = _RS_CODEWORD_SIZE - num_roots
-    m = _compute_enc_matrix(num_roots)
-
     file_size = Path(image_filename).stat().st_size
+    rsn, rounds, codewords = _fec_layout(file_size, num_roots)
+    if codewords == 0:
+        return b""
+
+    matrix = _compute_enc_matrix(num_roots)
 
     if file_size >= _LARGE_FILE_THRESHOLD:
         logger.warning(
@@ -187,51 +214,45 @@ def _generate_fec_data_numpy(image_filename: str, num_roots: int) -> bytes:
             round(file_size / (1024 * 1024)),
         )
 
-    target_batch_bytes = 256 * 1024 * 1024
-    chunks_per_batch = max(1, target_batch_bytes // chunk_size)
-    batch_bytes = chunks_per_batch * chunk_size
+    # Each codeword consumes one byte per data block, so a batch holds
+    # roughly batch_codewords * 255 bytes across data + parity.
+    batch_codewords = max(1, _BATCH_TARGET_BYTES // _RS_CODEWORD_SIZE)
 
     fec_data = bytearray()
     t_last_log = time.monotonic()
-    total_read = 0
 
-    with open(image_filename, "rb") as f:
-        while True:
-            buf = f.read(batch_bytes)
-            if not buf:
-                break
+    with open(image_filename, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+        for c0 in range(0, codewords, batch_codewords):
+            batch_len = min(batch_codewords, codewords - c0)
 
-            buf = bytearray(buf)
-            buf_len = len(buf)
+            # data[c, j] = byte at offset j * codewords + (c0 + c).
+            data = np.zeros((batch_len, rsn), dtype=np.uint8)
+            for j in range(rsn):
+                offset = j * codewords + c0
+                if offset >= file_size:
+                    break
+                count = min(batch_len, file_size - offset)
+                data[:count, j] = np.frombuffer(mm, dtype=np.uint8, count=count, offset=offset)
 
-            pad_len = (chunk_size - buf_len % chunk_size) % chunk_size
-            if pad_len:
-                buf.extend(b"\0" * pad_len)
-                buf_len += pad_len
-
-            n_chunks = buf_len // chunk_size
-            data_2d = np.frombuffer(buf, dtype=np.uint8).reshape(n_chunks, chunk_size)
-
-            parity = np.zeros((n_chunks, num_roots), dtype=np.uint8)
+            parity = np.zeros((batch_len, num_roots), dtype=np.uint8)
             for j in range(num_roots):
-                col = np.zeros(n_chunks, dtype=np.uint8)
-                for i in range(chunk_size):
-                    m_ij = m[i, j]  # type: ignore[index]
-                    if m_ij:
-                        col ^= _gf_mul_vector(data_2d[:, i], m_ij)
-                parity[:, j] = col
+                column = np.zeros(batch_len, dtype=np.uint8)
+                for i in range(rsn):
+                    coeff = int(matrix[i, j])  # type: ignore[index]
+                    if coeff:
+                        column ^= _gf_mul_vector(data[:, i], coeff)
+                parity[:, j] = column
 
             fec_data.extend(parity.tobytes())
-            total_read += buf_len
 
             now = time.monotonic()
             if now - t_last_log >= 30:
-                pct = 100.0 * total_read / max(file_size, 1)
+                done = c0 + batch_len
                 logger.warning(
-                    "FEC encoding progress: %d/%d MB (%.0f%%)",
-                    round(total_read / (1024 * 1024)),
-                    round(file_size / (1024 * 1024)),
-                    pct,
+                    "FEC encoding progress: %d/%d codewords (%.0f%%)",
+                    done,
+                    codewords,
+                    100.0 * done / codewords,
                 )
                 t_last_log = now
 
@@ -248,57 +269,56 @@ def _generate_fec_data_reedsolo(image_filename: str, num_roots: int) -> bytes:
     from reedsolo import RSCodec
 
     file_size = Path(image_filename).stat().st_size
-    chunk_size = _RS_CODEWORD_SIZE - num_roots
+    rsn, rounds, codewords = _fec_layout(file_size, num_roots)
+    if codewords == 0:
+        return b""
 
     if file_size >= 10 * 1024 * 1024:
-        n_chunks = math.ceil(file_size / chunk_size)
-        est_min = n_chunks * 0.0002 / 60
         logger.warning(
-            "FEC: reedsolo fallback for %d MB file (%d chunks). "
-            "Estimated %.0f minutes. Install numpy for fast encoding.",
+            "FEC: reedsolo fallback for %d MB file (%d codewords). "
+            "Install numpy for fast encoding.",
             round(file_size / (1024 * 1024)),
-            n_chunks,
-            max(est_min, 0.1),
+            codewords,
         )
 
-    rs = RSCodec(nsym=num_roots, fcr=1)
+    rs = RSCodec(nsym=num_roots, fcr=_RS_FCR)
+    batch_codewords = max(1, (4 * 1024 * 1024) // rsn)
+
     fec_data = bytearray()
-    carryover = b""
-    total = 0
     t_last = time.monotonic()
 
     with open(image_filename, "rb") as f:
-        while True:
-            buffer = f.read(1024 * 1024)
-            if not buffer:
-                break
-            data = carryover + buffer
-            carryover = b""
+        for c0 in range(0, codewords, batch_codewords):
+            batch_len = min(batch_codewords, codewords - c0)
 
-            num_full = len(data) // chunk_size
-            for k in range(num_full):
-                chunk = data[k * chunk_size : (k + 1) * chunk_size]
-                encoded = rs.encode(chunk)
+            columns: list[bytes] = []
+            for j in range(rsn):
+                offset = j * codewords + c0
+                if offset >= file_size:
+                    columns.extend([b""] * (rsn - j))
+                    break
+                f.seek(offset)
+                columns.append(f.read(min(batch_len, file_size - offset)))
+
+            for c in range(batch_len):
+                message = bytearray(rsn)
+                for j in range(rsn):
+                    column = columns[j]
+                    if c < len(column):
+                        message[j] = column[c]
+                encoded = rs.encode(bytes(message))
                 fec_data.extend(encoded[-num_roots:])
 
-            leftover_start = num_full * chunk_size
-            carryover = data[leftover_start:]
-
-            total += len(buffer)
             now = time.monotonic()
             if now - t_last >= 30:
+                done = c0 + batch_len
                 logger.warning(
-                    "FEC (reedsolo) progress: %d/%d MB (%.0f%%)",
-                    round(total / (1024 * 1024)),
-                    round(file_size / (1024 * 1024)),
-                    100.0 * total / max(file_size, 1),
+                    "FEC (reedsolo) progress: %d/%d codewords (%.0f%%)",
+                    done,
+                    codewords,
+                    100.0 * done / codewords,
                 )
                 t_last = now
-
-    if carryover:
-        chunk = carryover.ljust(chunk_size, b"\0")
-        encoded = rs.encode(chunk)
-        fec_data.extend(encoded[-num_roots:])
 
     return bytes(fec_data)
 
@@ -311,14 +331,20 @@ def _generate_fec_data_reedsolo(image_filename: str, num_roots: int) -> bytes:
 def calc_fec_data_size(image_size: int, num_roots: int) -> int:
     """Calculate how much space FEC data will take.
 
-    Uses pure math — no subprocess or external tool needed.
+    Mirrors ``fec --print-fec-size``: parity bytes plus one 4096-byte
+    header block.  Returns 0 for invalid arguments, like the native tool.
     """
-    chunk_size = _RS_CODEWORD_SIZE - num_roots
-    return num_roots * math.ceil(image_size / chunk_size)
+    if image_size <= 0 or num_roots <= 0 or num_roots >= _RS_CODEWORD_SIZE:
+        return 0
+
+    blocks = math.ceil(image_size / _FEC_BLOCK_SIZE)
+    rsn = _RS_CODEWORD_SIZE - num_roots
+    rounds = math.ceil(blocks / rsn)
+    return rounds * num_roots * _FEC_BLOCK_SIZE + _FEC_BLOCK_SIZE
 
 
 def generate_fec_data(image_filename: str, num_roots: int) -> bytes:
-    """Generate FEC codes for an image.
+    """Generate FEC parity for an image.
 
     Priority:
       1. Numpy vectorized encoder (fast, cross-platform)
@@ -329,14 +355,16 @@ def generate_fec_data(image_filename: str, num_roots: int) -> bytes:
       num_roots: Number of FEC roots.
 
     Returns:
-      The FEC parity data as bytes.
+      The FEC parity data as bytes (without the native 4096-byte header).
 
     Raises:
-      ValueError: If the image doesn't exist.
+      ValueError: If the image doesn't exist or the roots are invalid.
       RuntimeError: If no FEC encoding method is available.
     """
     if not Path(image_filename).exists():
         raise ValueError(f"Image file not found: {image_filename}")
+    if num_roots <= 0 or num_roots >= _RS_CODEWORD_SIZE:
+        raise ValueError(f"Invalid FEC roots: {num_roots}")
 
     try:
         import numpy  # noqa: F401

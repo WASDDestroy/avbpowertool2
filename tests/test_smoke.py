@@ -29,11 +29,11 @@ def test_fec_calc_fec_data_size():
     """calc_fec_data_size should return a positive integer."""
     from avbpowertool.vendor.fec_encoder import calc_fec_data_size
 
-    # For an image of 4096 bytes with 2 roots, chunk_size = 253
-    # ceil(4096 / 253) = 17 chunks, 17 * 2 = 34 bytes
+    # Matches `fec --print-fec-size`: one round of parity (8192 bytes)
+    # plus the 4096-byte native header block.
     size = calc_fec_data_size(4096, 2)
     assert isinstance(size, int)
-    assert size > 0
+    assert size == 12288
 
 
 def test_avbtool_fec_patch_exists():

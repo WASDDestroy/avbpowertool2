@@ -325,9 +325,13 @@ Upstream computes Forward Error Correction data by invoking the Android
 `fec` tool binary, which is not available on typical developer machines
 (notably Windows). The project ships
 [`avbpowertool/vendor/fec_encoder.py`](../../avbpowertool/vendor/fec_encoder.py)
-— a cross-platform RS(255, N) encoder (numpy fast path, reedsolo fallback;
-both are mandatory dependencies of the package). Both patched functions try
-the Python implementation first and fall back to the external tool.
+— a cross-platform re-implementation of the AOSP `libfec` encoder (numpy
+fast path, reedsolo fallback; both are mandatory dependencies of the
+package). It uses the same parameters as `init_rs_char(8, 0x11d, fcr=0,
+prim=1, nroots, pad=0)` and the same 4096-byte block/round interleaving
+layout, so its parity output is byte-identical to `fec --encode`. Both
+patched functions try the Python implementation first and fall back to the
+external tool.
 
 ### Hook point 1 of 2 — `calc_fec_data_size`
 
@@ -373,9 +377,18 @@ num_roots)`, at the very top of its body (before the `tempfile` /
   `avbpowertool.vendor.fec_encoder` resolves. If `avbtool.py` were copied
   away from the package, the import raises `ImportError` and the external
   `fec` tool is used.
-- `calc_fec_data_size` from the Python encoder is pure arithmetic
-  (`num_roots * ceil(image_size / chunk_size)`), matching the `fec` tool's
-  printed size exactly.
+- `calc_fec_data_size` from the Python encoder is pure arithmetic and
+  matches `fec --print-fec-size` exactly:
+  `rounds * num_roots * 4096 + 4096`, where
+  `rounds = ceil(ceil(image_size / 4096) / (255 - num_roots))`. The extra
+  4096 bytes are the native header block, which `avbtool` reserves but does
+  not embed in the image.
+- `generate_fec_data` returns only the parity payload (without the native
+  4096-byte header block), exactly like upstream `avbtool`'s
+  `fec_data[0:fec_size]` slice.
+- Known-answer fixtures captured from the native encoder live in
+  `tests/fixtures/fec/`; `tests/unit/test_fec_encoder.py` checks both the
+  numpy and reedsolo paths against them.
 
 ## Re-patching procedure for a new upstream version
 
