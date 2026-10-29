@@ -212,9 +212,15 @@ avbpowertool image sign boot vbmeta --dry-run  # Preview
 avbpowertool image sign boot vbmeta --execute --yes  # Execute
 ```
 
-**TUI signing page**: when the selected images include a vbmeta
-partition, an extra question asks whether to attach this config's props
-to the generated vbmeta image — **default No**. avbtool does not filter
+**TUI signing page**: vbmeta partitions whose image file is missing are
+also listed as `(generate)` options — but only when every image the
+generation needs is present in `Images/`. If a required image is missing,
+the page first shows which files are absent and does not offer that
+vbmeta. Selecting a vbmeta also pulls its `included_partitions` into the
+same run, because `make_vbmeta_image` consumes their freshly signed
+copies. When the selected images include a vbmeta partition, an extra
+question asks whether to attach this config's props to the generated
+vbmeta image — **default No**. avbtool does not filter
 duplicate props, and the props read back from images (e.g.
 `com.android.build.*`) usually duplicate what the sub-partitions carry;
 leaving them out avoids vbmeta size bloat and redundant info. Choose

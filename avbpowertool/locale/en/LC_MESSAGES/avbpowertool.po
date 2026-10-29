@@ -597,6 +597,21 @@ msgstr "Steps planned: {count}"
 msgid "sign.results_title"
 msgstr "Signing Results"
 
+msgid "sign.generate_option"
+msgstr "{image} (generate)"
+
+msgid "sign.vbmeta.missing_title"
+msgstr "Cannot Generate vbmeta Images"
+
+msgid "sign.vbmeta.missing_intro"
+msgstr "These vbmeta images are missing but cannot be generated because required images are absent:"
+
+msgid "sign.vbmeta.missing_line"
+msgstr "  {image}: missing {missing}"
+
+msgid "sign.vbmeta.missing_hint"
+msgstr "Place the missing images in Images/ to enable generation."
+
 # Current config display
 msgid "config.show_title"
 msgstr "Current Config Info"

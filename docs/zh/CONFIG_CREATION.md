@@ -202,8 +202,13 @@ avbpowertool image sign boot vbmeta --dry-run  # 预览
 avbpowertool image sign boot vbmeta --execute --yes  # 执行
 ```
 
-**TUI 签名页**：当所选镜像包含 vbmeta 分区时，会额外询问
-"是否将此配置中的属性附加到即将生成的 vbmeta 镜像？"，**默认否**。
+**TUI 签名页**：镜像文件不存在的 vbmeta 分区也会以 `（生成）` 选项列出，
+但仅当 `Images/` 已具备生成它所需的全部镜像时才出现；缺少所需镜像时，
+签名页会先提示具体缺了哪些文件，并且不提供该 vbmeta 的生成选项。选择
+vbmeta 时还会自动把它 `included_partitions` 中的分区加入本次签名，因为
+`make_vbmeta_image` 读取的是这些分区刚签好的暂存副本。当所选镜像包含
+vbmeta 分区时，会额外询问"是否将此配置中的属性附加到即将生成的 vbmeta
+镜像？"，**默认否**。
 avbtool 本身不过滤重复属性，自动创建读回的 `com.android.build.*`
 等属性通常与子分区重复，默认不写入可避免 vbmeta 体积膨胀和信息冗余；
 需要保留时在询问页选择"是"（属性来自该 vbmeta 分区配置的 `props` 字段）。

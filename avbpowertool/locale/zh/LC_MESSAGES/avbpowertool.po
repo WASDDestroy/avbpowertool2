@@ -597,6 +597,21 @@ msgstr "计划步骤数：{count}"
 msgid "sign.results_title"
 msgstr "签名结果"
 
+msgid "sign.generate_option"
+msgstr "{image}（生成）"
+
+msgid "sign.vbmeta.missing_title"
+msgstr "无法生成 vbmeta 镜像"
+
+msgid "sign.vbmeta.missing_intro"
+msgstr "以下 vbmeta 镜像不存在，但因缺少所需镜像而无法生成："
+
+msgid "sign.vbmeta.missing_line"
+msgstr "  {image}：缺少 {missing}"
+
+msgid "sign.vbmeta.missing_hint"
+msgstr "将缺少的镜像放入 Images/ 后即可生成。"
+
 # 当前配置展示
 msgid "config.show_title"
 msgstr "当前配置信息"
